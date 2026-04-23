@@ -181,13 +181,16 @@ function normalizeSearchText(value) {
     .toLowerCase();
 }
 
-function createRaceNameVariants(value) {
-  const raw = cleanWikiText(String(value || ""))
+function createRaceNameVariants(value, options = {}) {
+  let raw = cleanWikiText(String(value || ""))
     .replace(/^20\d{2}\s+/, "")
-    .replace(/\s+\((men's|women's) race\)$/i, "")
     .replace(/\s+Hauts de France$/i, "")
     .replace(/\s+Femmes(?: avec Zwift)?$/i, " Femmes")
     .trim();
+
+  if (!options.preserveDivisionSuffix) {
+    raw = raw.replace(/\s+\((men's|women's) race\)$/i, "").trim();
+  }
 
   const variants = new Set();
   const queue = [raw];
@@ -210,6 +213,69 @@ function createRaceNameVariants(value) {
   }
 
   return [...variants];
+}
+
+function getRaceArticleVariants(race) {
+  const variants = [];
+  const seen = new Set();
+  const division = getRaceDivision(race);
+
+  function addVariant(value) {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return;
+    }
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    variants.push(normalized);
+  }
+
+  function addFrom(value, options) {
+    createRaceNameVariants(value, options).forEach(addVariant);
+  }
+
+  const baseVariants = [];
+  const baseSeen = new Set();
+  const addBaseVariant = (value) => {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return;
+    }
+
+    const key = normalized.toLowerCase();
+    if (baseSeen.has(key)) {
+      return;
+    }
+
+    baseSeen.add(key);
+    baseVariants.push(normalized);
+  };
+
+  createRaceNameVariants(race?.title).forEach(addBaseVariant);
+  createRaceNameVariants(race?.pageTitle).forEach(addBaseVariant);
+
+  if (division === "women") {
+    createRaceNameVariants(race?.pageTitle, { preserveDivisionSuffix: true }).forEach(addVariant);
+    createRaceNameVariants(race?.title, { preserveDivisionSuffix: true }).forEach(addVariant);
+
+    baseVariants.forEach((variant) => {
+      if (hasWomenMarker(normalizeSearchText(variant))) {
+        addVariant(variant);
+        return;
+      }
+
+      addVariant(`${variant} Women`);
+      addVariant(`${variant} Femmes`);
+    });
+  }
+
+  baseVariants.forEach(addVariant);
+  return variants;
 }
 
 function getRaceTokens(race) {
@@ -712,7 +778,7 @@ function extractFeedItems(xml) {
 
 function buildRaceArticleQueries(race) {
   const raceYear = getRaceYear(race);
-  const variants = [...new Set(createRaceNameVariants(race.title).filter(Boolean))].slice(0, 4);
+  const variants = getRaceArticleVariants(race).slice(0, 8);
 
   return variants.flatMap((variant) => {
     if (raceYear) {
@@ -740,20 +806,27 @@ function getPublisherScore(publisher) {
 
 function isLikelyRaceArticle(article, race) {
   const combinedText = normalizeSearchText([article.title, article.description, article.publisher].join(" "));
-  const variants = createRaceNameVariants(race.title).map((variant) => normalizeSearchText(variant));
+  const variants = getRaceArticleVariants(race).map((variant) => normalizeSearchText(variant));
   const raceTokens = getRaceTokens(race);
   const tokenMatches = raceTokens.filter((token) => combinedText.includes(token)).length;
   const division = getRaceDivision(race);
   const mentionsExactVariant = variants.some((variant) => variant && combinedText.includes(variant));
+  const mentionsWomenVariant = variants.some(
+    (variant) => variant && hasWomenMarker(variant) && combinedText.includes(variant),
+  );
 
   if (division === "women") {
-    if (!hasWomenMarker(combinedText) && !mentionsExactVariant) {
+    if (!hasWomenMarker(combinedText) && !mentionsWomenVariant) {
       return false;
     }
   }
 
   if (division === "men" && hasWomenMarker(combinedText) && !hasMenMarker(combinedText)) {
     return false;
+  }
+
+  if (division === "women") {
+    return mentionsWomenVariant || (hasWomenMarker(combinedText) && tokenMatches >= Math.min(2, raceTokens.length));
   }
 
   return mentionsExactVariant || tokenMatches >= Math.min(2, raceTokens.length);
