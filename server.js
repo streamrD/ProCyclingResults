@@ -30,21 +30,50 @@ const SEASONS = [
     pageTitle: "2026_UCI_World_Tour",
     label: "Men's WorldTour",
     winnerMode: "podium",
+    dateIndex: 1,
+    winnerIndex: 2,
+    secondIndex: 3,
+    thirdIndex: 4,
+    statusStartIndex: 2,
   },
   {
     pageTitle: "2026_UCI_Women's_World_Tour",
     label: "Women's WorldTour",
     winnerMode: "podium",
+    dateIndex: 1,
+    winnerIndex: 2,
+    secondIndex: 3,
+    thirdIndex: 4,
+    statusStartIndex: 2,
   },
   {
     pageTitle: "2026_UCI_ProSeries",
     label: "Men's ProSeries",
     winnerMode: "winner",
+    dateIndex: 1,
+    winnerIndex: 2,
+    secondIndex: 3,
+    thirdIndex: 4,
+    statusStartIndex: 2,
   },
   {
     pageTitle: "2026_UCI_Women's_ProSeries",
     label: "Women's ProSeries",
     winnerMode: "winner",
+    dateIndex: 1,
+    winnerIndex: 2,
+    secondIndex: 3,
+    thirdIndex: 4,
+    statusStartIndex: 2,
+  },
+  {
+    pageTitle: "2026_UCI_Europe_Tour",
+    label: "Men's Europe Tour",
+    winnerMode: "winner",
+    dateIndex: 2,
+    winnerIndex: 3,
+    statusStartIndex: 3,
+    includePageTitles: ["Vuelta Asturias"],
   },
 ];
 
@@ -358,13 +387,30 @@ function formatDateLabel(dateText, year) {
   return `${String(dateText || "").trim()} ${year}`.replace(/\s+/g, " ");
 }
 
-function parseSeasonRows(rawText, season, year) {
-  const tableStart = rawText.indexOf('{| class="wikitable plainrowheaders"');
-  const tableEnd = rawText.indexOf("\n|}", tableStart);
-  const tableText = rawText.slice(tableStart, tableEnd);
-  const rows = tableText.split("\n|-\n").slice(1);
+function seasonIncludesRace(season, race) {
+  const includedPageTitles = season.includePageTitles || [];
+  const includedTitles = season.includeTitles || [];
 
-  return rows
+  if (includedPageTitles.length === 0 && includedTitles.length === 0) {
+    return true;
+  }
+
+  return (
+    includedPageTitles.includes(race.pageTitle) ||
+    includedTitles.includes(race.title)
+  );
+}
+
+function parseSeasonRows(rawText, season, year) {
+  const tableMatches = [...String(rawText || "").matchAll(/\{\| class="wikitable plainrowheaders"[\s\S]*?\n\|\}/g)];
+  const dateIndex = season.dateIndex ?? 1;
+  const winnerIndex = season.winnerIndex ?? 2;
+  const secondIndex = season.secondIndex ?? 3;
+  const thirdIndex = season.thirdIndex ?? 4;
+  const statusStartIndex = season.statusStartIndex ?? winnerIndex;
+
+  return tableMatches
+    .flatMap((match) => match[0].split("\n|-\n").slice(1))
     .map((row) => {
       const cells = [];
       for (const line of row.split("\n")) {
@@ -376,25 +422,26 @@ function parseSeasonRows(rawText, season, year) {
       }
       return cells;
     })
-    .filter((cells) => cells.length >= 5)
+    .filter((cells) => cells.length > winnerIndex)
     .map((cells) => {
       const race = parseRaceCell(cells[0]);
-      const dateRange = parseDateRange(cells[1], year);
-      const statusText = cleanWikiText(cells.slice(2).join(" "));
+      const dateRange = parseDateRange(cells[dateIndex], year);
+      const statusText = cleanWikiText(cells.slice(statusStartIndex).join(" "));
       const hasPodium = season.winnerMode === "podium";
 
       return {
         ...race,
         series: season.label,
-        date: formatDateLabel(cells[1], year),
-        winner: parseAthlete(cells[2]),
-        second: hasPodium ? parseAthlete(cells[3]) : "",
-        third: hasPodium ? parseAthlete(cells[4]) : "",
+        date: formatDateLabel(cells[dateIndex], year),
+        winner: parseAthlete(cells[winnerIndex]),
+        second: hasPodium ? parseAthlete(cells[secondIndex]) : "",
+        third: hasPodium ? parseAthlete(cells[thirdIndex]) : "",
         startDate: dateRange.start,
         endDate: dateRange.end,
         isCancelled: /\bcancelled\b/i.test(statusText),
       };
-    });
+    })
+    .filter((race) => seasonIncludesRace(season, race));
 }
 
 async function fetchText(url) {
@@ -418,6 +465,11 @@ async function fetchWikiRaw(title) {
     return "";
   }
   return text;
+}
+
+async function fetchJson(url) {
+  const text = await fetchText(url);
+  return JSON.parse(text);
 }
 
 function getInfoboxField(rawText, fieldName) {
@@ -615,6 +667,270 @@ function extractStageRaceSnapshot(rawText) {
   };
 }
 
+function getOfficialStageRaceSource(race) {
+  if (race?.pageTitle === "Vuelta Asturias") {
+    return "vuelta-asturias";
+  }
+
+  return "";
+}
+
+function inferStageCountFromDates(race) {
+  if (!isMultiDayRace(race)) {
+    return 0;
+  }
+
+  const durationMs = race.endDate.getTime() - race.startDate.getTime();
+  return Math.max(0, Math.round(durationMs / (1000 * 60 * 60 * 24)) + 1);
+}
+
+function parseSpanishStageNumber(text) {
+  const normalized = normalizeSearchText(text);
+  const digitMatch = normalized.match(/\betapa\s+(\d+)\b/);
+  if (digitMatch) {
+    return Number(digitMatch[1]);
+  }
+
+  const stageWords = [
+    ["primera etapa", 1],
+    ["segunda etapa", 2],
+    ["tercera etapa", 3],
+    ["cuarta etapa", 4],
+    ["quinta etapa", 5],
+    ["sexta etapa", 6],
+  ];
+
+  for (const [pattern, stageNumber] of stageWords) {
+    if (normalized.includes(pattern)) {
+      return stageNumber;
+    }
+  }
+
+  if (/\barranque\b/.test(normalized)) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function buildStandingEntry(place, rider) {
+  return rider ? { place: String(place), rider } : null;
+}
+
+function uniqueStandings(entries) {
+  const seen = new Set();
+
+  return entries.filter((entry) => {
+    if (!entry?.rider) {
+      return false;
+    }
+
+    const key = normalizeSearchText(entry.rider);
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function getMentionedRiderNames(text) {
+  const matches = [...cleanFeedText(text).matchAll(/\b([A-ZÁÉÍÓÚÑÜ][\p{L}'’.-]+(?:\s+[A-ZÁÉÍÓÚÑÜ][\p{L}'’.-]+){1,2})\b/gu)];
+  return [...new Set(matches.map((match) => cleanFeedText(match[1])).filter(Boolean))];
+}
+
+function resolveVueltaAsturiasRiderName(text, rawName) {
+  const cleaned = cleanFeedText(rawName)
+    .replace(/^(?:el|la)\s+/u, "")
+    .replace(/^(?:ciclista|corredor)(?:\s+[a-záéíóúñü]+){0,4}\s+/u, "")
+    .replace(/\..*$/u, "")
+    .replace(/\s+(?:que|y|fue|es|lleg(?:aron|aba)|por|sobre)\b.*$/u, "")
+    .trim();
+
+  if (!cleaned || /\b(?:vuelta|asturias)\b/iu.test(cleaned)) {
+    return "";
+  }
+
+  if (cleaned.includes(" ")) {
+    return cleaned;
+  }
+
+  const target = normalizeSearchText(cleaned);
+  const mentionedNames = getMentionedRiderNames(text);
+  const exactLastNameMatch = mentionedNames.find((name) => normalizeSearchText(name.split(" ").slice(-1)[0]) === target);
+  return exactLastNameMatch || cleaned;
+}
+
+function extractVueltaAsturiasWinner(text) {
+  const namePattern = "([A-ZÁÉÍÓÚÑÜ][\\p{L}'’.-]+(?:\\s+[A-ZÁÉÍÓÚÑÜ][\\p{L}'’.-]+){0,3})";
+  const patterns = [
+    new RegExp(`${namePattern}\\s+fue el vencedor de la [a-z0-9ª ]*etapa`, "u"),
+    new RegExp(`finaliz[oó] con la victoria(?: del [^,]+,)?\\s+${namePattern}`, "u"),
+    new RegExp(`el m[aá]s r[aá]pido fue\\s+${namePattern}`, "u"),
+    new RegExp(`victoria del corredor [^,]+,\\s+${namePattern}`, "u"),
+  ];
+
+  const cleanedText = cleanFeedText(text);
+
+  for (const pattern of patterns) {
+    const match = cleanedText.match(pattern);
+    if (match) {
+      return resolveVueltaAsturiasRiderName(cleanedText, match[1]);
+    }
+  }
+
+  return "";
+}
+
+function extractVueltaAsturiasStageStandings(text) {
+  const namePattern = "([A-ZÁÉÍÓÚÑÜ][\\p{L}'’.-]+(?:\\s+[A-ZÁÉÍÓÚÑÜ][\\p{L}'’.-]+){0,3})";
+  const winner = extractVueltaAsturiasWinner(text);
+  const standings = [];
+  const cleanedText = cleanFeedText(text);
+
+  if (winner) {
+    standings.push(buildStandingEntry(1, winner));
+  }
+
+  const secondStagePattern = new RegExp(
+    `aventajando con[^.]*?a\\s+${namePattern}[^.]*?que fue segundo y con[^.]*?sobre\\s+${namePattern}\\s+y\\s+${namePattern}`,
+    "u",
+  );
+  const firstStagePattern = new RegExp(
+    `por delante de\\s+${namePattern}\\s+siendo tercero(?: el [^,]+)?\\s+${namePattern}`,
+    "u",
+  );
+  const fifthPlacePattern = new RegExp(`llegaba el asturiano\\s+${namePattern}`, "u");
+
+  const secondStageMatch = cleanedText.match(secondStagePattern);
+  if (secondStageMatch) {
+    standings.push(buildStandingEntry(2, resolveVueltaAsturiasRiderName(cleanedText, secondStageMatch[1])));
+    standings.push(buildStandingEntry(3, resolveVueltaAsturiasRiderName(cleanedText, secondStageMatch[2])));
+    standings.push(buildStandingEntry(4, resolveVueltaAsturiasRiderName(cleanedText, secondStageMatch[3])));
+
+    const fifthPlaceMatch = cleanedText.match(fifthPlacePattern);
+    if (fifthPlaceMatch) {
+      standings.push(buildStandingEntry(5, resolveVueltaAsturiasRiderName(cleanedText, fifthPlaceMatch[1])));
+    }
+
+    return uniqueStandings(standings);
+  }
+
+  const firstStageMatch = cleanedText.match(firstStagePattern);
+  if (firstStageMatch) {
+    standings.push(buildStandingEntry(2, resolveVueltaAsturiasRiderName(cleanedText, firstStageMatch[1])));
+    standings.push(buildStandingEntry(3, resolveVueltaAsturiasRiderName(cleanedText, firstStageMatch[2])));
+    return uniqueStandings(standings);
+  }
+
+  return uniqueStandings(standings);
+}
+
+function extractVueltaAsturiasGcStandings(text, fallbackLeader) {
+  const cleanedText = cleanFeedText(text);
+  const leaderSentenceMatch = cleanedText.match(/Tras la etapa de hoy\s+([^.]*)\./u);
+  if (leaderSentenceMatch) {
+    const leaderSegment = leaderSentenceMatch[1];
+    const [leaderPart, trailingPart = ""] = leaderSegment.split(", por delante de ");
+    const leaderName = leaderPart.replace(/\s+es el nuevo l[íi]der$/u, "").trim();
+    const trailingNames = trailingPart
+      .split(/\s+y\s+/u)
+      .map((name) => resolveVueltaAsturiasRiderName(cleanedText, name))
+      .filter(Boolean)
+      .slice(0, 2);
+    return uniqueStandings([
+      buildStandingEntry(1, resolveVueltaAsturiasRiderName(cleanedText, leaderName || fallbackLeader)),
+      buildStandingEntry(2, trailingNames[0]),
+      buildStandingEntry(3, trailingNames[1]),
+    ]);
+  }
+
+  return uniqueStandings([buildStandingEntry(1, fallbackLeader)]);
+}
+
+async function fetchVueltaAsturiasOfficialSnapshot(race) {
+  const raceYear = getRaceYear(race);
+  const raceWindowStart = race?.startDate instanceof Date ? race.startDate.getTime() - 14 * 24 * 60 * 60 * 1000 : 0;
+  const raceWindowEnd = race?.endDate instanceof Date ? race.endDate.getTime() + 2 * 24 * 60 * 60 * 1000 : Number.POSITIVE_INFINITY;
+  const params = new URLSearchParams({
+    search: "Vuelta Asturias",
+    per_page: "8",
+    _fields: "id,date,link,title,content,excerpt",
+  });
+  const posts = await fetchJson(`https://lavueltaasturias.com/wp-json/wp/v2/posts?${params.toString()}`);
+  const stagePosts = (Array.isArray(posts) ? posts : [])
+    .map((post) => {
+      const title = cleanFeedText(post?.title?.rendered || "");
+      const content = cleanFeedText(post?.content?.rendered || post?.excerpt?.rendered || "");
+      const combinedText = [title, content].join(" ").trim();
+
+      return {
+        title,
+        content,
+        combinedText,
+        stageNumber: parseSpanishStageNumber(combinedText),
+        publishedAt: post?.date ? new Date(post.date).getTime() : 0,
+        publishedYear: post?.date ? new Date(post.date).getUTCFullYear() : 0,
+      };
+    })
+    .filter(
+      (post) =>
+        post.stageNumber > 0 &&
+        /\bvuelta(?:\s+a)?\s+asturias\b/i.test(normalizeSearchText(post.combinedText)) &&
+        (!raceYear || post.publishedYear === raceYear) &&
+        post.publishedAt >= raceWindowStart &&
+        post.publishedAt <= raceWindowEnd,
+    )
+    .sort((left, right) => {
+      if (left.stageNumber !== right.stageNumber) {
+        return right.stageNumber - left.stageNumber;
+      }
+
+      return right.publishedAt - left.publishedAt;
+    });
+
+  const latestStagePost = stagePosts[0] || null;
+  if (!latestStagePost) {
+    return null;
+  }
+
+  const stageStandings = extractVueltaAsturiasStageStandings(latestStagePost.combinedText);
+  const winner = stageStandings[0]?.rider || extractVueltaAsturiasWinner(latestStagePost.combinedText);
+  const gcStandings = extractVueltaAsturiasGcStandings(latestStagePost.combinedText, winner);
+  const totalStages = inferStageCountFromDates(race);
+
+  return {
+    totalStages,
+    completedStages: latestStagePost.stageNumber,
+    latestStage: winner
+      ? {
+          number: latestStagePost.stageNumber,
+          standings: stageStandings.length > 0 ? stageStandings : [buildStandingEntry(1, winner)].filter(Boolean),
+          winner,
+        }
+      : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber: latestStagePost.stageNumber,
+            standings: gcStandings,
+            leader: gcStandings[0]?.rider || "",
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
+async function loadOfficialStageRaceSnapshot(race) {
+  switch (getOfficialStageRaceSource(race)) {
+    case "vuelta-asturias":
+      return fetchVueltaAsturiasOfficialSnapshot(race);
+    default:
+      return null;
+  }
+}
+
 function extractLeadLocation(rawText) {
   const lead = rawText
     .split("\n\n")
@@ -694,6 +1010,14 @@ function isMultiDayRace(race) {
   return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() !== race.endDate.getTime();
 }
 
+function isFinalizedStageRace(race) {
+  return (
+    (race?.stageRace?.completedStages || 0) > 0 &&
+    (race?.stageRace?.totalStages || 0) > 0 &&
+    (race.stageRace.completedStages || 0) >= (race.stageRace.totalStages || 0)
+  );
+}
+
 async function enrichStageRaceSnapshots(races) {
   await Promise.all(
     races.map(async (race) => {
@@ -702,6 +1026,12 @@ async function enrichStageRaceSnapshots(races) {
       }
 
       try {
+        const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
+        if (officialSnapshot?.completedStages > 0) {
+          race.stageRace = officialSnapshot;
+          return;
+        }
+
         const raw = await fetchWikiRaw(race.pageTitle);
         const snapshot = extractStageRaceSnapshot(raw);
 
@@ -721,6 +1051,13 @@ async function enrichRecentResultStandings(races) {
   await Promise.all(
     races.map(async (race) => {
       try {
+        const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
+        if (officialSnapshot?.completedStages > 0) {
+          race.stageRace = officialSnapshot;
+          race.resultStandings = officialSnapshot.generalClassification?.standings || officialSnapshot.overallResult || [];
+          return;
+        }
+
         const raw = await fetchWikiRaw(race.pageTitle);
         const snapshot = extractStageRaceSnapshot(raw);
 
@@ -832,6 +1169,35 @@ function isLikelyRaceArticle(article, race) {
   return mentionsExactVariant || tokenMatches >= Math.min(2, raceTokens.length);
 }
 
+function isCurrentEditionRaceArticle(article, race) {
+  const raceYear = getRaceYear(race);
+  const combinedText = normalizeSearchText([article.title, article.description].join(" "));
+  const articleTime = article.publishedAt ? new Date(article.publishedAt).getTime() : 0;
+
+  if (raceYear) {
+    const mentionedYears = extractMentionedYears([article.title, article.description].join(" "));
+    if (mentionedYears.length > 0 && !mentionedYears.includes(raceYear)) {
+      return false;
+    }
+  }
+
+  if (!articleTime) {
+    return !raceYear || combinedText.includes(String(raceYear));
+  }
+
+  if (raceYear && new Date(articleTime).getUTCFullYear() !== raceYear) {
+    return false;
+  }
+
+  if (!(race?.startDate instanceof Date) || !(race?.endDate instanceof Date)) {
+    return true;
+  }
+
+  const earliestAllowed = race.startDate.getTime() - 30 * 24 * 60 * 60 * 1000;
+  const latestAllowed = race.endDate.getTime() + 10 * 24 * 60 * 60 * 1000;
+  return articleTime >= earliestAllowed && articleTime <= latestAllowed;
+}
+
 function normalizeArticleTitle(title, publisher) {
   const cleaned = cleanFeedText(title);
   const source = cleanFeedText(publisher);
@@ -909,6 +1275,7 @@ async function fetchRaceArticles(race) {
     .map((block) => buildArticleItem(block, race))
     .filter((article) => article.url && article.title)
     .filter((article) => isLikelyRaceArticle(article, race))
+    .filter((article) => isCurrentEditionRaceArticle(article, race))
     .filter((article) => {
       const key = `${normalizeSearchText(article.title)}|${normalizeSearchText(article.publisher)}`;
       if (seenKeys.has(key)) {
@@ -1025,7 +1392,7 @@ async function loadRaceData() {
       .sort((left, right) => right.endDate - left.endDate)
       .slice(0, MAX_RECENT_RESULTS);
 
-    const liveStageRaces = allRaces
+    const liveStageCandidates = allRaces
       .filter(
         (race) =>
           isMultiDayRace(race) &&
@@ -1048,14 +1415,34 @@ async function loadRaceData() {
       .sort((left, right) => left.startDate - right.startDate)
       .slice(0, MAX_UPCOMING_RACES);
 
-    const displayRaces = [...recentResults, ...liveStageRaces, ...upcomingRaces];
-    const stageRaceDisplays = liveStageRaces.filter(isMultiDayRace);
+    const displayRaces = [...recentResults, ...liveStageCandidates, ...upcomingRaces];
+    const stageRaceDisplays = liveStageCandidates.filter(isMultiDayRace);
 
     await enrichLocations(displayRaces);
     await enrichRecentResultStandings(recentResults);
     await enrichStageRaceSnapshots(stageRaceDisplays);
 
-    recentResults.forEach((race) => {
+    const recentResultsById = new Map(recentResults.map((race) => [getRaceId(race), race]));
+    liveStageCandidates
+      .filter(isFinalizedStageRace)
+      .forEach((race) => {
+        if (!race.resultStandings?.length) {
+          race.resultStandings = race.stageRace?.generalClassification?.standings || race.stageRace?.overallResult || [];
+        }
+
+        recentResultsById.set(getRaceId(race), race);
+      });
+
+    const mergedRecentResults = [...recentResultsById.values()]
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, MAX_RECENT_RESULTS);
+    const liveStageRaces = liveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+
+    [...mergedRecentResults, ...liveStageRaces, ...upcomingRaces].forEach((race) => {
+      race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    });
+
+    mergedRecentResults.forEach((race) => {
       race.id = getRaceId(race);
     });
 
@@ -1069,7 +1456,7 @@ async function loadRaceData() {
 
     const data = {
       fetchedAt: new Date().toISOString(),
-      recentResults,
+      recentResults: mergedRecentResults,
       liveStageRaces,
       upcomingRaces,
     };
@@ -1109,19 +1496,16 @@ function buildPodiumMarkup(entries) {
 function buildStageRaceCard(race, options = {}) {
   const latestStage = race.stageRace?.latestStage || null;
   const classification = race.stageRace?.generalClassification || null;
-  const isFinalizedStageRace =
-    !options.live &&
-    (race.stageRace?.completedStages || 0) > 0 &&
-    (race.stageRace?.totalStages || 0) > 0 &&
-    (race.stageRace.completedStages || 0) >= (race.stageRace.totalStages || 0);
+  const isFinalized = isFinalizedStageRace(race);
   const hasCurrentGcSnapshot =
     options.live ||
     ((race.stageRace?.completedStages || 0) > 0 &&
       (race.stageRace?.totalStages || 0) > 0 &&
       (race.stageRace.completedStages || 0) < (race.stageRace.totalStages || 0));
   const stageLabel = latestStage?.number ? `Stage ${latestStage.number}` : "Latest stage";
-  const classificationLabel =
-    classification?.stageNumber && hasCurrentGcSnapshot
+  const classificationLabel = isFinalized
+    ? "Final general classification"
+    : classification?.stageNumber && hasCurrentGcSnapshot
       ? `Overall after stage ${classification.stageNumber}`
       : "Overall classification";
   const stageStandings = latestStage?.standings || [];
@@ -1133,7 +1517,22 @@ function buildStageRaceCard(race, options = {}) {
       { place: "2", rider: race.second },
       { place: "3", rider: race.third },
     ].filter((entry) => entry.rider);
-  const liveBadge = options.live ? `<span class="status-pill">Live stage race</span>` : "";
+  const totalStagesLabel =
+    (race.stageRace?.totalStages || 0) > 0
+      ? `All ${race.stageRace.totalStages} stages ${race.finishedToday ? "were completed today." : "are complete."}`
+      : race.finishedToday
+        ? "The race finished today."
+        : "Final standings are now available.";
+  const statusBadge = options.live
+    ? `<span class="status-pill">Live stage race</span>`
+    : isFinalized
+      ? `<span class="status-pill status-pill-finished">${escapeHtml(race.finishedToday ? "Finished today" : "Final stage race")}</span>`
+      : "";
+  const statusNote = options.live
+    ? `<p class="stage-status-note">Live classifications refresh as stage and GC data become available.</p>`
+    : isFinalized
+      ? `<p class="stage-status-note">${escapeHtml(totalStagesLabel)}</p>`
+      : "";
   const stageContent = latestStage?.winner
     ? `
       <div class="card-subsection">
@@ -1157,15 +1556,16 @@ function buildStageRaceCard(race, options = {}) {
         <div class="detail-label">Overall classification</div>
         <p class="meta">The general classification is not available yet.</p>
       </div>`;
-  const orderedContent = isFinalizedStageRace
+  const orderedContent = isFinalized
     ? `${gcContent}${stageContent}`
     : `${stageContent}${gcContent}`;
 
   return `
     <article class="card result-card stage-race-card">
-      <div class="card-kicker">${escapeHtml(race.series)} ${liveBadge}</div>
+      <div class="card-kicker">${escapeHtml(race.series)} ${statusBadge}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
+      ${statusNote}
       ${orderedContent}
     </article>`;
 }
@@ -1268,6 +1668,13 @@ function getCompetitionGroups(data) {
       description: "The ProSeries races added today, with live stage races, fresh results, and upcoming events.",
       predicate: (race) => /ProSeries/.test(race.series),
     },
+    {
+      id: "europe-tour",
+      label: "Europe Tour Spotlight",
+      tag: "Selected 2.1 Races",
+      description: "Selected Europe Tour stage races that are worth tracking alongside the top-tier calendars.",
+      predicate: (race) => race.series === "Men's Europe Tour",
+    },
   ];
 
   return definitions.map((definition) => ({
@@ -1361,7 +1768,7 @@ function buildHtmlPage(data, view) {
     "Top-five race results",
     "Upcoming race calendars",
     "Competition-specific coverage",
-    "WorldTour and ProSeries tracking",
+    "WorldTour, ProSeries, and featured stage races",
   ]
     .map(
       (highlight) => `
@@ -1836,6 +2243,18 @@ function buildHtmlPage(data, view) {
         letter-spacing: 0.08em;
         text-transform: uppercase;
         vertical-align: middle;
+      }
+
+      .status-pill-finished {
+        background: rgba(0, 71, 212, 0.12);
+        color: var(--uci-blue-deep);
+      }
+
+      .stage-status-note {
+        margin: 0.1rem 0 0;
+        color: rgba(9, 33, 76, 0.72);
+        font-size: 0.94rem;
+        line-height: 1.45;
       }
 
       .article-grid {
