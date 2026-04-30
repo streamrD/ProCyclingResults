@@ -1,9 +1,10 @@
 {
-  "name": "procyclingresults",
+  "name": "mt-mitchell",
   "version": "1.0.0",
-  "private": true,
-  "description": "Live pro cycling results and upcoming races",
   "scripts": {
-    "start": "node server.js"
+    "start": "npx serve -s . -l $PORT"
+  },
+  "dependencies": {
+    "serve": "^14.0.0"
   }
 }
