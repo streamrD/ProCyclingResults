@@ -6,6 +6,8 @@ const { URL } = require("url");
 const PORT = process.env.PORT || 3000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";
+const UMAMI_ANALYTICS_SCRIPT =
+  '<script defer src="https://todd-umami.up.railway.app/script.js" data-website-id="2ad971aa-bf49-4708-b2b3-e117825d9e13"></script>';
 const MAX_RACE_ARTICLES = 8;
 const MAX_RESULT_RIDERS = 5;
 const MAX_RECENT_RESULTS = 24;
@@ -2039,6 +2041,7 @@ function buildHtmlPage(data, view) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pro Cycling Results</title>
+    ${UMAMI_ANALYTICS_SCRIPT}
     <style>
       @font-face {
         font-family: "Manrope";
@@ -2772,7 +2775,7 @@ async function sendStaticFile(response, pathname) {
     sendHtml(
       response,
       403,
-      "<!doctype html><meta charset='utf-8'><title>Forbidden</title><h1>Forbidden</h1>",
+      `<!doctype html><meta charset='utf-8'><title>Forbidden</title>${UMAMI_ANALYTICS_SCRIPT}<h1>Forbidden</h1>`,
     );
     return true;
   }
@@ -2826,7 +2829,7 @@ const server = http.createServer(async (request, response) => {
       sendHtml(
         response,
         404,
-        "<!doctype html><meta charset='utf-8'><title>Not Found</title><h1>Not Found</h1>",
+        `<!doctype html><meta charset='utf-8'><title>Not Found</title>${UMAMI_ANALYTICS_SCRIPT}<h1>Not Found</h1>`,
       );
       return;
     }
@@ -2873,6 +2876,7 @@ const server = http.createServer(async (request, response) => {
        <html lang="en">
          <meta charset="utf-8" />
          <title>Race Feed Error</title>
+         ${UMAMI_ANALYTICS_SCRIPT}
          <body style="font-family: Georgia, serif; padding: 2rem; background: #f6fbf7; color: #102217;">
            <h1>Unable to load race data</h1>
            <p>${escapeHtml(error.message)}</p>
