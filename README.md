@@ -137,9 +137,9 @@ The application fetches raw page content via:
 
 It parses season tables, race pages, infobox fields, result templates, and stage-race sections directly from raw wiki markup using regular expressions and string heuristics.
 
-### Secondary source: Google News RSS
+### Secondary source: Bing News RSS
 
-Race coverage articles are pulled from Google News RSS search feeds, using several search queries per race name variant. The app then filters, deduplicates, and scores those results.
+Race coverage articles are pulled from Bing News RSS search feeds, using several search queries per race name variant. The app then filters, deduplicates, and scores those results.
 
 Used for:
 
@@ -415,7 +415,7 @@ These assumptions matter when extending the project:
 
 - External network access is required for useful page loads
 - Wikipedia page structures are assumed to remain similar to current raw markup
-- Google News RSS remains accessible and query-compatible
+- Bing News RSS remains accessible and query-compatible
 - Official special-case endpoints remain available
 - The app is optimized for a small number of concurrent requests, not large-scale throughput
 - Failures in upstream sources can degrade or break parts of the page
@@ -427,7 +427,7 @@ Likely breakpoints:
 - Wikipedia changes table or template structure
 - Wikipedia updates a live race page unevenly, leaving stage and GC blocks temporarily out of sync
 - A race page uses unusual wording or missing fields
-- Google News RSS returns weak or noisy race matches
+- Bing News RSS returns weak or noisy race matches
 - Women's / men's name disambiguation misses edge cases
 - Official special-case text patterns stop matching
 - Deployment environment blocks outbound HTTP requests

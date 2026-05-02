@@ -1620,6 +1620,17 @@ function extractFeedItems(xml) {
   return [...String(xml || "").matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((match) => match[1]);
 }
 
+function extractFirstXmlTag(block, tagNames) {
+  for (const tagName of tagNames) {
+    const value = extractXmlTag(block, tagName);
+    if (value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 function buildRaceArticleQueries(race) {
   const raceYear = getRaceYear(race);
   const variants = getRaceArticleVariants(race).slice(0, 8);
@@ -1721,6 +1732,35 @@ function normalizeArticleTitle(title, publisher) {
     .trim();
 }
 
+function normalizeArticlePublisher(publisher) {
+  return cleanFeedText(publisher)
+    .replace(/\s+on\s+msn$/i, "")
+    .trim();
+}
+
+function normalizeArticleUrl(rawUrl) {
+  const cleanedUrl = cleanFeedText(rawUrl);
+
+  if (!cleanedUrl) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(cleanedUrl);
+
+    if (/(\.|^)bing\.com$/i.test(parsed.hostname) && /\/news\/apiclick\.aspx$/i.test(parsed.pathname)) {
+      const targetUrl = parsed.searchParams.get("url");
+      if (targetUrl) {
+        return cleanFeedText(targetUrl);
+      }
+    }
+
+    return parsed.toString();
+  } catch {
+    return cleanedUrl;
+  }
+}
+
 function scoreRaceArticle(article, race) {
   const title = normalizeSearchText(article.title);
   const description = normalizeSearchText(article.description);
@@ -1740,10 +1780,11 @@ function scoreRaceArticle(article, race) {
 }
 
 function buildArticleItem(block, race) {
-  const title = normalizeArticleTitle(extractXmlTag(block, "title"), extractXmlTag(block, "source"));
-  const publisher = cleanFeedText(extractXmlTag(block, "source")) || "News source";
+  const rawPublisher = extractFirstXmlTag(block, ["News:Source", "source"]);
+  const publisher = normalizeArticlePublisher(rawPublisher) || "News source";
+  const title = normalizeArticleTitle(extractXmlTag(block, "title"), publisher);
   const description = cleanFeedText(extractXmlTag(block, "description"));
-  const url = cleanFeedText(extractXmlTag(block, "link"));
+  const url = normalizeArticleUrl(extractXmlTag(block, "link"));
   const publishedAt = cleanFeedText(extractXmlTag(block, "pubDate"));
 
   return {
@@ -1758,18 +1799,21 @@ function buildArticleItem(block, race) {
   };
 }
 
+async function fetchNewsFeed(query) {
+  const params = new URLSearchParams({
+    q: query,
+    format: "rss",
+  });
+
+  return fetchText(`https://www.bing.com/news/search?${params.toString()}`);
+}
+
 async function fetchRaceArticles(race) {
   const queries = buildRaceArticleQueries(race);
   const xmlFeeds = await Promise.all(
     queries.map(async (query) => {
       try {
-        const params = new URLSearchParams({
-          q: query,
-          hl: "en-US",
-          gl: "US",
-          ceid: "US:en",
-        });
-        return await fetchText(`https://news.google.com/rss/search?${params.toString()}`);
+        return await fetchNewsFeed(query);
       } catch {
         return "";
       }
