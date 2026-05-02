@@ -172,6 +172,32 @@ function decodeHtml(value) {
       .replaceAll("&amp;", "&");
   }
 
+  decoded = decoded
+    .replace(/&#(\d+);/g, (_, codePoint) => {
+      const value = Number.parseInt(codePoint, 10);
+      if (!Number.isFinite(value)) {
+        return _;
+      }
+
+      try {
+        return String.fromCodePoint(value);
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, codePoint) => {
+      const value = Number.parseInt(codePoint, 16);
+      if (!Number.isFinite(value)) {
+        return _;
+      }
+
+      try {
+        return String.fromCodePoint(value);
+      } catch {
+        return _;
+      }
+    });
+
   return decoded;
 }
 
