@@ -563,12 +563,13 @@ function splitWikiTemplateArgs(templateText) {
 
 function parseCyclingResultLine(line) {
   const trimmed = String(line || "").trim();
-  if (!trimmed.startsWith("{{cyclingresult|")) {
+  if (!/^\{\{\s*cycling\s*result\s*\|/i.test(trimmed)) {
     return null;
   }
 
   const args = splitWikiTemplateArgs(trimmed.replace(/^\{\{/, "").replace(/\}\}$/, ""));
-  if (args[0] !== "cyclingresult" || args.length < 3) {
+  const templateName = String(args[0] || "").replace(/\s+/g, "").toLowerCase();
+  if (templateName !== "cyclingresult" || args.length < 3) {
     return null;
   }
 
@@ -579,7 +580,7 @@ function parseCyclingResultLine(line) {
 }
 
 function extractCyclingResultBlocks(rawText) {
-  return [...String(rawText || "").matchAll(/\{\{cyclingresult start(?:\|title=([\s\S]*?))?\}\}([\s\S]*?)\{\{cyclingresult end(?:[\s\S]*?)\}\}/gi)].map(
+  return [...String(rawText || "").matchAll(/\{\{\s*cycling\s*result\s*start(?:\|title=([\s\S]*?))?\}\}([\s\S]*?)\{\{\s*cycling\s*result\s*end(?:[\s\S]*?)\}\}/gi)].map(
     (match) => ({
       title: cleanWikiText(match[1] || ""),
       body: match[2],
