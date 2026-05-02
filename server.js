@@ -890,6 +890,167 @@ function buildStandingEntry(place, rider) {
   return rider ? { place: String(place), rider } : null;
 }
 
+function buildStandings(riders) {
+  return riders.map((rider, index) => buildStandingEntry(index + 1, rider)).filter(Boolean);
+}
+
+const STATIC_STAGE_RACE_SNAPSHOTS = {
+  "2026 Tour de la Provence": {
+    totalStages: 3,
+    completedStages: 3,
+    latestStage: {
+      number: 3,
+      label: "Stage 3",
+      standings: buildStandings([
+        "Axel Laurance",
+        "Maxime Jarnet",
+        "Lorenzo Manzin",
+        "Victor Loulergue",
+        "Simon Carr",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 3,
+      standings: buildStandings([
+        "Matthew Riccitello",
+        "Carlos Rodríguez Cano",
+        "Brandon Smith Rivera Vargas",
+        "Aurélien Paret-Peintre",
+        "Clément Champoussin",
+      ]),
+    },
+  },
+  "Giro di Sardegna": {
+    totalStages: 5,
+    completedStages: 5,
+    latestStage: {
+      number: 5,
+      label: "Stage 5",
+      standings: buildStandings([
+        "Davide Donati",
+        "Davide Persico",
+        "Tilen Finkšt",
+        "Kristian Egholm",
+        "Manuel Peñalver",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 5,
+      standings: buildStandings([
+        "Filippo Zana",
+        "Gianmarco Garofoli",
+        "Alessandro Verre",
+        "Urko Berrade Fernández",
+        "Ibon Ruiz Sedano",
+      ]),
+    },
+  },
+  "Settimana Internazionale di Coppi e Bartali": {
+    totalStages: 5,
+    completedStages: 5,
+    latestStage: {
+      number: 5,
+      label: "Stage 5",
+      standings: buildStandings([
+        "Mauro Schmid",
+        "Axel Laurance",
+        "Alan Hatherly",
+        "Giovanni Aleotti",
+        "Matteo Fabbro",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 5,
+      standings: buildStandings([
+        "Mauro Schmid",
+        "Axel Laurance",
+        "Alan Hatherly",
+        "Thomas Pesenti",
+        "Anton Schiffer",
+      ]),
+    },
+  },
+  "2026 O Gran Camiño": {
+    totalStages: 5,
+    completedStages: 5,
+    latestStage: {
+      number: 5,
+      label: "Stage 5",
+      standings: buildStandings([
+        "Alessandro Pinarello",
+        "Jørgen Nordhagen",
+        "Adam Yates",
+        "Iván Romeo Abad",
+        "Txomin Juaristi Arrieta",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 5,
+      standings: buildStandings([
+        "Adam Yates",
+        "Jørgen Nordhagen",
+        "Alessandro Pinarello",
+        "Abel Balderstone Roumens",
+        "Iván Romeo Abad",
+      ]),
+    },
+  },
+  "Vuelta Asturias": {
+    totalStages: 4,
+    completedStages: 4,
+    latestStage: {
+      number: 4,
+      label: "Stage 4",
+      standings: buildStandings([
+        "Edgar David Cadena",
+        "Adrià Pericas",
+        "José Manuel Díaz",
+        "Nairo Quintana",
+        "Txomin Juaristi",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 4,
+      standings: buildStandings([
+        "Nairo Quintana",
+        "Adrià Pericas",
+        "Diego Pescador",
+        "Txomin Juaristi",
+        "Samuel Fernández",
+      ]),
+    },
+  },
+};
+
+function getStaticStageRaceSnapshot(race) {
+  if (getRaceYear(race) !== 2026) {
+    return null;
+  }
+
+  const snapshot = STATIC_STAGE_RACE_SNAPSHOTS[race?.pageTitle];
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    totalStages: snapshot.totalStages,
+    completedStages: snapshot.completedStages,
+    latestStage: snapshot.latestStage
+      ? {
+          ...snapshot.latestStage,
+          winner: snapshot.latestStage.standings[0]?.rider || "",
+        }
+      : null,
+    generalClassification: snapshot.generalClassification
+      ? {
+          ...snapshot.generalClassification,
+          leader: snapshot.generalClassification.standings[0]?.rider || "",
+        }
+      : null,
+    overallResult: snapshot.generalClassification?.standings || [],
+  };
+}
+
 function toTitleCaseWords(value) {
   return String(value || "")
     .toLowerCase()
@@ -1149,6 +1310,11 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
 }
 
 async function loadOfficialStageRaceSnapshot(race) {
+  const staticSnapshot = getStaticStageRaceSnapshot(race);
+  if (staticSnapshot) {
+    return staticSnapshot;
+  }
+
   switch (getOfficialStageRaceSource(race)) {
     case "tour-de-romandie-prologue":
       return fetchTourDeRomandieOfficialSnapshot(race);
