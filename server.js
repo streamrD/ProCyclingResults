@@ -1256,6 +1256,10 @@ function isOneDayRace(race) {
   return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() === race.endDate.getTime();
 }
 
+function selectUpcomingRaces(races, predicate, limit = MAX_UPCOMING_RACES) {
+  return races.filter(predicate).slice(0, limit);
+}
+
 function isFinalizedStageRace(race) {
   return (
     (race?.stageRace?.completedStages || 0) > 0 &&
@@ -1665,8 +1669,7 @@ async function loadRaceData() {
 
     const upcomingRaces = allRaces
       .filter((race) => race.startDate && race.startDate > todayUtc)
-      .sort((left, right) => left.startDate - right.startDate)
-      .slice(0, MAX_UPCOMING_RACES);
+      .sort((left, right) => left.startDate - right.startDate);
 
     const europeTourRaces = allRaces.filter((race) => race.series === "Men's Europe Tour");
     const europeTourRecentResults = europeTourRaces
@@ -1695,10 +1698,16 @@ async function loadRaceData() {
       .sort((left, right) => left.startDate - right.startDate)
       .slice(0, MAX_EUROPE_TOUR_UPCOMING);
 
+    const upcomingDisplayRaces = [
+      ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Men's WorldTour"),
+      ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Women's WorldTour"),
+      ...selectUpcomingRaces(upcomingRaces, (race) => /ProSeries/.test(race.series)),
+    ];
+
     const displayRaces = [
       ...recentResults,
       ...liveStageCandidates,
-      ...upcomingRaces,
+      ...upcomingDisplayRaces,
       ...europeTourRecentResults,
       ...europeTourLiveStageRaces,
       ...europeTourUpcomingRaces,
@@ -2021,7 +2030,9 @@ function getCompetitionGroups(data) {
     recentResults: (data[definition.recentSource || "recentResults"] || [])
       .filter(definition.predicate)
       .slice(0, definition.recentResultsLimit || MAX_RECENT_RESULTS),
-    upcomingRaces: (data[definition.upcomingSource || "upcomingRaces"] || []).filter(definition.predicate),
+    upcomingRaces: (data[definition.upcomingSource || "upcomingRaces"] || [])
+      .filter(definition.predicate)
+      .slice(0, definition.upcomingRacesLimit || MAX_UPCOMING_RACES),
   }));
 }
 
