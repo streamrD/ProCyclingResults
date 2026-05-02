@@ -706,10 +706,11 @@ function extractStageRaceSnapshot(rawText) {
 
   return {
     totalStages,
-    completedStages:
-      latestGc?.stageNumber ||
-      latestStage?.stageOrder ||
+    completedStages: Math.max(
+      latestGc?.stageNumber || 0,
+      latestStage?.stageOrder || 0,
       routeStageWinners.reduce((max, entry) => Math.max(max, entry.stageOrder), 0),
+    ),
     latestStage: latestStage
       ? {
           number: latestStage.stageNumber,
@@ -728,6 +729,40 @@ function extractStageRaceSnapshot(rawText) {
         : null,
     overallResult: overallResult.length > 0 ? overallResult : finalStandings,
   };
+}
+
+function applyKnownStageRaceCorrections(race, snapshot) {
+  if (!snapshot || race?.pageTitle !== "2026 Tour de Romandie") {
+    return snapshot;
+  }
+
+  const latestStageNumber = snapshot.latestStage?.number || 0;
+  const gcStageNumber = snapshot.generalClassification?.stageNumber || 0;
+
+  // On May 1, 2026, the Romandie page published Stage 3 results while repeating
+  // the Stage 2 GC block. Patch that specific stale upstream state until the
+  // source page catches up.
+  if (latestStageNumber === 3 && gcStageNumber === 2) {
+    const correctedStandings = [
+      buildStandingEntry(1, "Tadej Pogačar"),
+      buildStandingEntry(2, "Florian Lipowitz"),
+      buildStandingEntry(3, "Lenny Martinez"),
+      buildStandingEntry(4, "Jørgen Nordhagen"),
+      buildStandingEntry(5, "Albert Withen Philipsen"),
+    ].filter(Boolean);
+
+    return {
+      ...snapshot,
+      completedStages: Math.max(snapshot.completedStages || 0, 3),
+      generalClassification: {
+        stageNumber: 3,
+        standings: correctedStandings,
+        leader: correctedStandings[0]?.rider || "",
+      },
+    };
+  }
+
+  return snapshot;
 }
 
 function getOfficialStageRaceSource(race) {
@@ -1198,7 +1233,7 @@ async function enrichStageRaceSnapshots(races) {
         }
 
         const raw = await fetchWikiRaw(race.pageTitle);
-        const snapshot = extractStageRaceSnapshot(raw);
+        const snapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
 
         if (snapshot.totalStages > 1 || snapshot.completedStages > 0) {
           race.stageRace = snapshot;
@@ -1224,7 +1259,7 @@ async function enrichRecentResultStandings(races) {
         }
 
         const raw = await fetchWikiRaw(race.pageTitle);
-        const snapshot = extractStageRaceSnapshot(raw);
+        const snapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
 
         if (snapshot.totalStages > 1 || snapshot.completedStages > 0) {
           race.stageRace = snapshot;
