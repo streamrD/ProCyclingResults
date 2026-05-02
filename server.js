@@ -78,7 +78,29 @@ const SEASONS = [
     dateIndex: 2,
     winnerIndex: 3,
     statusStartIndex: 3,
-    includePageTitles: ["Vuelta Asturias"],
+    includePageTitles: [
+      "2026 Étoile de Bessèges",
+      "2026 Tour de la Provence",
+      "Giro di Sardegna",
+      "Settimana Internazionale di Coppi e Bartali",
+      "2026 O Gran Camiño",
+      "Vuelta Asturias",
+      "Grande Prémio Anicolor",
+      "Tour of Greece",
+      "Flèche du Sud",
+      "GP Beiras e Serra da Estrela",
+      "Tour of Estonia",
+      "Route d'Occitanie",
+      "Sibiu Cycling Tour",
+      "Tour of Austria",
+      "Tour de l'Ain",
+      "Tour du Limousin",
+      "Tour Poitou-Charentes en Nouvelle-Aquitaine",
+      "Tour of Istanbul",
+      "Giro d'Abruzzo",
+      "Okolo Slovenska",
+      "Tour of Holland",
+    ],
   },
 ];
 
@@ -1694,7 +1716,7 @@ async function loadRaceData() {
       })
       .slice(0, MAX_LIVE_STAGE_RACES);
     const europeTourUpcomingRaces = europeTourRaces
-      .filter((race) => race.startDate && race.startDate > todayUtc)
+      .filter((race) => isMultiDayRace(race) && race.startDate && race.startDate > todayUtc)
       .sort((left, right) => left.startDate - right.startDate)
       .slice(0, MAX_EUROPE_TOUR_UPCOMING);
 
