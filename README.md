@@ -159,8 +159,10 @@ Current special cases:
   Hard-coded prologue snapshot logic for the first day only
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
+- Eschborn-Frankfurt
+  Pulls the official rankings page to recover top-five one-day results when the current-edition Wikipedia race page is missing
 
-This special-case logic is centralized behind `getOfficialStageRaceSource()` and `loadOfficialStageRaceSnapshot()`.
+This special-case logic is centralized behind `getOfficialStageRaceSource()`, `loadOfficialStageRaceSnapshot()`, `getOfficialOneDayResultSource()`, and `loadOfficialOneDayResultStandings()`.
 
 ## Data Model and Aggregation Flow
 
@@ -283,6 +285,8 @@ It does this from Wikipedia race pages when possible by parsing:
 - infobox first/second/third fields
 
 If a race has official special-case logic, that is attempted first.
+
+One practical complication: live Wikipedia race pages can be only partially updated. A stage result block may be current while the general-classification block is still from the previous stage. When that happens, prefer a narrow correction layer for the affected race over loosening the global parser in a way that could degrade other races.
 
 ### Location enrichment
 
@@ -415,6 +419,7 @@ These assumptions matter when extending the project:
 Likely breakpoints:
 
 - Wikipedia changes table or template structure
+- Wikipedia updates a live race page unevenly, leaving stage and GC blocks temporarily out of sync
 - A race page uses unusual wording or missing fields
 - Google News RSS returns weak or noisy race matches
 - Women's / men's name disambiguation misses edge cases
@@ -466,6 +471,8 @@ Typical files/areas:
 - official race-specific snapshot functions
 
 This is the most brittle and highest-value area for correctness work.
+
+When a single live race is wrong because an upstream page is stale or internally inconsistent, prefer adding a tightly scoped correction step for that race rather than weakening shared parsing heuristics. The 2026 Tour de Romandie Stage 3 GC correction is the model for that approach.
 
 ### 3. Improve article relevance
 

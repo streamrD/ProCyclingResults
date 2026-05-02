@@ -864,6 +864,12 @@ function buildStandingEntry(place, rider) {
   return rider ? { place: String(place), rider } : null;
 }
 
+function toTitleCaseWords(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b([\p{L}])([\p{L}'’.-]*)/gu, (_, first, rest) => `${first.toUpperCase()}${rest}`);
+}
+
 function uniqueStandings(entries) {
   const seen = new Set();
 
@@ -1127,6 +1133,46 @@ async function loadOfficialStageRaceSnapshot(race) {
   }
 }
 
+function getOfficialOneDayResultSource(race) {
+  if (race?.pageTitle === "2026 Eschborn–Frankfurt") {
+    return "eschborn-frankfurt";
+  }
+
+  return "";
+}
+
+function parseEschbornFrankfurtOfficialStandings(html) {
+  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) {
+    return [];
+  }
+
+  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const row = match[1];
+      const placeMatch = row.match(/<td class="is-alignCenter">(\d+)<\/td>/i);
+      const riderMatch = row.match(/<td class="runner[^"]*"[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i);
+      const place = Number.parseInt(placeMatch?.[1] || "", 10);
+      const rider = toTitleCaseWords(cleanFeedText(riderMatch?.[1] || ""));
+      return Number.isInteger(place) ? buildStandingEntry(place, rider) : null;
+    })
+    .filter((entry) => entry && Number(entry.place) <= MAX_RESULT_RIDERS);
+}
+
+async function fetchEschbornFrankfurtOfficialStandings() {
+  const html = await fetchText("https://www.eschborn-frankfurt.de/de/klassements");
+  return parseEschbornFrankfurtOfficialStandings(html);
+}
+
+async function loadOfficialOneDayResultStandings(race) {
+  switch (getOfficialOneDayResultSource(race)) {
+    case "eschborn-frankfurt":
+      return fetchEschbornFrankfurtOfficialStandings(race);
+    default:
+      return [];
+  }
+}
+
 function extractLeadLocation(rawText) {
   const lead = rawText
     .split("\n\n")
@@ -1255,6 +1301,12 @@ async function enrichRecentResultStandings(races) {
         if (officialSnapshot?.completedStages > 0) {
           race.stageRace = officialSnapshot;
           race.resultStandings = officialSnapshot.generalClassification?.standings || officialSnapshot.overallResult || [];
+          return;
+        }
+
+        const officialOneDayStandings = await loadOfficialOneDayResultStandings(race);
+        if (officialOneDayStandings.length > 0) {
+          race.resultStandings = officialOneDayStandings;
           return;
         }
 
