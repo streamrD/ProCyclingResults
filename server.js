@@ -2404,6 +2404,19 @@ function buildHtmlPage(data, view) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pro Cycling Results" />
+    <meta property="og:title" content="Pro Cycling Results" />
+    <meta property="og:description" content="Live race standings, recent results, and news coverage for the 2026 UCI WorldTour, Women's WorldTour, ProSeries, and Europe Tour." />
+    <meta property="og:url" content="https://procyclingresults.up.railway.app" />
+    <meta property="og:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="405" />
+    <meta property="og:image:alt" content="Pro Cycling Results — Live UCI Race Coverage" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Pro Cycling Results" />
+    <meta name="twitter:description" content="Live race standings, recent results, and news coverage for the 2026 UCI WorldTour, Women's WorldTour, ProSeries, and Europe Tour." />
+    <meta name="twitter:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
