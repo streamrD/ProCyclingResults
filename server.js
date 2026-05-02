@@ -111,12 +111,16 @@ const COUNTRY_NAMES = {
   CHN: "China",
   DEN: "Denmark",
   ESP: "Spain",
+  EST: "Estonia",
   FRA: "France",
   GBR: "United Kingdom",
   GER: "Germany",
+  GRE: "Greece",
   ITA: "Italy",
+  LUX: "Luxembourg",
   NED: "Netherlands",
   POL: "Poland",
+  POR: "Portugal",
   SUI: "Switzerland",
   UAE: "United Arab Emirates",
 };
@@ -1211,8 +1215,7 @@ function extractLeadLocation(rawText) {
   for (const pattern of patterns) {
     const match = lead.match(pattern);
     if (match) {
-      const value = cleanWikiText(match[1]).replace(/\s+,/g, ",");
-      return value
+      return cleanLocationValue(match[1])
         .replace(/^(?:the\s+)?(?:[a-z]+\s+)?city of\s+/i, "")
         .replace(/^(?:the\s+)?city of\s+/i, "")
         .replace(/\bthe municipality of\s+/gi, "")
@@ -1224,9 +1227,18 @@ function extractLeadLocation(rawText) {
   return "";
 }
 
+function cleanLocationValue(value) {
+  return cleanWikiText(String(value || ""))
+    .replace(/\burl\s*=\s*\S+/gi, "")
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/\s+,/g, ",")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function extractInfoboxLocation(rawText) {
   const match = rawText.match(/^\|\s*location\s*=\s*(.+)$/im);
-  return match ? cleanWikiText(match[1]) : "";
+  return match ? cleanLocationValue(match[1]) : "";
 }
 
 function isLikelyLocation(value) {
@@ -1247,7 +1259,7 @@ function isLikelyLocation(value) {
     return false;
   }
 
-  return !/(organisers|announced|world tour|women's world tour|men's world tour|season|edition|race would be held|victory|attack|winner|podium|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(
+  return !/(\burl\s*=|\bhttps?:\/\/|\bwww\.|\?|organisers|announced|world tour|women's world tour|men's world tour|season|edition|race would be held|victory|attack|winner|podium|preview|report|results?|contenders?|calendar|\bgrand prix\b|\bgp\b|january|february|march|april|may|june|july|august|september|october|november|december)/i.test(
     text,
   );
 }
@@ -1326,7 +1338,10 @@ async function enrichRecentResultStandings(races) {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         if (officialSnapshot?.completedStages > 0) {
           race.stageRace = officialSnapshot;
-          race.resultStandings = officialSnapshot.generalClassification?.standings || officialSnapshot.overallResult || [];
+          race.resultStandings = selectStandings(
+            officialSnapshot.generalClassification?.standings,
+            officialSnapshot.overallResult,
+          );
           return;
         }
 
@@ -1341,7 +1356,7 @@ async function enrichRecentResultStandings(races) {
 
         if (snapshot.totalStages > 1 || snapshot.completedStages > 0) {
           race.stageRace = snapshot;
-          race.resultStandings = snapshot.generalClassification?.standings || snapshot.overallResult || [];
+          race.resultStandings = selectStandings(snapshot.generalClassification?.standings, snapshot.overallResult);
           return;
         }
 
@@ -1747,13 +1762,13 @@ async function loadRaceData() {
 
     finalizedStageRaces.forEach((race) => {
       if (!race.resultStandings?.length) {
-        race.resultStandings = race.stageRace?.generalClassification?.standings || race.stageRace?.overallResult || [];
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
       }
     });
 
     europeTourRecentResults.forEach((race) => {
       if (!race.resultStandings?.length) {
-        race.resultStandings = race.stageRace?.generalClassification?.standings || race.stageRace?.overallResult || [];
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
       }
     });
 
@@ -1840,6 +1855,16 @@ function buildPodiumMarkup(entries) {
   return podium ? `<ol class="podium-list">${podium}</ol>` : `<p class="meta">Result details are still being updated.</p>`;
 }
 
+function selectStandings(...candidateLists) {
+  for (const candidate of candidateLists) {
+    if (Array.isArray(candidate) && candidate.some((entry) => entry?.rider)) {
+      return candidate.filter((entry) => entry?.rider);
+    }
+  }
+
+  return [];
+}
+
 function buildStageRaceCard(race, options = {}) {
   const latestStage = race.stageRace?.latestStage || null;
   const classification = race.stageRace?.generalClassification || null;
@@ -1851,6 +1876,11 @@ function buildStageRaceCard(race, options = {}) {
       (race.stageRace.completedStages || 0) < (race.stageRace.totalStages || 0));
   const stageLabel = latestStage?.label || (latestStage?.number ? `Stage ${latestStage.number}` : "Latest stage");
   const isPrologueClassification = classification?.stageNumber === 0 || latestStage?.label === "Prologue";
+  const fallbackPodium = [
+    { place: "1", rider: race.winner },
+    { place: "2", rider: race.second },
+    { place: "3", rider: race.third },
+  ].filter((entry) => entry.rider);
   const classificationLabel = isFinalized
     ? "Final general classification"
     : isPrologueClassification && hasCurrentGcSnapshot
@@ -1858,15 +1888,13 @@ function buildStageRaceCard(race, options = {}) {
       : classification?.stageNumber && hasCurrentGcSnapshot
       ? `Overall after stage ${classification.stageNumber}`
       : "Overall classification";
-  const stageStandings = latestStage?.standings || [];
-  const gcStandings =
-    classification?.standings ||
-    race.resultStandings ||
-    [
-      { place: "1", rider: race.winner },
-      { place: "2", rider: race.second },
-      { place: "3", rider: race.third },
-    ].filter((entry) => entry.rider);
+  const stageStandings = selectStandings(latestStage?.standings);
+  const gcStandings = selectStandings(
+    classification?.standings,
+    race.resultStandings,
+    race.stageRace?.overallResult,
+    fallbackPodium,
+  );
   const totalStagesLabel =
     (race.stageRace?.totalStages || 0) > 0
       ? `All ${race.stageRace.totalStages} stages ${race.finishedToday ? "were completed today." : "are complete."}`
@@ -1925,19 +1953,21 @@ function buildRaceCard(race) {
     return buildStageRaceCard(race);
   }
 
+  const standings = selectStandings(
+    race.resultStandings,
+    [
+      { place: "1", rider: race.winner },
+      { place: "2", rider: race.second },
+      { place: "3", rider: race.third },
+    ],
+  );
+
   return `
     <article class="card result-card">
       <div class="card-kicker">${escapeHtml(race.series)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
-      ${buildPodiumMarkup(
-        race.resultStandings ||
-          [
-            { place: "1", rider: race.winner },
-            { place: "2", rider: race.second },
-            { place: "3", rider: race.third },
-          ],
-      )}
+      ${buildPodiumMarkup(standings)}
     </article>`;
 }
 

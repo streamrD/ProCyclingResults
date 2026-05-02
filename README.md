@@ -242,6 +242,8 @@ Utilities such as `cleanWikiText()`, `decodeHtml()`, `parseAthlete()`, and `pars
 
 This is intentionally heuristic, not a full wiki parser.
 
+Location enrichment is also heuristic. Before replacing the season-table fallback location, the app now sanitizes extracted lead / infobox text and rejects values that look like citation residue, article headlines, raw URLs, or other non-location content.
+
 ### Date handling
 
 Dates are parsed from season-table text into UTC `Date` objects. The app compares race boundaries using UTC calendar dates to decide whether a race is:
@@ -544,6 +546,7 @@ If another agent is taking over development, these are strong candidates:
 - Most bugs will come from upstream content drift, not from complex internal state.
 - The fastest way to make safe changes is usually to preserve the existing pipeline and improve a narrow parser or grouping rule.
 - When debugging data issues, inspect the upstream raw Wikipedia page or feed content first.
+- Empty standings arrays should be treated as missing data. Result selection and rendering intentionally prefer the first non-empty standings list and otherwise fall back to the stored winner / podium fields.
 - When adding exceptions for a race, prefer a contained special-case function over weakening global heuristics.
 
 ## Current Project Facts
