@@ -161,6 +161,10 @@ Current special cases:
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
 - Eschborn-Frankfurt
   Pulls the official rankings page to recover top-five one-day results when the current-edition Wikipedia race page is missing
+- Selected 2026 Europe Tour stage races
+  Use bounded fallback snapshots when the current upstream race pages do not expose complete stage / GC result blocks
+- Grande Prémio Anicolor
+  Uses a date-bounded live fallback snapshot while the current edition is in progress and upstream live stage data is still sparse
 
 This special-case logic is centralized behind `getOfficialStageRaceSource()`, `loadOfficialStageRaceSnapshot()`, `getOfficialOneDayResultSource()`, and `loadOfficialOneDayResultStandings()`.
 
@@ -547,6 +551,7 @@ If another agent is taking over development, these are strong candidates:
 - The fastest way to make safe changes is usually to preserve the existing pipeline and improve a narrow parser or grouping rule.
 - When debugging data issues, inspect the upstream raw Wikipedia page or feed content first.
 - Empty standings arrays should be treated as missing data. Result selection and rendering intentionally prefer the first non-empty standings list and otherwise fall back to the stored winner / podium fields.
+- Some race-specific snapshots are intentionally time- or season-bounded. Before reusing them for a new edition, confirm that the page title, race year, and live window checks still match the current calendar.
 - When adding exceptions for a race, prefer a contained special-case function over weakening global heuristics.
 
 ## Current Project Facts

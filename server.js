@@ -796,6 +796,10 @@ function getOfficialStageRaceSource(race) {
     return "tour-de-romandie-prologue";
   }
 
+  if (race?.pageTitle === "Grande Prémio Anicolor") {
+    return "grande-premio-anicolor-live";
+  }
+
   if (race?.pageTitle === "Vuelta Asturias") {
     return "vuelta-asturias";
   }
@@ -851,6 +855,47 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
       stageNumber: 0,
       standings: prologueStandings,
       leader: prologueStandings[0]?.rider || "",
+    },
+    overallResult: [],
+  };
+}
+
+async function fetchGrandePremioAnicolorLiveSnapshot(race) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = new Date(Date.UTC(2026, 4, 1));
+  const endUtc = new Date(Date.UTC(2026, 4, 2));
+
+  if (
+    race?.pageTitle !== "Grande Prémio Anicolor" ||
+    getRaceYear(race) !== 2026 ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const stageOneStandings = buildStandings([
+    "Tiago Antunes",
+    "Xabier Berasategi",
+    "Diogo Gonçalves",
+    "Gotzon Martín",
+    "Gonçalo Carvalho",
+  ]);
+
+  return {
+    totalStages: inferStageCountFromDates(race) || 3,
+    completedStages: 1,
+    latestStage: {
+      number: 1,
+      label: "Stage 1",
+      standings: stageOneStandings,
+      winner: stageOneStandings[0]?.rider || "",
+    },
+    generalClassification: {
+      stageNumber: 1,
+      standings: stageOneStandings,
+      leader: stageOneStandings[0]?.rider || "",
     },
     overallResult: [],
   };
@@ -1318,6 +1363,8 @@ async function loadOfficialStageRaceSnapshot(race) {
   switch (getOfficialStageRaceSource(race)) {
     case "tour-de-romandie-prologue":
       return fetchTourDeRomandieOfficialSnapshot(race);
+    case "grande-premio-anicolor-live":
+      return fetchGrandePremioAnicolorLiveSnapshot(race);
     case "vuelta-asturias":
       return fetchVueltaAsturiasOfficialSnapshot(race);
     default:
