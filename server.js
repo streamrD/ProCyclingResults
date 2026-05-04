@@ -2046,9 +2046,20 @@ async function loadRaceData() {
       Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
     );
 
-    const recentResults = allRaces
+    const recentOneDayResults = allRaces
       .filter((race) => race.winner && race.endDate && race.endDate <= todayUtc)
       .filter(isOneDayRace)
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, MAX_RECENT_RESULTS);
+
+    const finalizedStageCandidates = allRaces
+      .filter(
+        (race) =>
+          isMultiDayRace(race) &&
+          race.endDate &&
+          race.endDate <= todayUtc &&
+          race.series !== "Men's Europe Tour",
+      )
       .sort((left, right) => right.endDate - left.endDate)
       .slice(0, MAX_RECENT_RESULTS);
 
@@ -2108,7 +2119,8 @@ async function loadRaceData() {
     ];
 
     const displayRaces = [
-      ...recentResults,
+      ...recentOneDayResults,
+      ...finalizedStageCandidates,
       ...liveStageCandidates,
       ...upcomingDisplayRaces,
       ...europeTourRecentResults,
@@ -2120,11 +2132,13 @@ async function loadRaceData() {
     );
 
     await enrichLocations(displayRaces);
-    await enrichRecentResultStandings(recentResults);
+    await enrichRecentResultStandings(recentOneDayResults);
+    await enrichRecentResultStandings(finalizedStageCandidates);
     await enrichStageRaceSnapshots(stageRaceDisplays);
 
-    const finalizedStageRaces = liveStageCandidates.filter(isFinalizedStageRace);
+    const finalizedStageRaces = finalizedStageCandidates.filter(isFinalizedStageRace);
     const liveStageRaces = liveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+    const recentResults = [...recentOneDayResults, ...finalizedStageRaces].sort((left, right) => right.endDate - left.endDate);
 
     finalizedStageRaces.forEach((race) => {
       if (!race.resultStandings?.length) {
@@ -2140,7 +2154,6 @@ async function loadRaceData() {
 
     [
       ...recentResults,
-      ...finalizedStageRaces,
       ...liveStageRaces,
       ...upcomingRaces,
       ...europeTourRecentResults,
@@ -2150,7 +2163,7 @@ async function loadRaceData() {
       race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
     });
 
-    recentResults.forEach((race) => {
+    recentOneDayResults.forEach((race) => {
       race.id = getRaceId(race);
     });
 
@@ -2401,8 +2414,8 @@ function getCompetitionGroups(data) {
       predicate: (race) => race.series === "Men's WorldTour",
       recentSource: "recentResults",
       recentResultsLimit: WORLDTOUR_RECENT_RESULTS,
-      recentBlockTitle: "Recent One-Day Results",
-      recentBlockDescription: "Recent one-day races, arranged in a three-column grid on larger screens.",
+      recentBlockTitle: "Recent Results",
+      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
       recentGridClass: "competition-grid-three",
     },
     {
@@ -2413,8 +2426,8 @@ function getCompetitionGroups(data) {
       predicate: (race) => race.series === "Women's WorldTour",
       recentSource: "recentResults",
       recentResultsLimit: WORLDTOUR_RECENT_RESULTS,
-      recentBlockTitle: "Recent One-Day Results",
-      recentBlockDescription: "Recent one-day races, arranged in a three-column grid on larger screens.",
+      recentBlockTitle: "Recent Results",
+      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
       recentGridClass: "competition-grid-three",
     },
     {
@@ -2424,8 +2437,8 @@ function getCompetitionGroups(data) {
       description: "The ProSeries races added today, with live stage races, fresh results, and upcoming events.",
       predicate: (race) => /ProSeries/.test(race.series),
       recentSource: "recentResults",
-      recentBlockTitle: "Recent One-Day Results",
-      recentBlockDescription: "Recent one-day races, arranged in a three-column grid on larger screens.",
+      recentBlockTitle: "Recent Results",
+      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
       recentGridClass: "competition-grid-three",
     },
     {
