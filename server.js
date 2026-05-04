@@ -105,25 +105,277 @@ const SEASONS = [
 ];
 
 const COUNTRY_NAMES = {
+  ALG: "Algeria",
+  ARG: "Argentina",
   AUS: "Australia",
+  AUT: "Austria",
   BEL: "Belgium",
+  BRA: "Brazil",
   CAN: "Canada",
   CHN: "China",
+  COL: "Colombia",
+  CRO: "Croatia",
+  CZE: "Czech Republic",
   DEN: "Denmark",
+  ECU: "Ecuador",
+  ERI: "Eritrea",
   ESP: "Spain",
   EST: "Estonia",
+  ETH: "Ethiopia",
+  FIN: "Finland",
   FRA: "France",
   GBR: "United Kingdom",
   GER: "Germany",
   GRE: "Greece",
+  HUN: "Hungary",
+  IRL: "Ireland",
+  ISR: "Israel",
   ITA: "Italy",
+  JPN: "Japan",
+  KAZ: "Kazakhstan",
+  LAT: "Latvia",
+  LTU: "Lithuania",
   LUX: "Luxembourg",
+  MAR: "Morocco",
+  MEX: "Mexico",
   NED: "Netherlands",
+  NOR: "Norway",
+  NZL: "New Zealand",
   POL: "Poland",
   POR: "Portugal",
+  RUS: "Russia",
+  ROU: "Romania",
+  MRI: "Mauritius",
+  RSA: "South Africa",
+  RWA: "Rwanda",
+  SLO: "Slovenia",
+  SRB: "Serbia",
+  SVK: "Slovakia",
   SUI: "Switzerland",
+  SWI: "Switzerland",
+  SWE: "Sweden",
+  THA: "Thailand",
+  TUR: "Turkey",
   UAE: "United Arab Emirates",
+  UKR: "Ukraine",
+  URU: "Uruguay",
+  USA: "United States",
+  VEN: "Venezuela",
 };
+
+const COUNTRY_FLAG_CODES = {
+  ALG: "DZ",
+  ARG: "AR",
+  AUS: "AU",
+  AUT: "AT",
+  BEL: "BE",
+  BRA: "BR",
+  CAN: "CA",
+  CHN: "CN",
+  COL: "CO",
+  CRO: "HR",
+  CZE: "CZ",
+  DEN: "DK",
+  ECU: "EC",
+  ERI: "ER",
+  ESP: "ES",
+  EST: "EE",
+  ETH: "ET",
+  FIN: "FI",
+  FRA: "FR",
+  GBR: "GB",
+  GER: "DE",
+  GRE: "GR",
+  HUN: "HU",
+  IRL: "IE",
+  ISR: "IL",
+  ITA: "IT",
+  JPN: "JP",
+  KAZ: "KZ",
+  LAT: "LV",
+  LTU: "LT",
+  LUX: "LU",
+  MAR: "MA",
+  MEX: "MX",
+  NED: "NL",
+  NOR: "NO",
+  NZL: "NZ",
+  POL: "PL",
+  POR: "PT",
+  RUS: "RU",
+  ROU: "RO",
+  MRI: "MU",
+  RSA: "ZA",
+  RWA: "RW",
+  SLO: "SI",
+  SRB: "RS",
+  SVK: "SK",
+  SUI: "CH",
+  SWI: "CH",
+  SWE: "SE",
+  THA: "TH",
+  TUR: "TR",
+  UAE: "AE",
+  UKR: "UA",
+  URU: "UY",
+  USA: "US",
+  VEN: "VE",
+};
+
+const RIDER_COUNTRY_CODES = new Map(
+  Object.entries({
+    "Adria Pericas": "ESP",
+    "Alan Hatherly": "RSA",
+    "Aleksandr Vlasov": "RUS",
+    "Alessandro Verre": "ITA",
+    "Alex Aranburu": "ESP",
+    "Alex Baudin": "FRA",
+    "Alexander Kamp": "DEN",
+    "Anders Foldager": "DEN",
+    "Andrea Bagioli": "ITA",
+    "Andrew August": "USA",
+    "Anna van der Breggen": "NED",
+    "Antoine L'Hote": "FRA",
+    "Anton Schiffer": "GER",
+    "Antonio Tiberi": "ITA",
+    "Arnaud De Lie": "BEL",
+    "Axel Laurance": "FRA",
+    "Ben Tulett": "GBR",
+    "Benoit Cosnefroy": "FRA",
+    "Biniam Girmay": "ERI",
+    "Carys Lloyd": "GBR",
+    "Chiara Consonni": "ITA",
+    "Christophe Laporte": "FRA",
+    "Clement Champoussin": "FRA",
+    "Clement Venturini": "FRA",
+    "Corbin Strong": "NZL",
+    "Davide Ballerini": "ITA",
+    "Davide Donati": "ITA",
+    "Davide Persico": "ITA",
+    "Demi Vollering": "NED",
+    "Diego Pescador": "COL",
+    "Dusan Rajovic": "SRB",
+    "Dylan Groenewegen": "NED",
+    "Edgar David Cadena": "COL",
+    "Eduard Prades": "ESP",
+    "Egan Bernal": "COL",
+    "Eleonora Gasparrini": "ITA",
+    "Eline Jansen": "NED",
+    "Elisa Balsamo": "ITA",
+    "Elisa Longo Borghini": "ITA",
+    "Elise Chabbey": "SUI",
+    "Emiel Verstrynge": "BEL",
+    "Emilien Jeanniere": "FRA",
+    "Erlend Blikra": "NOR",
+    "Ethan Vernon": "GBR",
+    "Felix Gall": "AUT",
+    "Femke de Vries": "NED",
+    "Filippo Fiorelli": "ITA",
+    "Filippo Ganna": "ITA",
+    "Filippo Zana": "ITA",
+    "Fleur Moors": "BEL",
+    "Florian Lipowitz": "GER",
+    "Florian Vermeersch": "BEL",
+    "Frank van den Broek": "NED",
+    "Franziska Koch": "GER",
+    "Gal Glivar": "SLO",
+    "Georg Zimmermann": "GER",
+    "Gianmarco Garofoli": "ITA",
+    "Giovanni Aleotti": "ITA",
+    "Giulio Pellizzari": "ITA",
+    "Harold Tejada": "COL",
+    "Ibon Ruiz Sedano": "ESP",
+    "Ion Izagirre": "ESP",
+    "Isaac del Toro": "MEX",
+    "Ivan Sosa": "COL",
+    "Jan Christen": "SUI",
+    "Jasper Philipsen": "BEL",
+    "Jasper Stuyven": "BEL",
+    "Jelle Vermoote": "BEL",
+    "Jonas Abrahamsen": "NOR",
+    "Jonathan Milan": "ITA",
+    "Jordan Jegat": "FRA",
+    "Jose Manuel Diaz": "ESP",
+    "Joao Almeida": "POR",
+    "Juan Ayuso": "ESP",
+    "Jorgen Nordhagen": "NOR",
+    "Kamiel Bonneu": "BEL",
+    "Karlijn Swinkels": "NED",
+    "Katarzyna Niewiadoma": "POL",
+    "Katarzyna Niewiadoma-Phinney": "POL",
+    "Kimberley Le Court": "MRI",
+    "Kristian Egholm": "DEN",
+    "Kevin Vauquelin": "FRA",
+    "Laurence Pithie": "NZL",
+    "Laurenz Rex": "BEL",
+    "Lenny Martinez": "FRA",
+    "Letizia Paternoster": "ITA",
+    "Lieke Nooijen": "NED",
+    "Loes Adegeest": "NED",
+    "Lorena Wiebes": "NED",
+    "Lorenzo Fortunato": "ITA",
+    "Lotte Kopecky": "BEL",
+    "Luca Mozzato": "ITA",
+    "Luke Plapp": "AUS",
+    "Mads Pedersen": "DEN",
+    "Manuel Penalver": "ESP",
+    "Marianne Vos": "NED",
+    "Marlen Reusser": "SUI",
+    "Martin Marcellusi": "ITA",
+    "Mathieu van der Poel": "NED",
+    "Matteo Fabbro": "ITA",
+    "Matteo Jorgenson": "USA",
+    "Matteo Malucelli": "ITA",
+    "Mattias Skjelmose": "DEN",
+    "Mauro Schmid": "SUI",
+    "Max Kanter": "GER",
+    "Maeva Squiban": "FRA",
+    "Megan Jastrab": "USA",
+    "Monica Trinca Colonel": "ITA",
+    "Nairo Quintana": "COL",
+    "Nicolas Breuillard": "FRA",
+    "Nienke Veenhoven": "NED",
+    "Noemi Ruegg": "SUI",
+    "Oded Kogut": "ISR",
+    "Oscar Onley": "GBR",
+    "Paul Seixas": "FRA",
+    "Paula Blasi": "ESP",
+    "Pauline Ferrand-Prevot": "FRA",
+    "Pavel Bittner": "CZE",
+    "Pello Bilbao": "ESP",
+    "Per Strand Hagenes": "NOR",
+    "Primoz Roglic": "SLO",
+    "Puck Pieterse": "NED",
+    "Quinn Simmons": "USA",
+    "Quinten Hermans": "BEL",
+    "Raul Garcia Pierna": "ESP",
+    "Remco Evenepoel": "BEL",
+    "Robert Donaldson": "GBR",
+    "Romain Gregoire": "FRA",
+    "Sam Welsford": "AUS",
+    "Samuel Fernandez": "ESP",
+    "Sebastian Berwick": "AUS",
+    "Shari Bossuyt": "BEL",
+    "Simone Gualdi": "ITA",
+    "Stan Dewulf": "BEL",
+    "Stanislaw Aniolkowski": "POL",
+    "Soren Waerenskjold": "NOR",
+    "Tadej Pogacar": "SLO",
+    "Thomas Gloag": "GBR",
+    "Thomas Pesenti": "ITA",
+    "Tilen Finkst": "SLO",
+    "Tim Merlier": "BEL",
+    "Tobias Halland Johannessen": "NOR",
+    "Tobias Lund Andresen": "DEN",
+    "Tom Crabbe": "GBR",
+    "Tom Pidcock": "GBR",
+    "Txomin Juaristi": "ESP",
+    "Urko Berrade Fernandez": "ESP",
+    "Wout van Aert": "BEL",
+    "Zoe Backstedt": "GBR",
+    "Zak Erzen": "SLO",
+  }).map(([name, code]) => [name.normalize("NFKD").replace(/[^\x00-\x7F]/g, "").toLowerCase(), code]),
+);
 
 const MONTHS = {
   January: 0,
@@ -224,9 +476,37 @@ function cleanWikiText(value) {
     .trim();
 }
 
+function normalizeCountryCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return code === "SWI" ? "SUI" : code;
+}
+
+function getRiderCountryCode(name) {
+  const key = String(name || "")
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toLowerCase()
+    .trim();
+
+  return RIDER_COUNTRY_CODES.get(key) || "";
+}
+
+function parseAthleteDetails(cell) {
+  const text = String(cell || "");
+  const match = text.match(/\{\{\s*flagathlete\s*\|([\s\S]+?)\}\}/i);
+  const templateArgs = match
+    ? splitWikiTemplateArgs(match[0].replace(/^\{\{/, "").replace(/\}\}$/, ""))
+    : [];
+  const countryCode = normalizeCountryCode(templateArgs[2]);
+
+  return {
+    rider: cleanWikiText(templateArgs[1] || cell),
+    countryCode,
+  };
+}
+
 function parseAthlete(cell) {
-  const match = String(cell || "").match(/\{\{flagathlete\|(.+?)\|[A-Z]{2,3}\}\}/i);
-  return cleanWikiText(match ? match[1] : cell);
+  return parseAthleteDetails(cell).rider;
 }
 
 function parseRaceCell(cell) {
@@ -485,14 +765,20 @@ function parseSeasonRows(rawText, season, year) {
       const dateRange = parseDateRange(cells[dateIndex], year);
       const statusText = cleanWikiText(cells.slice(statusStartIndex).join(" "));
       const hasPodium = season.winnerMode === "podium";
+      const winner = parseAthleteDetails(cells[winnerIndex]);
+      const second = hasPodium ? parseAthleteDetails(cells[secondIndex]) : { rider: "", countryCode: "" };
+      const third = hasPodium ? parseAthleteDetails(cells[thirdIndex]) : { rider: "", countryCode: "" };
 
       return {
         ...race,
         series: season.label,
         date: formatDateLabel(cells[dateIndex], year),
-        winner: parseAthlete(cells[winnerIndex]),
-        second: hasPodium ? parseAthlete(cells[secondIndex]) : "",
-        third: hasPodium ? parseAthlete(cells[thirdIndex]) : "",
+        winner: winner.rider,
+        winnerCountryCode: winner.countryCode || getRiderCountryCode(winner.rider),
+        second: second.rider,
+        secondCountryCode: second.countryCode || getRiderCountryCode(second.rider),
+        third: third.rider,
+        thirdCountryCode: third.countryCode || getRiderCountryCode(third.rider),
         startDate: dateRange.start,
         endDate: dateRange.end,
         isCancelled: /\bcancelled\b/i.test(statusText),
@@ -599,10 +885,7 @@ function parseCyclingResultLine(line) {
     return null;
   }
 
-  return {
-    place: cleanWikiText(args[1]),
-    rider: parseAthlete(args[2]),
-  };
+  return buildStandingEntry(cleanWikiText(args[1]), parseAthleteDetails(args[2]));
 }
 
 function extractCyclingResultBlocks(rawText) {
@@ -689,8 +972,8 @@ function extractRouteStageWinners(rawText) {
       }
 
       const stageInfo = parseStageSequence(cells[0]);
-      const winner = parseAthlete(cells[cells.length - 1]);
-      return stageInfo && winner ? { ...stageInfo, winner } : null;
+      const winner = parseAthleteDetails(cells[cells.length - 1]);
+      return stageInfo && winner.rider ? { ...stageInfo, winner } : null;
     })
     .filter(Boolean);
 }
@@ -725,8 +1008,8 @@ function extractStageLeadershipGcSnapshots(rawText) {
       }
 
       const stageInfo = parseStageSequence(cells[0]);
-      const leader = parseAthlete(cells[2]);
-      if (!stageInfo || !leader) {
+      const leader = parseAthleteDetails(cells[2]);
+      if (!stageInfo || !leader.rider) {
         return null;
       }
 
@@ -791,7 +1074,7 @@ function extractStageRaceSnapshot(rawText) {
         stageNumber: entry.stageNumber,
         stageOrder: entry.stageOrder,
         stageLabel: entry.stageLabel,
-        standings: [{ place: "1", rider: entry.winner }],
+        standings: [buildStandingEntry(1, entry.winner)].filter(Boolean),
       }))[0] ||
     null;
   const latestGc =
@@ -806,11 +1089,8 @@ function extractStageRaceSnapshot(rawText) {
         }
       : null;
   const finalStandings = ["first", "second", "third"]
-    .map((fieldName, index) => ({
-      place: String(index + 1),
-      rider: parseAthlete(getInfoboxField(rawText, fieldName)),
-    }))
-    .filter((entry) => entry.rider);
+    .map((fieldName, index) => buildStandingEntry(index + 1, parseAthleteDetails(getInfoboxField(rawText, fieldName))))
+    .filter(Boolean);
   const overallResult = findOverallRaceResult(blocks);
 
   return {
@@ -827,6 +1107,9 @@ function extractStageRaceSnapshot(rawText) {
           label: latestStage.stageLabel,
           standings: latestStage.standings,
           winner: latestStage.standings[0]?.rider || "",
+          ...(latestStage.standings[0]?.countryCode
+            ? { winnerCountryCode: latestStage.standings[0].countryCode }
+            : {}),
         }
       : null,
     generalClassification:
@@ -835,6 +1118,12 @@ function extractStageRaceSnapshot(rawText) {
             stageNumber: latestGc?.stageNumber ?? prologueClassification?.stageNumber ?? totalStages ?? 0,
             standings: latestGc?.standings || prologueClassification?.standings || finalStandings,
             leader: (latestGc?.standings || prologueClassification?.standings || finalStandings)[0]?.rider || "",
+            ...((latestGc?.standings || prologueClassification?.standings || finalStandings)[0]?.countryCode
+              ? {
+                  leaderCountryCode:
+                    (latestGc?.standings || prologueClassification?.standings || finalStandings)[0].countryCode,
+                }
+              : {}),
           }
         : null,
     overallResult: overallResult.length > 0 ? overallResult : finalStandings,
@@ -979,12 +1268,12 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
       number: 0,
       label: "Prologue",
       standings: prologueStandings,
-      winner: prologueStandings[0]?.rider || "",
+      ...getWinnerDetails(prologueStandings),
     },
     generalClassification: {
       stageNumber: 0,
       standings: prologueStandings,
-      leader: prologueStandings[0]?.rider || "",
+      ...getLeaderDetails(prologueStandings),
     },
     overallResult: [],
   };
@@ -1027,12 +1316,12 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
       number: 1,
       label: "Stage 1",
       standings: stageOneStandings,
-      winner: stageOneStandings[0]?.rider || "",
+      ...getWinnerDetails(stageOneStandings),
     },
     generalClassification: {
       stageNumber: 1,
       standings: gcStandings,
-      leader: gcStandings[0]?.rider || "",
+      ...getLeaderDetails(gcStandings),
     },
     overallResult: [],
   };
@@ -1068,12 +1357,12 @@ async function fetchGrandePremioAnicolorLiveSnapshot(race) {
       number: 1,
       label: "Stage 1",
       standings: stageOneStandings,
-      winner: stageOneStandings[0]?.rider || "",
+      ...getWinnerDetails(stageOneStandings),
     },
     generalClassification: {
       stageNumber: 1,
       standings: stageOneStandings,
-      leader: stageOneStandings[0]?.rider || "",
+      ...getLeaderDetails(stageOneStandings),
     },
     overallResult: [],
   };
@@ -1109,12 +1398,43 @@ function parseSpanishStageNumber(text) {
   return 0;
 }
 
-function buildStandingEntry(place, rider) {
-  return rider ? { place: String(place), rider } : null;
+function buildStandingEntry(place, rider, countryCode = "") {
+  const details =
+    rider && typeof rider === "object"
+      ? {
+          rider: String(rider.rider || "").trim(),
+          countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
+        }
+      : {
+          rider: String(rider || "").trim(),
+          countryCode: normalizeCountryCode(countryCode || getRiderCountryCode(rider)),
+        };
+
+  return details.rider
+    ? {
+        place: String(place),
+        rider: details.rider,
+        ...(details.countryCode ? { countryCode: details.countryCode } : {}),
+      }
+    : null;
 }
 
 function buildStandings(riders) {
   return riders.map((rider, index) => buildStandingEntry(index + 1, rider)).filter(Boolean);
+}
+
+function getWinnerDetails(standings) {
+  return {
+    winner: standings?.[0]?.rider || "",
+    ...(standings?.[0]?.countryCode ? { winnerCountryCode: standings[0].countryCode } : {}),
+  };
+}
+
+function getLeaderDetails(standings) {
+  return {
+    leader: standings?.[0]?.rider || "",
+    ...(standings?.[0]?.countryCode ? { leaderCountryCode: standings[0].countryCode } : {}),
+  };
 }
 
 const STATIC_STAGE_RACE_SNAPSHOTS = {
@@ -1286,13 +1606,13 @@ function getStaticStageRaceSnapshot(race) {
     latestStage: snapshot.latestStage
       ? {
           ...snapshot.latestStage,
-          winner: snapshot.latestStage.standings[0]?.rider || "",
+          ...getWinnerDetails(snapshot.latestStage.standings),
         }
       : null,
     generalClassification: snapshot.generalClassification
       ? {
           ...snapshot.generalClassification,
-          leader: snapshot.generalClassification.standings[0]?.rider || "",
+          ...getLeaderDetails(snapshot.generalClassification.standings),
         }
       : null,
     overallResult: snapshot.generalClassification?.standings || [],
@@ -1542,7 +1862,7 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
       ? {
           number: latestStagePost.stageNumber,
           standings: stageStandings.length > 0 ? stageStandings : [buildStandingEntry(1, winner)].filter(Boolean),
-          winner,
+          ...getWinnerDetails(stageStandings.length > 0 ? stageStandings : [buildStandingEntry(1, winner)].filter(Boolean)),
         }
       : null,
     generalClassification:
@@ -1550,7 +1870,7 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
         ? {
             stageNumber: latestStagePost.stageNumber,
             standings: gcStandings,
-            leader: gcStandings[0]?.rider || "",
+            ...getLeaderDetails(gcStandings),
           }
         : null,
     overallResult: [],
@@ -2322,7 +2642,7 @@ function buildPodiumMarkup(entries) {
       (entry) => `
         <li class="podium-item">
           <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
-          <span class="podium-rider">${escapeHtml(entry.rider)}</span>
+          ${buildRiderMarkup(entry)}
         </li>`,
     )
     .join("");
@@ -2352,9 +2672,9 @@ function buildStageRaceCard(race, options = {}) {
   const stageLabel = latestStage?.label || (latestStage?.number ? `Stage ${latestStage.number}` : "Latest stage");
   const isPrologueClassification = classification?.stageNumber === 0 || latestStage?.label === "Prologue";
   const fallbackPodium = [
-    { place: "1", rider: race.winner },
-    { place: "2", rider: race.second },
-    { place: "3", rider: race.third },
+    { place: "1", rider: race.winner, countryCode: race.winnerCountryCode },
+    { place: "2", rider: race.second, countryCode: race.secondCountryCode },
+    { place: "3", rider: race.third, countryCode: race.thirdCountryCode },
   ].filter((entry) => entry.rider);
   const classificationLabel = isFinalized
     ? "Final general classification"
@@ -2390,7 +2710,13 @@ function buildStageRaceCard(race, options = {}) {
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(stageLabel)} winner</div>
-        <div class="stage-winner">${escapeHtml(latestStage.winner)}</div>
+        <div class="stage-winner">${buildRiderMarkup(
+          {
+            rider: latestStage.winner,
+            countryCode: latestStage.winnerCountryCode,
+          },
+          "stage-winner-rider",
+        )}</div>
         ${buildPodiumMarkup(stageStandings)}
       </div>`
     : `
@@ -2431,9 +2757,9 @@ function buildRaceCard(race) {
   const standings = selectStandings(
     race.resultStandings,
     [
-      { place: "1", rider: race.winner },
-      { place: "2", rider: race.second },
-      { place: "3", rider: race.third },
+      { place: "1", rider: race.winner, countryCode: race.winnerCountryCode },
+      { place: "2", rider: race.second, countryCode: race.secondCountryCode },
+      { place: "3", rider: race.third, countryCode: race.thirdCountryCode },
     ],
   );
 
@@ -2457,6 +2783,33 @@ function buildUpcomingCard(race) {
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
     </article>`;
+}
+
+function getCountryFlagEmoji(countryCode) {
+  const alpha2Code = COUNTRY_FLAG_CODES[normalizeCountryCode(countryCode)];
+  if (!/^[A-Z]{2}$/.test(alpha2Code || "")) {
+    return "";
+  }
+
+  return [...alpha2Code]
+    .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
+    .join("");
+}
+
+function buildRiderMarkup(entry, className = "podium-rider") {
+  const rider = String(entry?.rider || "").trim();
+  if (!rider) {
+    return "";
+  }
+
+  const countryCode = normalizeCountryCode(entry?.countryCode);
+  const flag = getCountryFlagEmoji(countryCode);
+  const countryName = COUNTRY_NAMES[countryCode] || countryCode;
+  const flagMarkup = flag
+    ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
+    : "";
+
+  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span>${escapeHtml(rider)}</span></span>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -3131,6 +3484,19 @@ function buildHtmlPage(data, view) {
         font-weight: 700;
       }
 
+      .rider-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+      }
+
+      .country-flag {
+        flex: 0 0 auto;
+        font-size: 0.95em;
+        line-height: 1;
+      }
+
       .stage-race-card {
         display: flex;
         flex-direction: column;
@@ -3153,6 +3519,12 @@ function buildHtmlPage(data, view) {
         font-size: 1.18rem;
         font-weight: 800;
         text-transform: uppercase;
+      }
+
+      .stage-winner-rider {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
       }
 
       .status-pill {

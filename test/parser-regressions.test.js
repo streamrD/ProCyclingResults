@@ -41,13 +41,15 @@ test("extractStageRaceSnapshot reads stage and GC fallbacks from La Vuelta Femen
   assert.deepEqual(snapshot.latestStage, {
     number: 1,
     label: "Stage 1",
-    standings: [{ place: "1", rider: "Noemi Rüegg" }],
+    standings: [{ place: "1", rider: "Noemi Rüegg", countryCode: "SUI" }],
     winner: "Noemi Rüegg",
+    winnerCountryCode: "SUI",
   });
   assert.deepEqual(snapshot.generalClassification, {
     stageNumber: 1,
-    standings: [{ place: "1", rider: "Noemi Rüegg" }],
+    standings: [{ place: "1", rider: "Noemi Rüegg", countryCode: "SUI" }],
     leader: "Noemi Rüegg",
+    leaderCountryCode: "SUI",
   });
 });
 
@@ -78,17 +80,17 @@ test("applyKnownStageRaceCorrections expands La Vuelta Femenina stage 1 fallback
   );
 
   assert.deepEqual(corrected.latestStage.standings, [
-    { place: "1", rider: "Noemi Rüegg" },
-    { place: "2", rider: "Lotte Kopecky" },
-    { place: "3", rider: "Franziska Koch" },
-    { place: "4", rider: "Katarzyna Niewiadoma-Phinney" },
-    { place: "5", rider: "Maëva Squiban" },
+    { place: "1", rider: "Noemi Rüegg", countryCode: "SUI" },
+    { place: "2", rider: "Lotte Kopecky", countryCode: "BEL" },
+    { place: "3", rider: "Franziska Koch", countryCode: "GER" },
+    { place: "4", rider: "Katarzyna Niewiadoma-Phinney", countryCode: "POL" },
+    { place: "5", rider: "Maëva Squiban", countryCode: "FRA" },
   ]);
   assert.deepEqual(corrected.generalClassification.standings, [
-    { place: "1", rider: "Noemi Rüegg" },
-    { place: "2", rider: "Franziska Koch" },
-    { place: "3", rider: "Lotte Kopecky" },
-    { place: "4", rider: "Loes Adegeest" },
-    { place: "5", rider: "Katarzyna Niewiadoma-Phinney" },
+    { place: "1", rider: "Noemi Rüegg", countryCode: "SUI" },
+    { place: "2", rider: "Franziska Koch", countryCode: "GER" },
+    { place: "3", rider: "Lotte Kopecky", countryCode: "BEL" },
+    { place: "4", rider: "Loes Adegeest", countryCode: "NED" },
+    { place: "5", rider: "Katarzyna Niewiadoma-Phinney", countryCode: "POL" },
   ]);
 });
