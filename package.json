@@ -4,6 +4,7 @@
   "private": true,
   "description": "Live pro cycling results and upcoming races",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   }
 }

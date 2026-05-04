@@ -655,17 +655,28 @@ function parseStageSequence(value) {
   return null;
 }
 
+function extractWikiTableByCaption(rawText, captionPattern) {
+  return [...String(rawText || "").matchAll(/\{\|[\s\S]*?\n\|\}/g)].find((match) => {
+    const caption = match[0].match(/\|\+\s*([^\n]+)/);
+    return captionPattern.test(cleanWikiText(caption?.[1] || ""));
+  })?.[0] || "";
+}
+
 function extractRouteStageWinners(rawText) {
-  const routeMatch = String(rawText || "").match(/\|\+\s*Stage characteristics and winners[\s\S]*?\n\|\}/i);
-  if (!routeMatch) {
+  const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
+  if (!routeTable) {
     return [];
   }
 
-  return routeMatch[0]
+  return routeTable
     .split("\n|-\n")
     .map((row) => {
       const cells = [];
       for (const line of row.split("\n")) {
+        if (line === "|}") {
+          continue;
+        }
+
         if (line.startsWith("!")) {
           cells.push(line.replace(/^!\s*(?:scope="[^"]+"\s*\|\s*)?(?:style="[^"]+"\s*\|\s*)?/, "").trim());
         } else if (line.startsWith("|")) {
@@ -680,6 +691,49 @@ function extractRouteStageWinners(rawText) {
       const stageInfo = parseStageSequence(cells[0]);
       const winner = parseAthlete(cells[cells.length - 1]);
       return stageInfo && winner ? { ...stageInfo, winner } : null;
+    })
+    .filter(Boolean);
+}
+
+function extractStageLeadershipGcSnapshots(rawText) {
+  const leadershipMatch = String(rawText || "").match(
+    /==\s*Classification leadership table\s*==[\s\S]*?(\{\|[\s\S]*?\n\|\})/i,
+  );
+  const leadershipTable = leadershipMatch?.[1] || "";
+  if (!leadershipTable) {
+    return [];
+  }
+
+  return leadershipTable
+    .split("\n|-\n")
+    .map((row) => {
+      const cells = [];
+      for (const line of row.split("\n")) {
+        if (line === "|}") {
+          continue;
+        }
+
+        if (line.startsWith("!")) {
+          cells.push(line.replace(/^!\s*(?:scope="[^"]+"\s*\|\s*)?(?:style="[^"]+"\s*\|\s*)?/, "").trim());
+        } else if (line.startsWith("|")) {
+          cells.push(line.replace(/^\|\s*(?:style="[^"]+"\s*\|\s*)?/, "").trim());
+        }
+      }
+
+      if (cells.length < 3) {
+        return null;
+      }
+
+      const stageInfo = parseStageSequence(cells[0]);
+      const leader = parseAthlete(cells[2]);
+      if (!stageInfo || !leader) {
+        return null;
+      }
+
+      return {
+        stageNumber: stageInfo.stageNumber,
+        standings: [buildStandingEntry(1, leader)].filter(Boolean),
+      };
     })
     .filter(Boolean);
 }
@@ -722,6 +776,7 @@ function extractStageRaceSnapshot(rawText) {
   });
 
   const routeStageWinners = extractRouteStageWinners(rawText);
+  const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
   const latestStage =
     [...stageResults]
       .map((entry) => ({
@@ -739,7 +794,8 @@ function extractStageRaceSnapshot(rawText) {
         standings: [{ place: "1", rider: entry.winner }],
       }))[0] ||
     null;
-  const latestGc = [...gcResults].sort((left, right) => right.stageNumber - left.stageNumber)[0] || null;
+  const latestGc =
+    [...gcResults, ...leadershipGcResults].sort((left, right) => right.stageNumber - left.stageNumber)[0] || null;
   const totalStages = parseTotalStages(rawText);
   const prologueClassification =
     !latestGc && latestStage?.stageLabel === "Prologue" && latestStage.standings.length > 0
@@ -763,6 +819,7 @@ function extractStageRaceSnapshot(rawText) {
       latestGc?.stageNumber || 0,
       latestStage?.stageOrder || 0,
       routeStageWinners.reduce((max, entry) => Math.max(max, entry.stageOrder), 0),
+      leadershipGcResults.reduce((max, entry) => Math.max(max, entry.stageNumber), 0),
     ),
     latestStage: latestStage
       ? {
@@ -967,6 +1024,31 @@ function buildStandings(riders) {
 }
 
 const STATIC_STAGE_RACE_SNAPSHOTS = {
+  "2026 Tour de Romandie": {
+    totalStages: 6,
+    completedStages: 6,
+    latestStage: {
+      number: 5,
+      label: "Stage 5",
+      standings: buildStandings([
+        "Tadej Pogačar",
+        "Florian Lipowitz",
+        "Primož Roglič",
+        "Lorenzo Fortunato",
+        "Jørgen Nordhagen",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 5,
+      standings: buildStandings([
+        "Tadej Pogačar",
+        "Florian Lipowitz",
+        "Lenny Martinez",
+        "Jørgen Nordhagen",
+        "Luke Plapp",
+      ]),
+    },
+  },
   "2026 Tour de la Provence": {
     totalStages: 3,
     completedStages: 3,

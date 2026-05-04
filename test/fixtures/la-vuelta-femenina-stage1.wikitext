@@ -1,0 +1,58 @@
+{{Infobox cycling race report
+|name = 2026 La Vuelta Femenina
+|stages = 7
+}}
+
+{| class="wikitable sortable"
+|+Stage characteristics
+! scope="col" |Stage
+! scope="col" |Date
+! scope="col" |Course
+! scope="col" |Distance
+! colspan="2" scope="col" |Type
+! scope="col" |Winner
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 1|1]]
+| style="text-align:right" | 3 May
+| [[Marín, Pontevedra|Marín]] to [[Salvaterra de Miño]]
+| style="text-align:center;" | {{convert|113|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flagathlete|[[Noemi Rüegg]]|SUI}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 2|2]]
+| style="text-align:right" | 4 May
+| [[Lobios]] to [[San Cibrao das Viñas]]
+| style="text-align:center;" | {{convert|109|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+|
+|}
+
+== Classification leadership table ==
+{| class="wikitable" style="text-align: center; font-size:smaller;"
+|- style="background-color: #efefef;"
+! scope="col" width="2%" | Stage
+! scope="col" width="13%" | Winner
+! scope="col" width="13%" | [[General classification]]<br />{{cjersey|red|size=25px}}
+! scope="col" width="13%" | [[Points classification]]<br />{{cjersey|dark green|size=25px}}
+! scope="col" width="13%" | [[Mountains classification]]<br />{{cjersey|blue polkadot|size=25px}}
+! scope="col" width="13%" | [[Young rider classification]]<br />{{cjersey|white|size=25px}}
+! scope="col" width="13%" | [[Team classification]]<br />{{cjersey|yellow number|size=25px}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 1|1]]
+| [[Noemi Rüegg]]
+| style="background:#FFE6E6;" | [[Noemi Rüegg]]
+| style="background:#008000;" | {{font colour|white|Noemi Rüegg|link=Noemi Rüegg}}
+| style="background:azure;" | [[Maëva Squiban]]
+| style="background:offwhite;" | [[Eleonora Ciabocco]]
+| style="background:#FFCD5F;" | {{UCI team code|UAD women|2026}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 2|2]]
+|
+| style="background:#FFE6E6;" |
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" |
+| style="background:offwhite;" |
+| style="background:#FFCD5F;" |
+|}
