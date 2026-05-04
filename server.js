@@ -842,7 +842,49 @@ function extractStageRaceSnapshot(rawText) {
 }
 
 function applyKnownStageRaceCorrections(race, snapshot) {
-  if (!snapshot || race?.pageTitle !== "2026 Tour de Romandie") {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  if (race?.pageTitle === "2026 La Vuelta Femenina") {
+    const correctedStageStandings = buildStandings([
+      "Noemi Rüegg",
+      "Lotte Kopecky",
+      "Franziska Koch",
+      "Katarzyna Niewiadoma-Phinney",
+      "Maëva Squiban",
+    ]);
+    const correctedGcStandings = buildStandings([
+      "Noemi Rüegg",
+      "Franziska Koch",
+      "Lotte Kopecky",
+      "Loes Adegeest",
+      "Katarzyna Niewiadoma-Phinney",
+    ]);
+
+    if ((snapshot.completedStages || 0) <= 1) {
+      return {
+        ...snapshot,
+        totalStages: snapshot.totalStages || 7,
+        completedStages: Math.max(snapshot.completedStages || 0, 1),
+        latestStage: {
+          number: 1,
+          label: "Stage 1",
+          standings: correctedStageStandings,
+          winner: correctedStageStandings[0]?.rider || "",
+        },
+        generalClassification: {
+          stageNumber: 1,
+          standings: correctedGcStandings,
+          leader: correctedGcStandings[0]?.rider || "",
+        },
+      };
+    }
+
+    return snapshot;
+  }
+
+  if (race?.pageTitle !== "2026 Tour de Romandie") {
     return snapshot;
   }
 
@@ -878,6 +920,10 @@ function applyKnownStageRaceCorrections(race, snapshot) {
 function getOfficialStageRaceSource(race) {
   if (race?.pageTitle === "2026 Tour de Romandie") {
     return "tour-de-romandie-prologue";
+  }
+
+  if (race?.pageTitle === "2026 La Vuelta Femenina") {
+    return "la-vuelta-femenina-stage-1";
   }
 
   if (race?.pageTitle === "Grande Prémio Anicolor") {
@@ -939,6 +985,54 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
       stageNumber: 0,
       standings: prologueStandings,
       leader: prologueStandings[0]?.rider || "",
+    },
+    overallResult: [],
+  };
+}
+
+async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = new Date(Date.UTC(2026, 4, 3));
+  const endUtc = new Date(Date.UTC(2026, 4, 4));
+
+  if (
+    race?.pageTitle !== "2026 La Vuelta Femenina" ||
+    getRaceYear(race) !== 2026 ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const stageOneStandings = buildStandings([
+    "Noemi Rüegg",
+    "Lotte Kopecky",
+    "Franziska Koch",
+    "Katarzyna Niewiadoma-Phinney",
+    "Maëva Squiban",
+  ]);
+  const gcStandings = buildStandings([
+    "Noemi Rüegg",
+    "Franziska Koch",
+    "Lotte Kopecky",
+    "Loes Adegeest",
+    "Katarzyna Niewiadoma-Phinney",
+  ]);
+
+  return {
+    totalStages: 7,
+    completedStages: 1,
+    latestStage: {
+      number: 1,
+      label: "Stage 1",
+      standings: stageOneStandings,
+      winner: stageOneStandings[0]?.rider || "",
+    },
+    generalClassification: {
+      stageNumber: 1,
+      standings: gcStandings,
+      leader: gcStandings[0]?.rider || "",
     },
     overallResult: [],
   };
@@ -1472,6 +1566,8 @@ async function loadOfficialStageRaceSnapshot(race) {
   switch (getOfficialStageRaceSource(race)) {
     case "tour-de-romandie-prologue":
       return fetchTourDeRomandieOfficialSnapshot(race);
+    case "la-vuelta-femenina-stage-1":
+      return fetchLaVueltaFemeninaOfficialSnapshot(race);
     case "grande-premio-anicolor-live":
       return fetchGrandePremioAnicolorLiveSnapshot(race);
     case "vuelta-asturias":
