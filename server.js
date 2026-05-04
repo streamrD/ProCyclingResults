@@ -222,6 +222,22 @@ const COUNTRY_FLAG_CODES = {
   VEN: "VE",
 };
 
+const RACE_FINISH_VIDEO_URLS = {
+  "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
+  "2026 Presidential Cycling Tour of Turkiye": "https://www.youtube.com/watch?v=yOl95xG1yUo",
+  "2026 Eschborn–Frankfurt": "https://www.youtube.com/watch?v=RRweTbrT4FM",
+  "2026 Liège–Bastogne–Liège": "https://www.youtube.com/watch?v=54aTnzlKeg0",
+  "2026 Liège–Bastogne–Liège Femmes": "https://www.youtube.com/watch?v=EAmXtxlmnOo",
+  "2026 La Flèche Wallonne": "https://www.youtube.com/watch?v=dV3qE0Gn2m8",
+  "2026 La Flèche Wallonne Femmes": "https://www.youtube.com/watch?v=P7G-RaIBfKs",
+  "2026 Amstel Gold Race": "https://www.youtube.com/watch?v=JmMHjKmuPNo",
+  "2026 Amstel Gold Race (women's race)": "https://www.youtube.com/watch?v=7L8DrzGq78A",
+  "2026 Paris–Roubaix": "https://www.youtube.com/watch?v=dqAFZboY-aI",
+  "2026 Paris–Roubaix Femmes": "https://www.youtube.com/watch?v=gh-uOBQ0hsM",
+  "2026 Brabantse Pijl": "https://www.youtube.com/watch?v=v04vpeOCRdM",
+  "2026 Scheldeprijs": "https://www.youtube.com/watch?v=bwXrRj53HRo",
+};
+
 const RIDER_COUNTRY_CODES = new Map(
   Object.entries({
     "Adria Pericas": "ESP",
@@ -2650,6 +2666,22 @@ function buildPodiumMarkup(entries) {
   return podium ? `<ol class="podium-list">${podium}</ol>` : `<p class="meta">Result details are still being updated.</p>`;
 }
 
+function getRaceFinishVideoUrl(race) {
+  return RACE_FINISH_VIDEO_URLS[getRaceId(race)] || "";
+}
+
+function buildRaceFinishLink(race) {
+  const url = getRaceFinishVideoUrl(race);
+  if (!url) {
+    return "";
+  }
+
+  return `
+    <a class="race-finish-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
+      Watch the race finish
+    </a>`;
+}
+
 function selectStandings(...candidateLists) {
   for (const candidate of candidateLists) {
     if (Array.isArray(candidate) && candidate.some((entry) => entry?.rider)) {
@@ -2718,6 +2750,7 @@ function buildStageRaceCard(race, options = {}) {
           "stage-winner-rider",
         )}</div>
         ${buildPodiumMarkup(stageStandings)}
+        ${buildRaceFinishLink(race)}
       </div>`
     : `
       <div class="card-subsection">
@@ -2769,6 +2802,7 @@ function buildRaceCard(race) {
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
+      ${buildRaceFinishLink(race)}
     </article>`;
 }
 
@@ -3495,6 +3529,29 @@ function buildHtmlPage(data, view) {
         flex: 0 0 auto;
         font-size: 0.95em;
         line-height: 1;
+      }
+
+      .race-finish-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 0.95rem;
+        padding: 0.75rem 1rem;
+        border-radius: 16px;
+        border: 1px solid rgba(0, 120, 199, 0.2);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.18));
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.92rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+
+      .race-finish-link:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.26));
+        color: var(--uci-blue);
       }
 
       .stage-race-card {
