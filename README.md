@@ -64,7 +64,9 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 │   └── fonts/
 ├── package.json
 ├── README.md
-└── server.js
+├── server.js
+└── test/
+    └── fixtures/
 ```
 
 Important consequence: almost all application logic, data fetching, parsing, caching, ranking, routing, and rendering live in `server.js`.
@@ -83,13 +85,13 @@ Then open `http://localhost:3000`.
 
 ### Scripts
 
-`package.json` defines only one script:
+`package.json` currently defines:
 
 - `start`: `node server.js`
+- `test`: `node --test`
 
 There is currently:
 
-- No test script
 - No build script
 - No lint script
 - No formatter config in-repo
@@ -157,6 +159,8 @@ Current special cases:
 
 - Tour de Romandie
   Hard-coded prologue snapshot logic for the first day only
+- La Vuelta Femenina
+  Uses a race-window-bounded fallback snapshot for early live stage / GC coverage when the current-edition page is still sparse
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
 - Eschborn-Frankfurt
@@ -290,7 +294,7 @@ It does this from Wikipedia race pages when possible by parsing:
 - route/stage winner tables
 - infobox first/second/third fields
 
-If a race has official special-case logic, that is attempted first.
+If a race has official special-case logic, it is loaded alongside the parsed Wikipedia snapshot and the richer / later snapshot is preferred.
 
 One practical complication: live Wikipedia race pages can be only partially updated. A stage result block may be current while the general-classification block is still from the previous stage. When that happens, prefer a narrow correction layer for the affected race over loosening the global parser in a way that could degrade other races.
 
@@ -381,6 +385,8 @@ Major rendering helpers include:
 - `buildStageRaceCard()`
 - `buildUpcomingCard()`
 - `buildArticleCard()`
+
+Result and stage-race cards now render rider names with country-flag emoji when a normalized rider country code is available. Recent-result and stage-race cards can also show a race-specific external finish/highlights link via `getRaceFinishVideoUrl()` and `buildRaceFinishLink()`.
 
 The design system is encoded directly in the inline `<style>` block:
 
@@ -511,12 +517,19 @@ Current API is simple because the UI and API share the same aggregated payload. 
 5. When changing article matching, test both men's and women's races because division filtering is heuristic.
 6. When changing date logic, verify both UTC race classification and Eastern display formatting.
 
-## Missing Tooling / Gaps
+## Testing and Gaps
 
-The project currently lacks several safeguards:
+There is now a small built-in Node test suite under `test/` that covers parser regressions and race-specific snapshot selection. Current fixtures include La Vuelta Femenina stage extraction and static snapshot coverage for Grande Prémio Anicolor.
 
-- No automated tests
-- No fixture-based parser tests
+Run it with:
+
+```bash
+npm test
+```
+
+The project still lacks several safeguards:
+
+- Limited fixture coverage beyond the current parser regressions
 - No schema validation for external data
 - No typed interfaces
 - No CI config in-repo

@@ -1261,6 +1261,12 @@ function isSameUtcDay(left, right) {
   );
 }
 
+function toUtcDateOnly(value) {
+  return value instanceof Date
+    ? new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
+    : null;
+}
+
 async function fetchTourDeRomandieOfficialSnapshot(race) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -1298,8 +1304,8 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
 async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const startUtc = new Date(Date.UTC(2026, 4, 3));
-  const endUtc = new Date(Date.UTC(2026, 4, 4));
+  const startUtc = toUtcDateOnly(race?.startDate) || new Date(Date.UTC(2026, 4, 3));
+  const endUtc = toUtcDateOnly(race?.endDate) || new Date(Date.UTC(2026, 4, 9));
 
   if (
     race?.pageTitle !== "2026 La Vuelta Femenina" ||
@@ -1341,6 +1347,32 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
     },
     overallResult: [],
   };
+}
+
+function getStageRaceSnapshotQuality(snapshot) {
+  if (!snapshot) {
+    return [-1, -1, -1, -1];
+  }
+
+  return [
+    Number(snapshot.completedStages || 0),
+    Number(snapshot.generalClassification?.stageNumber || snapshot.latestStage?.number || 0),
+    Math.max(snapshot.generalClassification?.standings?.length || 0, snapshot.overallResult?.length || 0),
+    Number(snapshot.latestStage?.standings?.length || 0),
+  ];
+}
+
+function selectPreferredStageRaceSnapshot(primary, secondary) {
+  const primaryQuality = getStageRaceSnapshotQuality(primary);
+  const secondaryQuality = getStageRaceSnapshotQuality(secondary);
+
+  for (let index = 0; index < primaryQuality.length; index += 1) {
+    if (primaryQuality[index] !== secondaryQuality[index]) {
+      return primaryQuality[index] > secondaryQuality[index] ? primary : secondary;
+    }
+  }
+
+  return primary || secondary || null;
 }
 
 async function fetchGrandePremioAnicolorLiveSnapshot(race) {
@@ -1601,6 +1633,31 @@ const STATIC_STAGE_RACE_SNAPSHOTS = {
         "Diego Pescador",
         "Txomin Juaristi",
         "Samuel Fernández",
+      ]),
+    },
+  },
+  "Grande Prémio Anicolor": {
+    totalStages: 3,
+    completedStages: 3,
+    latestStage: {
+      number: 3,
+      label: "Stage 3",
+      standings: buildStandings([
+        "Alexis Guérin",
+        "Javier Jamaica",
+        "Artem Nych",
+        "Xabier Berasategi",
+        "Rafael Reis",
+      ]),
+    },
+    generalClassification: {
+      stageNumber: 3,
+      standings: buildStandings([
+        "Alexis Guérin",
+        "Javier Jamaica",
+        "Tiago Antunes",
+        "Xabier Berasategi",
+        "Joan Bou",
       ]),
     },
   },
@@ -2065,19 +2122,22 @@ async function enrichStageRaceSnapshots(races) {
 
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
-        if (officialSnapshot?.completedStages > 0) {
-          race.stageRace = officialSnapshot;
-          return;
-        }
-
         const raw = await fetchWikiRaw(race.pageTitle);
-        const snapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot);
 
-        if (snapshot.totalStages > 1 || snapshot.completedStages > 0) {
+        if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
           race.stageRace = snapshot;
         }
       } catch {
-        // Fall back to season-table data when the race page cannot be parsed.
+        try {
+          const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
+          if (officialSnapshot?.completedStages > 0) {
+            race.stageRace = officialSnapshot;
+          }
+        } catch {
+          // Fall back to season-table data when the race page cannot be parsed.
+        }
       }
     }),
   );
@@ -2090,15 +2150,6 @@ async function enrichRecentResultStandings(races) {
     races.map(async (race) => {
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
-        if (officialSnapshot?.completedStages > 0) {
-          race.stageRace = officialSnapshot;
-          race.resultStandings = selectStandings(
-            officialSnapshot.generalClassification?.standings,
-            officialSnapshot.overallResult,
-          );
-          return;
-        }
-
         const officialOneDayStandings = await loadOfficialOneDayResultStandings(race);
         if (officialOneDayStandings.length > 0) {
           race.resultStandings = officialOneDayStandings;
@@ -2106,9 +2157,10 @@ async function enrichRecentResultStandings(races) {
         }
 
         const raw = await fetchWikiRaw(race.pageTitle);
-        const snapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot);
 
-        if (snapshot.totalStages > 1 || snapshot.completedStages > 0) {
+        if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
           race.stageRace = snapshot;
           race.resultStandings = selectStandings(snapshot.generalClassification?.standings, snapshot.overallResult);
           return;
@@ -2119,7 +2171,18 @@ async function enrichRecentResultStandings(races) {
           race.resultStandings = resultStandings;
         }
       } catch {
-        // Fall back to season-table results when page parsing fails.
+        try {
+          const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
+          if (officialSnapshot?.completedStages > 0) {
+            race.stageRace = officialSnapshot;
+            race.resultStandings = selectStandings(
+              officialSnapshot.generalClassification?.standings,
+              officialSnapshot.overallResult,
+            );
+          }
+        } catch {
+          // Fall back to season-table results when page parsing fails.
+        }
       }
     }),
   );
