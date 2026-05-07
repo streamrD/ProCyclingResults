@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs/promises");
 const path = require("path");
 const { URL } = require("url");
+const STATIC_STAGE_RACE_SNAPSHOT_DATA = require(path.join(process.cwd(), "data", "static-stage-race-snapshots.json"));
 
 const PORT = process.env.PORT || 3000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -1222,26 +1223,6 @@ function applyKnownStageRaceCorrections(race, snapshot) {
   return snapshot;
 }
 
-function getOfficialStageRaceSource(race) {
-  if (race?.pageTitle === "2026 Tour de Romandie") {
-    return "tour-de-romandie-prologue";
-  }
-
-  if (race?.pageTitle === "2026 La Vuelta Femenina") {
-    return "la-vuelta-femenina-rankings";
-  }
-
-  if (race?.pageTitle === "Grande Prémio Anicolor") {
-    return "grande-premio-anicolor-live";
-  }
-
-  if (race?.pageTitle === "Vuelta Asturias") {
-    return "vuelta-asturias";
-  }
-
-  return "";
-}
-
 function inferStageCountFromDates(race) {
   if (!isMultiDayRace(race)) {
     return 0;
@@ -1417,16 +1398,65 @@ function getStageRaceSnapshotQuality(snapshot) {
   }
 
   return [
-    Number(snapshot.completedStages || 0),
+    getStageRaceSnapshotProgress(snapshot),
     Number(snapshot.generalClassification?.stageNumber || snapshot.latestStage?.number || 0),
     Math.max(snapshot.generalClassification?.standings?.length || 0, snapshot.overallResult?.length || 0),
     Number(snapshot.latestStage?.standings?.length || 0),
   ];
 }
 
-function selectPreferredStageRaceSnapshot(primary, secondary) {
-  const primaryQuality = getStageRaceSnapshotQuality(primary);
-  const secondaryQuality = getStageRaceSnapshotQuality(secondary);
+function getStageRaceFieldProgress(field) {
+  if (!field) {
+    return 0;
+  }
+
+  if (field.label === "Prologue") {
+    return 0.5;
+  }
+
+  return Number(field.stageNumber || field.number || 0);
+}
+
+function getStageRaceSnapshotProgress(snapshot) {
+  if (!snapshot) {
+    return 0;
+  }
+
+  return Math.max(
+    Number(snapshot.completedStages || 0),
+    getStageRaceFieldProgress(snapshot.latestStage),
+    getStageRaceFieldProgress(snapshot.generalClassification),
+  );
+}
+
+function getLiveStageRaceFreshnessFloor(race, now = new Date()) {
+  if (!isMultiDayRace(race)) {
+    return 0;
+  }
+
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  if (!startUtc || !endUtc) {
+    return 0;
+  }
+
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (todayUtc.getTime() < startUtc.getTime()) {
+    return 0;
+  }
+
+  const totalStages = inferStageCountFromDates(race);
+  if (todayUtc.getTime() > endUtc.getTime()) {
+    return totalStages;
+  }
+
+  const elapsedDays = Math.floor((todayUtc.getTime() - startUtc.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 1));
+}
+
+function choosePreferredByQuality(primary, secondary, getQuality) {
+  const primaryQuality = getQuality(primary);
+  const secondaryQuality = getQuality(secondary);
 
   for (let index = 0; index < primaryQuality.length; index += 1) {
     if (primaryQuality[index] !== secondaryQuality[index]) {
@@ -1435,6 +1465,104 @@ function selectPreferredStageRaceSnapshot(primary, secondary) {
   }
 
   return primary || secondary || null;
+}
+
+function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now = new Date()) {
+  if (!field) {
+    return [-1, -1, -1];
+  }
+
+  const floor = getLiveStageRaceFreshnessFloor(race, now);
+  const progress =
+    fieldType === "overallResult"
+      ? getStageRaceSnapshotProgress(snapshot)
+      : getStageRaceFieldProgress(field);
+  const standingsLength = Array.isArray(field?.standings) ? field.standings.length : Array.isArray(field) ? field.length : 0;
+
+  return [Number(floor <= 0 || progress >= floor), progress, standingsLength];
+}
+
+function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
+  const preferredSnapshot = choosePreferredByQuality(primary, secondary, (snapshot) => {
+    if (!snapshot) {
+      return [-1, -1, -1, -1, -1];
+    }
+
+    const floor = getLiveStageRaceFreshnessFloor(race, now);
+    return [
+      Number(floor <= 0 || getStageRaceSnapshotProgress(snapshot) >= floor),
+      ...getStageRaceSnapshotQuality(snapshot),
+    ];
+  });
+
+  const latestStage = choosePreferredByQuality(primary?.latestStage, secondary?.latestStage, (field) =>
+    getStageRaceSnapshotFieldQuality(
+      field,
+      field === primary?.latestStage ? primary : secondary,
+      race,
+      "latestStage",
+      now,
+    ),
+  );
+  const generalClassification = choosePreferredByQuality(
+    primary?.generalClassification,
+    secondary?.generalClassification,
+    (field) =>
+      getStageRaceSnapshotFieldQuality(
+        field,
+        field === primary?.generalClassification ? primary : secondary,
+        race,
+        "generalClassification",
+        now,
+      ),
+  );
+  const overallResult = choosePreferredByQuality(primary?.overallResult, secondary?.overallResult, (field) =>
+    getStageRaceSnapshotFieldQuality(
+      field,
+      Array.isArray(field) && field === primary?.overallResult ? primary : secondary,
+      race,
+      "overallResult",
+      now,
+    ),
+  );
+  const totalStages = Math.max(
+    Number(primary?.totalStages || 0),
+    Number(secondary?.totalStages || 0),
+    inferStageCountFromDates(race) || 0,
+  );
+  const completedStages = Math.max(
+    getStageRaceSnapshotProgress(preferredSnapshot),
+    getStageRaceFieldProgress(latestStage),
+    getStageRaceFieldProgress(generalClassification),
+  );
+
+  return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
+    ? {
+        totalStages,
+        completedStages,
+        latestStage: latestStage
+          ? {
+              ...latestStage,
+              ...getWinnerDetails(latestStage.standings),
+            }
+          : null,
+        generalClassification: generalClassification
+          ? {
+              ...generalClassification,
+              ...getLeaderDetails(generalClassification.standings),
+            }
+          : null,
+        overallResult: Array.isArray(overallResult) ? overallResult : [],
+      }
+    : null;
+}
+
+function selectPreferredStageRaceSnapshot(primary, secondary, race = null, now = new Date()) {
+  if (!race) {
+    return choosePreferredByQuality(primary, secondary, getStageRaceSnapshotQuality);
+  }
+
+  return mergeStageRaceSnapshots(primary, secondary, race, now);
 }
 
 async function fetchGrandePremioAnicolorLiveSnapshot(race) {
@@ -1547,210 +1675,47 @@ function getLeaderDetails(standings) {
   };
 }
 
-const STATIC_STAGE_RACE_SNAPSHOTS = {
-  "2026 Tour de Romandie": {
-    totalStages: 6,
-    completedStages: 6,
-    latestStage: {
-      number: 5,
-      label: "Stage 5",
-      standings: buildStandings([
-        "Tadej Pogačar",
-        "Florian Lipowitz",
-        "Primož Roglič",
-        "Lorenzo Fortunato",
-        "Jørgen Nordhagen",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 5,
-      standings: buildStandings([
-        "Tadej Pogačar",
-        "Florian Lipowitz",
-        "Lenny Martinez",
-        "Jørgen Nordhagen",
-        "Luke Plapp",
-      ]),
-    },
-  },
-  "2026 Tour de la Provence": {
-    totalStages: 3,
-    completedStages: 3,
-    latestStage: {
-      number: 3,
-      label: "Stage 3",
-      standings: buildStandings([
-        "Axel Laurance",
-        "Maxime Jarnet",
-        "Lorenzo Manzin",
-        "Victor Loulergue",
-        "Simon Carr",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 3,
-      standings: buildStandings([
-        "Matthew Riccitello",
-        "Carlos Rodríguez Cano",
-        "Brandon Smith Rivera Vargas",
-        "Aurélien Paret-Peintre",
-        "Clément Champoussin",
-      ]),
-    },
-  },
-  "Giro di Sardegna": {
-    totalStages: 5,
-    completedStages: 5,
-    latestStage: {
-      number: 5,
-      label: "Stage 5",
-      standings: buildStandings([
-        "Davide Donati",
-        "Davide Persico",
-        "Tilen Finkšt",
-        "Kristian Egholm",
-        "Manuel Peñalver",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 5,
-      standings: buildStandings([
-        "Filippo Zana",
-        "Gianmarco Garofoli",
-        "Alessandro Verre",
-        "Urko Berrade Fernández",
-        "Ibon Ruiz Sedano",
-      ]),
-    },
-  },
-  "Settimana Internazionale di Coppi e Bartali": {
-    totalStages: 5,
-    completedStages: 5,
-    latestStage: {
-      number: 5,
-      label: "Stage 5",
-      standings: buildStandings([
-        "Mauro Schmid",
-        "Axel Laurance",
-        "Alan Hatherly",
-        "Giovanni Aleotti",
-        "Matteo Fabbro",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 5,
-      standings: buildStandings([
-        "Mauro Schmid",
-        "Axel Laurance",
-        "Alan Hatherly",
-        "Thomas Pesenti",
-        "Anton Schiffer",
-      ]),
-    },
-  },
-  "2026 O Gran Camiño": {
-    totalStages: 5,
-    completedStages: 5,
-    latestStage: {
-      number: 5,
-      label: "Stage 5",
-      standings: buildStandings([
-        "Alessandro Pinarello",
-        "Jørgen Nordhagen",
-        "Adam Yates",
-        "Iván Romeo Abad",
-        "Txomin Juaristi Arrieta",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 5,
-      standings: buildStandings([
-        "Adam Yates",
-        "Jørgen Nordhagen",
-        "Alessandro Pinarello",
-        "Abel Balderstone Roumens",
-        "Iván Romeo Abad",
-      ]),
-    },
-  },
-  "Vuelta Asturias": {
-    totalStages: 4,
-    completedStages: 4,
-    latestStage: {
-      number: 4,
-      label: "Stage 4",
-      standings: buildStandings([
-        "Edgar David Cadena",
-        "Adrià Pericas",
-        "José Manuel Díaz",
-        "Nairo Quintana",
-        "Txomin Juaristi",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 4,
-      standings: buildStandings([
-        "Nairo Quintana",
-        "Adrià Pericas",
-        "Diego Pescador",
-        "Txomin Juaristi",
-        "Samuel Fernández",
-      ]),
-    },
-  },
-  "Grande Prémio Anicolor": {
-    totalStages: 3,
-    completedStages: 3,
-    latestStage: {
-      number: 3,
-      label: "Stage 3",
-      standings: buildStandings([
-        "Alexis Guérin",
-        "Javier Jamaica",
-        "Artem Nych",
-        "Xabier Berasategi",
-        "Rafael Reis",
-      ]),
-    },
-    generalClassification: {
-      stageNumber: 3,
-      standings: buildStandings([
-        "Alexis Guérin",
-        "Javier Jamaica",
-        "Tiago Antunes",
-        "Xabier Berasategi",
-        "Joan Bou",
-      ]),
-    },
-  },
-};
+function findStaticStageRaceSnapshotData(race) {
+  const raceId = getRaceId(race);
 
-function getStaticStageRaceSnapshot(race) {
-  if (getRaceYear(race) !== 2026) {
+  return Object.entries(STATIC_STAGE_RACE_SNAPSHOT_DATA).find(([pageTitle, snapshot]) => {
+    if (pageTitle === raceId) {
+      return true;
+    }
+
+    return Array.isArray(snapshot?.aliases) && snapshot.aliases.includes(raceId);
+  })?.[1] || null;
+}
+
+function hydrateStoredStageRaceField(field, type) {
+  if (!field) {
     return null;
   }
 
-  const snapshot = STATIC_STAGE_RACE_SNAPSHOTS[race?.pageTitle];
-  if (!snapshot) {
+  const standings = buildStandings(field.standings || []);
+  if (standings.length === 0) {
+    return null;
+  }
+
+  return {
+    ...field,
+    standings,
+    ...(type === "latestStage" ? getWinnerDetails(standings) : getLeaderDetails(standings)),
+  };
+}
+
+function getStaticStageRaceSnapshot(race) {
+  const snapshot = findStaticStageRaceSnapshotData(race);
+  if (!snapshot || snapshot.year !== getRaceYear(race)) {
     return null;
   }
 
   return {
     totalStages: snapshot.totalStages,
     completedStages: snapshot.completedStages,
-    latestStage: snapshot.latestStage
-      ? {
-          ...snapshot.latestStage,
-          ...getWinnerDetails(snapshot.latestStage.standings),
-        }
-      : null,
-    generalClassification: snapshot.generalClassification
-      ? {
-          ...snapshot.generalClassification,
-          ...getLeaderDetails(snapshot.generalClassification.standings),
-        }
-      : null,
-    overallResult: snapshot.generalClassification?.standings || [],
+    latestStage: hydrateStoredStageRaceField(snapshot.latestStage, "latestStage"),
+    generalClassification: hydrateStoredStageRaceField(snapshot.generalClassification, "generalClassification"),
+    overallResult: buildStandings(snapshot.generalClassification?.standings || []),
   };
 }
 
@@ -2012,32 +1977,49 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
   };
 }
 
+const OFFICIAL_STAGE_RACE_PROVIDERS = [
+  {
+    id: "tour-de-romandie-prologue",
+    matches: (race) => race?.pageTitle === "2026 Tour de Romandie",
+    load: fetchTourDeRomandieOfficialSnapshot,
+  },
+  {
+    id: "la-vuelta-femenina-rankings",
+    matches: (race) => race?.pageTitle === "2026 La Vuelta Femenina",
+    load: fetchLaVueltaFemeninaOfficialSnapshot,
+  },
+  {
+    id: "grande-premio-anicolor-live",
+    matches: (race) => race?.pageTitle === "Grande Prémio Anicolor",
+    load: fetchGrandePremioAnicolorLiveSnapshot,
+  },
+  {
+    id: "vuelta-asturias",
+    matches: (race) => race?.pageTitle === "Vuelta Asturias",
+    load: fetchVueltaAsturiasOfficialSnapshot,
+  },
+];
+
+const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
+  {
+    id: "eschborn-frankfurt",
+    matches: (race) => race?.pageTitle === "2026 Eschborn–Frankfurt",
+    load: fetchEschbornFrankfurtOfficialStandings,
+  },
+];
+
+function findOfficialRaceProvider(providers, race) {
+  return providers.find((provider) => provider.matches(race)) || null;
+}
+
 async function loadOfficialStageRaceSnapshot(race) {
   const staticSnapshot = getStaticStageRaceSnapshot(race);
   if (staticSnapshot) {
     return staticSnapshot;
   }
 
-  switch (getOfficialStageRaceSource(race)) {
-    case "tour-de-romandie-prologue":
-      return fetchTourDeRomandieOfficialSnapshot(race);
-    case "la-vuelta-femenina-rankings":
-      return fetchLaVueltaFemeninaOfficialSnapshot(race);
-    case "grande-premio-anicolor-live":
-      return fetchGrandePremioAnicolorLiveSnapshot(race);
-    case "vuelta-asturias":
-      return fetchVueltaAsturiasOfficialSnapshot(race);
-    default:
-      return null;
-  }
-}
-
-function getOfficialOneDayResultSource(race) {
-  if (race?.pageTitle === "2026 Eschborn–Frankfurt") {
-    return "eschborn-frankfurt";
-  }
-
-  return "";
+  const provider = findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, race);
+  return provider ? provider.load(race) : null;
 }
 
 function parseEschbornFrankfurtOfficialStandings(html) {
@@ -2064,12 +2046,8 @@ async function fetchEschbornFrankfurtOfficialStandings() {
 }
 
 async function loadOfficialOneDayResultStandings(race) {
-  switch (getOfficialOneDayResultSource(race)) {
-    case "eschborn-frankfurt":
-      return fetchEschbornFrankfurtOfficialStandings(race);
-    default:
-      return [];
-  }
+  const provider = findOfficialRaceProvider(OFFICIAL_ONE_DAY_RESULT_PROVIDERS, race);
+  return provider ? provider.load(race) : [];
 }
 
 function extractLeadLocation(rawText) {
@@ -2186,7 +2164,7 @@ async function enrichStageRaceSnapshots(races) {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const raw = await fetchWikiRaw(race.pageTitle);
         const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
-        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot);
+        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
           race.stageRace = snapshot;
@@ -2220,7 +2198,7 @@ async function enrichRecentResultStandings(races) {
 
         const raw = await fetchWikiRaw(race.pageTitle);
         const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
-        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot);
+        const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
           race.stageRace = snapshot;

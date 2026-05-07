@@ -281,3 +281,117 @@ test("selectPreferredStageRaceSnapshot prefers later parsed progress over stage-
   assert.equal(preferred.latestStage.number, 2);
   assert.equal(preferred.generalClassification.stageNumber, 2);
 });
+
+test("selectPreferredStageRaceSnapshot merges the freshest stage and GC independently", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const preferred = JSON.parse(
+    JSON.stringify(
+      selectPreferredStageRaceSnapshot(
+        {
+          totalStages: 7,
+          completedStages: 4,
+          latestStage: {
+            number: 4,
+            label: "Stage 4",
+            standings: [{ place: "1", rider: "Lotte Kopecky" }],
+          },
+          generalClassification: {
+            stageNumber: 2,
+            standings: [{ place: "1", rider: "Marianne Vos" }],
+          },
+          overallResult: [],
+        },
+        {
+          totalStages: 7,
+          completedStages: 4,
+          latestStage: {
+            number: 3,
+            label: "Stage 3",
+            standings: [{ place: "1", rider: "Anna Van Der Breggen" }],
+          },
+          generalClassification: {
+            stageNumber: 4,
+            standings: [
+              { place: "1", rider: "Lotte Kopecky" },
+              { place: "2", rider: "Franziska Koch" },
+            ],
+          },
+          overallResult: [],
+        },
+        {
+          pageTitle: "2026 La Vuelta Femenina",
+          startDate: new Date("2026-05-03T00:00:00Z"),
+          endDate: new Date("2026-05-09T00:00:00Z"),
+        },
+        new Date("2026-05-06T20:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(preferred.completedStages, 4);
+  assert.equal(preferred.latestStage.number, 4);
+  assert.equal(preferred.generalClassification.stageNumber, 4);
+  assert.equal(preferred.latestStage.winner || preferred.latestStage.standings[0].rider, "Lotte Kopecky");
+  assert.equal(
+    preferred.generalClassification.leader || preferred.generalClassification.standings[0].rider,
+    "Lotte Kopecky",
+  );
+});
+
+test("selectPreferredStageRaceSnapshot deprioritizes stale live progress during an active race", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const preferred = JSON.parse(
+    JSON.stringify(
+      selectPreferredStageRaceSnapshot(
+        {
+          totalStages: 7,
+          completedStages: 1,
+          latestStage: {
+            number: 1,
+            label: "Stage 1",
+            standings: [
+              { place: "1", rider: "Noemi Rüegg" },
+              { place: "2", rider: "Lotte Kopecky" },
+              { place: "3", rider: "Franziska Koch" },
+              { place: "4", rider: "Katarzyna Niewiadoma-Phinney" },
+              { place: "5", rider: "Maëva Squiban" },
+            ],
+          },
+          generalClassification: {
+            stageNumber: 1,
+            standings: [
+              { place: "1", rider: "Noemi Rüegg" },
+              { place: "2", rider: "Franziska Koch" },
+              { place: "3", rider: "Lotte Kopecky" },
+            ],
+          },
+          overallResult: [],
+        },
+        {
+          totalStages: 7,
+          completedStages: 3,
+          latestStage: {
+            number: 3,
+            label: "Stage 3",
+            standings: [{ place: "1", rider: "Marianne Vos" }],
+          },
+          generalClassification: {
+            stageNumber: 3,
+            standings: [{ place: "1", rider: "Marianne Vos" }],
+          },
+          overallResult: [],
+        },
+        {
+          pageTitle: "2026 La Vuelta Femenina",
+          startDate: new Date("2026-05-03T00:00:00Z"),
+          endDate: new Date("2026-05-09T00:00:00Z"),
+        },
+        new Date("2026-05-06T20:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(preferred.completedStages, 3);
+  assert.equal(preferred.latestStage.number, 3);
+  assert.equal(preferred.generalClassification.stageNumber, 3);
+});
