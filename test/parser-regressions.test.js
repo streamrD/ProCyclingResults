@@ -25,6 +25,7 @@ function loadParserExports() {
     `${executableSource}\n;globalThis.__PCR_TEST__ = {
       extractStageRaceSnapshot,
       applyKnownStageRaceCorrections,
+      buildLaVueltaFemeninaOfficialSnapshot,
       getStaticStageRaceSnapshot,
       selectPreferredStageRaceSnapshot,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
@@ -100,6 +101,52 @@ test("applyKnownStageRaceCorrections expands La Vuelta Femenina stage 1 fallback
     { place: "4", rider: "Loes Adegeest", countryCode: "NED" },
     { place: "5", rider: "Katarzyna Niewiadoma-Phinney", countryCode: "POL" },
   ]);
+});
+
+test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage and GC standings", () => {
+  const { buildLaVueltaFemeninaOfficialSnapshot } = loadParserExports();
+  const rankingsPath = path.join(__dirname, "fixtures", "la-vuelta-femenina-rankings-stage4.html");
+  const gcPath = path.join(__dirname, "fixtures", "la-vuelta-femenina-gc-stage4.html");
+  const rankingsHtml = fs.readFileSync(rankingsPath, "utf8");
+  const gcHtml = fs.readFileSync(gcPath, "utf8");
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, gcHtml, {
+        pageTitle: "2026 La Vuelta Femenina",
+        startDate: new Date("2026-05-03T00:00:00Z"),
+        endDate: new Date("2026-05-09T00:00:00Z"),
+      }),
+    ),
+  );
+
+  assert.equal(snapshot.totalStages, 7);
+  assert.equal(snapshot.completedStages, 4);
+  assert.deepEqual(snapshot.latestStage, {
+    number: 4,
+    label: "Stage 4",
+    standings: [
+      { place: "1", rider: "Lotte Kopecky", countryCode: "BEL" },
+      { place: "2", rider: "Anna Van Der Breggen", countryCode: "NED" },
+      { place: "3", rider: "Letizia Paternoster", countryCode: "ITA" },
+      { place: "4", rider: "Shari Bossuyt", countryCode: "BEL" },
+      { place: "5", rider: "Franziska Koch", countryCode: "GER" },
+    ],
+    winner: "Lotte Kopecky",
+    winnerCountryCode: "BEL",
+  });
+  assert.deepEqual(snapshot.generalClassification, {
+    stageNumber: 4,
+    standings: [
+      { place: "1", rider: "Lotte Kopecky", countryCode: "BEL" },
+      { place: "2", rider: "Franziska Koch", countryCode: "GER" },
+      { place: "3", rider: "Cedrine Kerbaol", countryCode: "FRA" },
+      { place: "4", rider: "Anna Van Der Breggen", countryCode: "NED" },
+      { place: "5", rider: "Sarah Van Dam", countryCode: "CAN" },
+    ],
+    leader: "Lotte Kopecky",
+    leaderCountryCode: "BEL",
+  });
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {

@@ -1228,7 +1228,7 @@ function getOfficialStageRaceSource(race) {
   }
 
   if (race?.pageTitle === "2026 La Vuelta Femenina") {
-    return "la-vuelta-femenina-stage-1";
+    return "la-vuelta-femenina-rankings";
   }
 
   if (race?.pageTitle === "Grande Prémio Anicolor") {
@@ -1301,6 +1301,95 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
   };
 }
 
+const LA_VUELTA_FEMENINA_RANKINGS_URL = "https://www.lavueltafemenina.es/en/rankings";
+
+function extractLaVueltaFemeninaOfficialStageInfo(html, race) {
+  const text = String(html || "");
+  const titleStageNumber = Number.parseInt(
+    text.match(/Official classifications of La Vuelta Femenina\s*-\s*Stage\s*(\d+)/i)?.[1] || "",
+    10,
+  );
+  const listedStages = [...text.matchAll(/stage-select__option__stage">\s*Stage\s*(\d+)\s*</gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite);
+  const totalStages = Math.max(...listedStages, inferStageCountFromDates(race) || 0);
+  const stageNumber =
+    titleStageNumber ||
+    listedStages.reduce((max, value) => Math.max(max, value), 0) ||
+    Number.parseInt(text.match(/2026 Rankings\s*-\s*Stage\s*(\d+)/i)?.[1] || "", 10) ||
+    0;
+
+  return {
+    stageNumber,
+    totalStages,
+  };
+}
+
+function extractLaVueltaFemeninaGeneralAjaxUrl(html) {
+  const decoded = decodeHtml(String(html || ""));
+  const path =
+    decoded.match(/"itg":"([^"]+)"/)?.[1] ||
+    decoded.match(/data-tabs-ajax="([^"]+\/itg\/[^"]+\/subtab)"/)?.[1] ||
+    "";
+
+  if (!path) {
+    return "";
+  }
+
+  return new URL(path.replace(/\\\//g, "/"), LA_VUELTA_FEMENINA_RANKINGS_URL).toString();
+}
+
+function parseLaVueltaFemeninaOfficialStandings(html) {
+  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) {
+    return [];
+  }
+
+  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const row = match[1];
+      const place = Number.parseInt(row.match(/<td class="is-alignCenter">(\d+)<\/td>/i)?.[1] || "", 10);
+      const rider = toTitleCaseWords(cleanFeedText(row.match(/<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i)?.[1] || ""));
+      const countryCode = normalizeCountryCode((row.match(/data-class="flag--([a-z]{2,3})"/i)?.[1] || "").toUpperCase());
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+function buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, generalHtml, race) {
+  const { stageNumber, totalStages } = extractLaVueltaFemeninaOfficialStageInfo(rankingsHtml, race);
+  const stageStandings = parseLaVueltaFemeninaOfficialStandings(rankingsHtml);
+  const gcStandings = parseLaVueltaFemeninaOfficialStandings(generalHtml);
+
+  if (stageNumber <= 0 || (stageStandings.length === 0 && gcStandings.length === 0)) {
+    return null;
+  }
+
+  return {
+    totalStages: totalStages || inferStageCountFromDates(race) || 7,
+    completedStages: stageNumber,
+    latestStage:
+      stageStandings.length > 0
+        ? {
+            number: stageNumber,
+            label: `Stage ${stageNumber}`,
+            standings: stageStandings,
+            ...getWinnerDetails(stageStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber,
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
 async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -1316,37 +1405,10 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
     return null;
   }
 
-  const stageOneStandings = buildStandings([
-    "Noemi Rüegg",
-    "Lotte Kopecky",
-    "Franziska Koch",
-    "Katarzyna Niewiadoma-Phinney",
-    "Maëva Squiban",
-  ]);
-  const gcStandings = buildStandings([
-    "Noemi Rüegg",
-    "Franziska Koch",
-    "Lotte Kopecky",
-    "Loes Adegeest",
-    "Katarzyna Niewiadoma-Phinney",
-  ]);
-
-  return {
-    totalStages: 7,
-    completedStages: 1,
-    latestStage: {
-      number: 1,
-      label: "Stage 1",
-      standings: stageOneStandings,
-      ...getWinnerDetails(stageOneStandings),
-    },
-    generalClassification: {
-      stageNumber: 1,
-      standings: gcStandings,
-      ...getLeaderDetails(gcStandings),
-    },
-    overallResult: [],
-  };
+  const rankingsHtml = await fetchText(LA_VUELTA_FEMENINA_RANKINGS_URL);
+  const generalUrl = extractLaVueltaFemeninaGeneralAjaxUrl(rankingsHtml);
+  const generalHtml = generalUrl ? await fetchText(generalUrl) : "";
+  return buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, generalHtml, race);
 }
 
 function getStageRaceSnapshotQuality(snapshot) {
@@ -1959,7 +2021,7 @@ async function loadOfficialStageRaceSnapshot(race) {
   switch (getOfficialStageRaceSource(race)) {
     case "tour-de-romandie-prologue":
       return fetchTourDeRomandieOfficialSnapshot(race);
-    case "la-vuelta-femenina-stage-1":
+    case "la-vuelta-femenina-rankings":
       return fetchLaVueltaFemeninaOfficialSnapshot(race);
     case "grande-premio-anicolor-live":
       return fetchGrandePremioAnicolorLiveSnapshot(race);
