@@ -2188,6 +2188,8 @@ async function enrichStageRaceSnapshots(races) {
 async function enrichRecentResultStandings(races) {
   await Promise.all(
     races.map(async (race) => {
+      const isStageRace = isMultiDayRace(race);
+
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const officialOneDayStandings = await loadOfficialOneDayResultStandings(race);
@@ -2200,7 +2202,7 @@ async function enrichRecentResultStandings(races) {
         const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
-        if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
+        if (isStageRace && ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0)) {
           race.stageRace = snapshot;
           race.resultStandings = selectStandings(snapshot.generalClassification?.standings, snapshot.overallResult);
           return;
@@ -2213,7 +2215,7 @@ async function enrichRecentResultStandings(races) {
       } catch {
         try {
           const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
-          if (officialSnapshot?.completedStages > 0) {
+          if (isStageRace && officialSnapshot?.completedStages > 0) {
             race.stageRace = officialSnapshot;
             race.resultStandings = selectStandings(
               officialSnapshot.generalClassification?.standings,
@@ -2795,6 +2797,13 @@ function selectStandings(...candidateLists) {
   return [];
 }
 
+function selectRichestStandings(...candidateLists) {
+  return candidateLists
+    .filter((candidate) => Array.isArray(candidate) && candidate.some((entry) => entry?.rider))
+    .map((candidate) => candidate.filter((entry) => entry?.rider))
+    .sort((left, right) => right.length - left.length)[0] || [];
+}
+
 function buildStageRaceCard(race, options = {}) {
   const latestStage = race.stageRace?.latestStage || null;
   const classification = race.stageRace?.generalClassification || null;
@@ -2819,12 +2828,19 @@ function buildStageRaceCard(race, options = {}) {
       ? `Overall after stage ${classification.stageNumber}`
       : "Overall classification";
   const stageStandings = selectStandings(latestStage?.standings);
-  const gcStandings = selectStandings(
-    classification?.standings,
-    race.resultStandings,
-    race.stageRace?.overallResult,
-    fallbackPodium,
-  );
+  const gcStandings = isFinalized
+    ? selectRichestStandings(
+        race.resultStandings,
+        race.stageRace?.overallResult,
+        classification?.standings,
+        fallbackPodium,
+      )
+    : selectStandings(
+        classification?.standings,
+        race.resultStandings,
+        race.stageRace?.overallResult,
+        fallbackPodium,
+      );
   const totalStagesLabel =
     (race.stageRace?.totalStages || 0) > 0
       ? `All ${race.stageRace.totalStages} stages ${race.finishedToday ? "were completed today." : "are complete."}`
@@ -2855,6 +2871,8 @@ function buildStageRaceCard(race, options = {}) {
         ${buildPodiumMarkup(stageStandings)}
         ${buildRaceFinishLink(race)}
       </div>`
+    : isFinalized
+      ? ""
     : `
       <div class="card-subsection">
         <div class="detail-label">Stage results</div>
@@ -2886,7 +2904,7 @@ function buildStageRaceCard(race, options = {}) {
 }
 
 function buildRaceCard(race) {
-  if (race.stageRace) {
+  if (isMultiDayRace(race) && race.stageRace) {
     return buildStageRaceCard(race);
   }
 

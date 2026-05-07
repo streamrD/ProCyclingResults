@@ -26,6 +26,9 @@ function loadParserExports() {
       extractStageRaceSnapshot,
       applyKnownStageRaceCorrections,
       buildLaVueltaFemeninaOfficialSnapshot,
+      buildRaceCard,
+      buildStageRaceCard,
+      isMultiDayRace,
       getStaticStageRaceSnapshot,
       selectPreferredStageRaceSnapshot,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
@@ -394,4 +397,76 @@ test("selectPreferredStageRaceSnapshot deprioritizes stale live progress during 
   assert.equal(preferred.completedStages, 3);
   assert.equal(preferred.latestStage.number, 3);
   assert.equal(preferred.generalClassification.stageNumber, 3);
+});
+
+test("buildStageRaceCard prefers richer finalized standings over sparse GC data", () => {
+  const { buildStageRaceCard } = loadParserExports();
+  const html = buildStageRaceCard({
+    series: "Men's WorldTour",
+    title: "Test Stage Race",
+    date: "1-7 May 2026",
+    location: "Spain",
+    finishedToday: false,
+    resultStandings: [
+      { place: "1", rider: "Rider One" },
+      { place: "2", rider: "Rider Two" },
+      { place: "3", rider: "Rider Three" },
+      { place: "4", rider: "Rider Four" },
+      { place: "5", rider: "Rider Five" },
+    ],
+    stageRace: {
+      totalStages: 7,
+      completedStages: 7,
+      latestStage: null,
+      generalClassification: {
+        stageNumber: 7,
+        standings: [{ place: "1", rider: "Rider One" }],
+        leader: "Rider One",
+      },
+      overallResult: [{ place: "1", rider: "Rider One" }],
+    },
+  });
+
+  assert.match(html, /Rider Five/);
+  assert.doesNotMatch(html, /No completed stage result is available yet\./);
+});
+
+test("buildRaceCard does not render one-day races as stage races", () => {
+  const { buildRaceCard, isMultiDayRace } = loadParserExports();
+  const race = {
+    series: "Men's WorldTour",
+    title: "Test Classic",
+    date: "6 May 2026",
+    location: "Germany",
+    startDate: new Date("2026-05-06T00:00:00Z"),
+    endDate: new Date("2026-05-06T00:00:00Z"),
+    winner: "Rider One",
+    second: "Rider Two",
+    third: "Rider Three",
+    resultStandings: [
+      { place: "1", rider: "Rider One" },
+      { place: "2", rider: "Rider Two" },
+      { place: "3", rider: "Rider Three" },
+      { place: "4", rider: "Rider Four" },
+      { place: "5", rider: "Rider Five" }
+    ],
+    stageRace: {
+      totalStages: 1,
+      completedStages: 1,
+      latestStage: null,
+      generalClassification: {
+        stageNumber: 1,
+        standings: [{ place: "1", rider: "Rider One" }],
+        leader: "Rider One"
+      },
+      overallResult: [{ place: "1", rider: "Rider One" }]
+    }
+  };
+
+  assert.equal(isMultiDayRace(race), false);
+
+  const html = buildRaceCard(race);
+  assert.match(html, /Rider Five/);
+  assert.doesNotMatch(html, /Final general classification/);
+  assert.doesNotMatch(html, /All 1 stages are complete\./);
 });
