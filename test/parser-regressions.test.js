@@ -26,6 +26,7 @@ function loadParserExports() {
       extractStageRaceSnapshot,
       applyKnownStageRaceCorrections,
       buildLaVueltaFemeninaOfficialSnapshot,
+      parseTourOfGreeceOfficialStandings,
       buildRaceCard,
       buildStageRaceCard,
       isMultiDayRace,
@@ -150,6 +151,24 @@ test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage an
     leader: "Lotte Kopecky",
     leaderCountryCode: "BEL",
   });
+});
+
+test("parseTourOfGreeceOfficialStandings parses official stage 1 and GC standings", () => {
+  const { parseTourOfGreeceOfficialStandings } = loadParserExports();
+  const fixturePath = path.join(__dirname, "fixtures", "tour-of-greece-results-2026-stage1.html");
+  const html = fs.readFileSync(fixturePath, "utf8");
+
+  const stageStandings = JSON.parse(JSON.stringify(parseTourOfGreeceOfficialStandings(html, "Stage 1")));
+  const gcStandings = JSON.parse(JSON.stringify(parseTourOfGreeceOfficialStandings(html, "General Classification")));
+
+  assert.deepEqual(stageStandings, [
+    { place: "1", rider: "Mathis Avondts", countryCode: "BEL" },
+    { place: "2", rider: "Georgios Bouglas", countryCode: "GRE" },
+    { place: "3", rider: "Kristians Belohvosciks", countryCode: "LAT" },
+    { place: "4", rider: "Matthew Walls", countryCode: "GBR" },
+    { place: "5", rider: "Nahom Efriem", countryCode: "ERI" },
+  ]);
+  assert.deepEqual(gcStandings, stageStandings);
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {

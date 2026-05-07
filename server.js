@@ -223,6 +223,10 @@ const COUNTRY_FLAG_CODES = {
   VEN: "VE",
 };
 
+const ALPHA2_TO_COUNTRY_CODE = new Map(
+  Object.entries(COUNTRY_FLAG_CODES).map(([countryCode, alpha2Code]) => [alpha2Code, countryCode]),
+);
+
 const RACE_FINISH_VIDEO_URLS = {
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
   "2026 Presidential Cycling Tour of Turkiye": "https://www.youtube.com/watch?v=yOl95xG1yUo",
@@ -496,6 +500,11 @@ function cleanWikiText(value) {
 function normalizeCountryCode(value) {
   const code = String(value || "").trim().toUpperCase();
   return code === "SWI" ? "SUI" : code;
+}
+
+function normalizeAlpha2CountryCode(value) {
+  const code = String(value || "").trim().toUpperCase();
+  return ALPHA2_TO_COUNTRY_CODE.get(code) || "";
 }
 
 function getRiderCountryCode(name) {
@@ -1977,6 +1986,92 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
   };
 }
 
+const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-2026";
+
+function extractTourOfGreeceResultsSection(html) {
+  const text = String(html || "");
+  const startIndex = text.search(/<h1[^>]*>\s*Results 2026\s*<\/h1>/i);
+  if (startIndex < 0) {
+    return "";
+  }
+
+  return text.slice(startIndex);
+}
+
+function parseTourOfGreeceOfficialStandings(html, heading) {
+  const section = extractTourOfGreeceResultsSection(html);
+  if (!section) {
+    return [];
+  }
+
+  const tableMatch = section.match(
+    new RegExp(`<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>[\\s\\S]*?<tbody>([\\s\\S]*?)<\\/tbody>`, "i"),
+  );
+  if (!tableMatch) {
+    return [];
+  }
+
+  return [...tableMatch[1].matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const cells = [...match[1].matchAll(/<td>([\s\S]*?)<\/td>/gi)].map((cellMatch) => cellMatch[1]);
+      const place = Number.parseInt(cleanFeedText(cells[1] || "").match(/\d+/)?.[0] || "", 10);
+      const rider = toTitleCaseWords(cleanFeedText(cells[2] || "").replace(/\*/g, ""));
+      const alpha2Code = (cells[3] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
+      const countryCode = normalizeAlpha2CountryCode(alpha2Code);
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+async function fetchTourOfGreeceOfficialSnapshot(race) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+
+  if (
+    race?.pageTitle !== "Tour of Greece" ||
+    getRaceYear(race) !== 2026 ||
+    !startUtc ||
+    !endUtc ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const html = await fetchText(TOUR_OF_GREECE_RESULTS_URL);
+  const gcStandings = parseTourOfGreeceOfficialStandings(html, "General Classification");
+  const stageOneStandings = parseTourOfGreeceOfficialStandings(html, "Stage 1");
+  if (gcStandings.length === 0 && stageOneStandings.length === 0) {
+    return null;
+  }
+
+  return {
+    totalStages: inferStageCountFromDates(race) || 5,
+    completedStages: 1,
+    latestStage:
+      stageOneStandings.length > 0
+        ? {
+            number: 1,
+            label: "Stage 1",
+            standings: stageOneStandings,
+            ...getWinnerDetails(stageOneStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber: 1,
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
 const OFFICIAL_STAGE_RACE_PROVIDERS = [
   {
     id: "tour-de-romandie-prologue",
@@ -1997,6 +2092,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "vuelta-asturias",
     matches: (race) => race?.pageTitle === "Vuelta Asturias",
     load: fetchVueltaAsturiasOfficialSnapshot,
+  },
+  {
+    id: "tour-of-greece-results",
+    matches: (race) => race?.pageTitle === "Tour of Greece",
+    load: fetchTourOfGreeceOfficialSnapshot,
   },
 ];
 
