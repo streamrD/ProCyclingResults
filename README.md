@@ -62,10 +62,13 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 .
 ├── assets/
 │   └── fonts/
+├── data/
+│   └── static-stage-race-snapshots.json
 ├── package.json
 ├── README.md
 ├── server.js
 └── test/
+    ├── parser-regressions.test.js
     └── fixtures/
 ```
 
@@ -153,24 +156,26 @@ Used for:
 
 ### Special official sources
 
-Some races use race-specific fallback logic because Wikipedia is not sufficient for live or timely stage detail.
+Some races use official race-site providers because Wikipedia is not sufficient for live or timely stage detail.
 
 Current special cases:
 
 - Tour de Romandie
   Hard-coded prologue snapshot logic for the first day only
 - La Vuelta Femenina
-  Uses a race-window-bounded fallback snapshot for early live stage / GC coverage when the current-edition page is still sparse
+  Pulls the official rankings page plus its GC AJAX partial to recover current stage and GC standings
+- Tour of Greece
+  Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
 - Eschborn-Frankfurt
   Pulls the official rankings page to recover top-five one-day results when the current-edition Wikipedia race page is missing
 - Selected 2026 Europe Tour stage races
-  Use bounded fallback snapshots when the current upstream race pages do not expose complete stage / GC result blocks
+  Use static snapshot data from `data/static-stage-race-snapshots.json` when the current upstream race pages do not expose complete stage / GC result blocks
 - Grande Prémio Anicolor
   Uses a date-bounded live fallback snapshot while the current edition is in progress and upstream live stage data is still sparse
 
-This special-case logic is centralized behind `getOfficialStageRaceSource()`, `loadOfficialStageRaceSnapshot()`, `getOfficialOneDayResultSource()`, and `loadOfficialOneDayResultStandings()`.
+This source logic is centralized behind provider registries plus `loadOfficialStageRaceSnapshot()` and `loadOfficialOneDayResultStandings()`.
 
 ## Data Model and Aggregation Flow
 
@@ -184,6 +189,7 @@ At a high level it does the following:
 4. Split races into display buckets based on date and category.
 5. Enrich selected races with better location data.
 6. Enrich recent or live races with standings and stage-race snapshots.
+   Official and Wikipedia-derived stage-race data are merged field-by-field rather than treated as all-or-nothing snapshots.
 7. Mark races that finished today.
 8. Assign stable `id` values from page titles.
 9. Return the aggregate payload and cache it in memory.
@@ -294,7 +300,7 @@ It does this from Wikipedia race pages when possible by parsing:
 - route/stage winner tables
 - infobox first/second/third fields
 
-If a race has official special-case logic, it is loaded alongside the parsed Wikipedia snapshot and the richer / later snapshot is preferred.
+If a race has official provider logic, it is loaded alongside the parsed Wikipedia snapshot and the fresher stage, GC, and overall fields are merged independently. Live stage races also apply a simple date-based freshness floor so obviously stale progress is deprioritized.
 
 One practical complication: live Wikipedia race pages can be only partially updated. A stage result block may be current while the general-classification block is still from the previous stage. When that happens, prefer a narrow correction layer for the affected race over loosening the global parser in a way that could degrade other races.
 
@@ -480,11 +486,12 @@ Typical files/areas:
 - wikitext cleaning helpers
 - date parsing helpers
 - stage-race extraction helpers
-- official race-specific snapshot functions
+- official race-provider parsers
+- static snapshot data in `data/static-stage-race-snapshots.json`
 
 This is the most brittle and highest-value area for correctness work.
 
-When a single live race is wrong because an upstream page is stale or internally inconsistent, prefer adding a tightly scoped correction step for that race rather than weakening shared parsing heuristics. The 2026 Tour de Romandie Stage 3 GC correction is the model for that approach.
+When a single live race is wrong because an upstream page is stale or internally inconsistent, first prefer improving the shared merge / freshness path or adding an official provider before resorting to a tightly scoped correction step. The remaining Romandie GC correction is the current example of a last-resort race-specific patch.
 
 ### 3. Improve article relevance
 
@@ -513,13 +520,13 @@ Current API is simple because the UI and API share the same aggregated payload. 
 1. Read `server.js` end-to-end before making structural changes.
 2. Identify whether the change is in parsing, grouping, or rendering.
 3. Preserve current cache semantics unless there is a clear need to change them.
-4. If adding new race-specific exceptions, keep them behind `loadOfficialStageRaceSnapshot()` rather than scattering conditionals across render code.
+4. If adding new race-specific exceptions, add them through the provider registries or static snapshot data rather than scattering conditionals across render code.
 5. When changing article matching, test both men's and women's races because division filtering is heuristic.
 6. When changing date logic, verify both UTC race classification and Eastern display formatting.
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions and race-specific snapshot selection. Current fixtures include La Vuelta Femenina stage extraction and static snapshot coverage for Grande Prémio Anicolor.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, and static snapshot coverage for Grande Prémio Anicolor.
 
 Run it with:
 
@@ -541,6 +548,7 @@ If the project grows, the best next quality investment would be fixture-driven t
 - season page parsing
 - stage-race extraction
 - Vuelta Asturias official parsing
+- one-day result rendering fallbacks
 - article filtering/ranking behavior
 
 ## Suggested Near-Term Improvements
@@ -562,7 +570,8 @@ If another agent is taking over development, these are strong candidates:
 - Do not assume npm packages are available for parsing or routing. The current design deliberately avoids them.
 - Most bugs will come from upstream content drift, not from complex internal state.
 - The fastest way to make safe changes is usually to preserve the existing pipeline and improve a narrow parser or grouping rule.
-- When debugging data issues, inspect the upstream raw Wikipedia page or feed content first.
+- When debugging data issues, inspect the upstream raw Wikipedia page or official race result page first.
+- One-day races should never render through the stage-race card path, even if upstream content exposes a `stages = 1` field.
 - Empty standings arrays should be treated as missing data. Result selection and rendering intentionally prefer the first non-empty standings list and otherwise fall back to the stored winner / podium fields.
 - Some race-specific snapshots are intentionally time- or season-bounded. Before reusing them for a new edition, confirm that the page title, race year, and live window checks still match the current calendar.
 - When adding exceptions for a race, prefer a contained special-case function over weakening global heuristics.
