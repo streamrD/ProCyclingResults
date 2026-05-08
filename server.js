@@ -231,6 +231,7 @@ const ALPHA2_TO_COUNTRY_CODE = new Map(
 );
 
 const RACE_FINISH_VIDEO_URLS = {
+  "2026 Giro d'Italia": "https://www.youtube.com/watch?v=k9etTDahUFo",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
   "2026 Presidential Cycling Tour of Turkiye": "https://www.youtube.com/watch?v=yOl95xG1yUo",
   "2026 Eschborn–Frankfurt": "https://www.youtube.com/watch?v=RRweTbrT4FM",
