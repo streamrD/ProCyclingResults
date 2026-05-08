@@ -26,12 +26,15 @@ function loadParserExports() {
       extractStageRaceSnapshot,
       applyKnownStageRaceCorrections,
       buildLaVueltaFemeninaOfficialSnapshot,
+      parseGiroDItaliaGeneralClassificationStandings,
+      parseGiroDItaliaLivefeedStageStandings,
       parseTourOfGreeceOfficialStandings,
       buildRaceCard,
       buildStageRaceCard,
       isMultiDayRace,
       getStaticStageRaceSnapshot,
       selectPreferredStageRaceSnapshot,
+      getRaceDataCacheTtlMs,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -151,6 +154,85 @@ test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage an
     leader: "Lotte Kopecky",
     leaderCountryCode: "BEL",
   });
+});
+
+test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 1 top five", () => {
+  const { parseGiroDItaliaLivefeedStageStandings } = loadParserExports();
+  const json = JSON.stringify({
+    cronaca_sintesi: {
+      entries: [
+        {
+          titolo: "Here's today's Top 10",
+          abstract:
+            "1. Paul Magnier (Soudal Quick-Step) 3h21&#8217;08&#8221;<br />\n" +
+            "2. Tobias Lund Andresen (Decathlon CMA CGM) s.t.<br />\n" +
+            "3. Ethan Vernon (NSN Cycling Team) s.t.<br />\n" +
+            "4. Jonathan Milan (Lidl-Trek) s.t.<br />\n" +
+            "5. Madis Mihkels (EF Education-EasyPost) s.t.\n",
+        },
+      ],
+    },
+  });
+
+  const standings = JSON.parse(JSON.stringify(parseGiroDItaliaLivefeedStageStandings(json)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Paul Magnier", countryCode: "FRA" },
+    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN" },
+    { place: "3", rider: "Ethan Vernon", countryCode: "GBR" },
+    { place: "4", rider: "Jonathan Milan", countryCode: "ITA" },
+    { place: "5", rider: "Madis Mihkels", countryCode: "EST" },
+  ]);
+});
+
+test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia Rosa top five", () => {
+  const { parseGiroDItaliaGeneralClassificationStandings } = loadParserExports();
+  const html = `
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-1">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/fra.png"></div><div class="atleta-info"><div class="name p-3">Paul</div><div class="surname p-3 is-bold">MAGNIER</div></div></div>
+          <div class="team p-3">SOUDAL QUICK-STEP</div>
+          <div class="tempo p-3 is-text-right">3:20:58</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/den.png"></div><div class="atleta-info"><div class="name p-3">Tobias Lund</div><div class="surname p-3 is-bold">ANDRESEN</div></div></div>
+          <div class="team p-3">DECATHLON CMA CGM TEAM</div>
+          <div class="tempo p-3 is-text-right">3:21:02</div>
+          <div class="distacco p-3 is-text-right">0:04</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">3</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Manuele</div><div class="surname p-3 is-bold">TAROZZI</div></div></div>
+          <div class="team p-3">BARDIANI CSF 7 SABER</div>
+          <div class="tempo p-3 is-text-right">3:21:02</div>
+          <div class="distacco p-3 is-text-right">0:04</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">4</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/gbr.png"></div><div class="atleta-info"><div class="name p-3">Ethan</div><div class="surname p-3 is-bold">VERNON</div></div></div>
+          <div class="team p-3">NSN CYCLING TEAM</div>
+          <div class="tempo p-3 is-text-right">3:21:04</div>
+          <div class="distacco p-3 is-text-right">0:06</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">5</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/esp.png"></div><div class="atleta-info"><div class="name p-3">Diego Pablo</div><div class="surname p-3 is-bold">SEVILLA</div></div></div>
+          <div class="team p-3">TEAM POLTI VISITMALTA</div>
+          <div class="tempo p-3 is-text-right">3:21:04</div>
+          <div class="distacco p-3 is-text-right">0:06</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const standings = JSON.parse(JSON.stringify(parseGiroDItaliaGeneralClassificationStandings(html)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Paul Magnier", countryCode: "FRA" },
+    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN" },
+    { place: "3", rider: "Manuele Tarozzi", countryCode: "ITA" },
+    { place: "4", rider: "Ethan Vernon", countryCode: "GBR" },
+    { place: "5", rider: "Diego Pablo Sevilla", countryCode: "ESP" },
+  ]);
 });
 
 test("parseTourOfGreeceOfficialStandings parses official stage 1 and GC standings", () => {
@@ -416,6 +498,49 @@ test("selectPreferredStageRaceSnapshot deprioritizes stale live progress during 
   assert.equal(preferred.completedStages, 3);
   assert.equal(preferred.latestStage.number, 3);
   assert.equal(preferred.generalClassification.stageNumber, 3);
+});
+
+test("selectPreferredStageRaceSnapshot preserves explicit total stage counts over calendar-day spans", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const preferred = JSON.parse(
+    JSON.stringify(
+      selectPreferredStageRaceSnapshot(
+        null,
+        {
+          totalStages: 21,
+          completedStages: 1,
+          latestStage: {
+            number: 1,
+            label: "Stage 1",
+            standings: [{ place: "1", rider: "Paul Magnier", countryCode: "FRA" }],
+          },
+          generalClassification: null,
+          overallResult: [],
+        },
+        {
+          pageTitle: "2026 Giro d'Italia",
+          startDate: new Date("2026-05-08T00:00:00Z"),
+          endDate: new Date("2026-05-31T00:00:00Z"),
+        },
+        new Date("2026-05-08T20:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(preferred.totalStages, 21);
+  assert.equal(preferred.completedStages, 1);
+  assert.equal(preferred.latestStage.number, 1);
+});
+
+test("getRaceDataCacheTtlMs shortens cache TTL while live stage races are active", () => {
+  const { getRaceDataCacheTtlMs } = loadParserExports();
+
+  assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [] }), 15 * 60 * 1000);
+  assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [{ id: "giro" }], europeTourLiveStageRaces: [] }), 5 * 60 * 1000);
+  assert.equal(
+    getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [{ id: "greece" }] }),
+    5 * 60 * 1000,
+  );
 });
 
 test("buildStageRaceCard prefers richer finalized standings over sparse GC data", () => {

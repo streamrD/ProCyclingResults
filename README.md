@@ -166,6 +166,8 @@ Current special cases:
   Pulls the official rankings page plus its GC AJAX partial to recover current stage and GC standings
 - Tour of Greece
   Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
+- Giro d'Italia
+  Uses the official livefeed plus the official classifications page for opening-day Stage 1 and Maglia Rosa top-five coverage when Wikipedia is still sparse
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
 - Eschborn-Frankfurt
@@ -190,6 +192,7 @@ At a high level it does the following:
 5. Enrich selected races with better location data.
 6. Enrich recent or live races with standings and stage-race snapshots.
    Official and Wikipedia-derived stage-race data are merged field-by-field rather than treated as all-or-nothing snapshots.
+   Wikipedia fetches are rate-limited and retried because fresh live-race refreshes can otherwise hit upstream `429` responses during busy race windows.
 7. Mark races that finished today.
 8. Assign stable `id` values from page titles.
 9. Return the aggregate payload and cache it in memory.
@@ -359,7 +362,8 @@ There are two independent in-memory caches.
 ### Race data cache
 
 - Global object: `cache`
-- TTL: 15 minutes
+- TTL: 15 minutes by default
+- Live-race TTL: 5 minutes when `liveStageRaces` or `europeTourLiveStageRaces` are non-empty
 - Stores `updatedAt`, `data`, and `promise`
 
 The `promise` field prevents duplicate upstream fetch work when concurrent requests arrive during a refresh.
@@ -526,7 +530,7 @@ Current API is simple because the UI and API share the same aggregated payload. 
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, and static snapshot coverage for Grande Prémio Anicolor.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, and static snapshot coverage for Grande Prémio Anicolor.
 
 Run it with:
 
@@ -571,6 +575,7 @@ If another agent is taking over development, these are strong candidates:
 - Most bugs will come from upstream content drift, not from complex internal state.
 - The fastest way to make safe changes is usually to preserve the existing pipeline and improve a narrow parser or grouping rule.
 - When debugging data issues, inspect the upstream raw Wikipedia page or official race result page first.
+- Be alert to stale-but-parseable official pages. The Giro classifications page can expose current rows even when its metadata still references the previous edition.
 - One-day races should never render through the stage-race card path, even if upstream content exposes a `stages = 1` field.
 - Empty standings arrays should be treated as missing data. Result selection and rendering intentionally prefer the first non-empty standings list and otherwise fall back to the stored winner / podium fields.
 - Some race-specific snapshots are intentionally time- or season-bounded. Before reusing them for a new edition, confirm that the page title, race year, and live window checks still match the current calendar.

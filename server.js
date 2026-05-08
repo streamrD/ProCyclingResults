@@ -17,6 +17,9 @@ const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
+const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
+const WIKI_FETCH_CONCURRENCY = 3;
+const FETCH_RETRY_DELAYS_MS = [250, 750];
 const TOP_TIER_PUBLISHERS = [
   { pattern: /reuters/i, score: 140 },
   { pattern: /\bap\b|associated press|ap news/i, score: 135 },
@@ -338,6 +341,7 @@ const RIDER_COUNTRY_CODES = new Map(
     "Lotte Kopecky": "BEL",
     "Luca Mozzato": "ITA",
     "Luke Plapp": "AUS",
+    "Madis Mihkels": "EST",
     "Mads Pedersen": "DEN",
     "Manuel Penalver": "ESP",
     "Marianne Vos": "NED",
@@ -359,6 +363,7 @@ const RIDER_COUNTRY_CODES = new Map(
     "Noemi Ruegg": "SUI",
     "Oded Kogut": "ISR",
     "Oscar Onley": "GBR",
+    "Paul Magnier": "FRA",
     "Paul Seixas": "FRA",
     "Paula Blasi": "ESP",
     "Pauline Ferrand-Prevot": "FRA",
@@ -750,6 +755,28 @@ function formatDateLabel(dateText, year) {
   return `${String(dateText || "").trim()} ${year}`.replace(/\s+/g, " ");
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let activeWikiFetches = 0;
+const wikiFetchQueue = [];
+
+async function withWikiFetchSlot(task) {
+  if (activeWikiFetches >= WIKI_FETCH_CONCURRENCY) {
+    await new Promise((resolve) => wikiFetchQueue.push(resolve));
+  }
+
+  activeWikiFetches += 1;
+
+  try {
+    return await task();
+  } finally {
+    activeWikiFetches -= 1;
+    wikiFetchQueue.shift()?.();
+  }
+}
+
 function seasonIncludesRace(season, race) {
   const includedPageTitles = season.includePageTitles || [];
   const includedTitles = season.includeTitles || [];
@@ -814,22 +841,37 @@ function parseSeasonRows(rawText, season, year) {
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: {
-      "user-agent": "Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://wikipedia.org)",
-    },
-  });
+  for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": "Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://wikipedia.org)",
+        },
+      });
 
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+      if (response.ok) {
+        return response.text();
+      }
+
+      if ((response.status === 429 || response.status >= 500) && attempt < FETCH_RETRY_DELAYS_MS.length) {
+        await sleep(FETCH_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+
+      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      if (attempt >= FETCH_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await sleep(FETCH_RETRY_DELAYS_MS[attempt]);
+    }
   }
-
-  return response.text();
 }
 
 async function fetchWikiRaw(title) {
   const url = `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(title)}&action=raw`;
-  const text = await fetchText(url);
+  const text = await withWikiFetchSlot(() => fetchText(url));
   if (text.startsWith("<!DOCTYPE html>")) {
     return "";
   }
@@ -1241,6 +1283,12 @@ function inferStageCountFromDates(race) {
   return Math.max(0, Math.round(durationMs / (1000 * 60 * 60 * 24)) + 1);
 }
 
+function getRaceDataCacheTtlMs(data) {
+  return (data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length)
+    ? LIVE_RACE_CACHE_TTL_MS
+    : CACHE_TTL_MS;
+}
+
 function isSameUtcDay(left, right) {
   return (
     left instanceof Date &&
@@ -1537,8 +1585,9 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   const totalStages = Math.max(
     Number(primary?.totalStages || 0),
     Number(secondary?.totalStages || 0),
-    inferStageCountFromDates(race) || 0,
   );
+  const fallbackTotalStages = inferStageCountFromDates(race) || 0;
+  const resolvedTotalStages = totalStages || fallbackTotalStages;
   const completedStages = Math.max(
     getStageRaceSnapshotProgress(preferredSnapshot),
     getStageRaceFieldProgress(latestStage),
@@ -1547,7 +1596,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
 
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
-        totalStages,
+        totalStages: resolvedTotalStages,
         completedStages,
         latestStage: latestStage
           ? {
@@ -1987,6 +2036,8 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
 }
 
 const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-2026";
+const GIRO_D_ITALIA_CLASSIFICATIONS_URL = "https://www.giroditalia.it/en/classifiche/";
+const GIRO_D_ITALIA_LIVEFEED_STAGE_ONE_URL = "https://www.giroditalia.it/en/livefeed/tappa/1/";
 
 function extractTourOfGreeceResultsSection(html) {
   const text = String(html || "");
@@ -2022,6 +2073,107 @@ function parseTourOfGreeceOfficialStandings(html, heading) {
     })
     .filter(Boolean)
     .slice(0, MAX_RESULT_RIDERS);
+}
+
+function parseGiroDItaliaLivefeedStageStandings(jsonText) {
+  let payload;
+
+  try {
+    payload = JSON.parse(String(jsonText || ""));
+  } catch {
+    return [];
+  }
+
+  const topTenEntry = (payload?.cronaca_sintesi?.entries || []).find((entry) =>
+    /here'?s today'?s top 10/i.test(cleanFeedText(entry?.titolo || "")),
+  );
+  const abstract = decodeHtml(String(topTenEntry?.abstract || ""))
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  const lines = abstract
+    .split("\n")
+    .map((line) => cleanFeedText(line))
+    .filter(Boolean);
+
+  return lines
+    .map((line) => {
+      const match = line.match(/^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+s\.t\.$|^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+\d+h/i);
+      const place = Number.parseInt(match?.[1] || match?.[3] || "", 10);
+      const rider = cleanFeedText(match?.[2] || match?.[4] || "");
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, toTitleCaseWords(rider)) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+function parseGiroDItaliaGeneralClassificationStandings(html) {
+  const normalized = String(html || "").replace(/</g, "\n<");
+  const rosaMatch = normalized.match(
+    /data-category="tab-classifica-CLGEN"[\s\S]*?<div class="table type-1">([\s\S]*?)(?:<div class="single-tab js-tab-classifica-|$)/i,
+  );
+  if (!rosaMatch) {
+    return [];
+  }
+
+  return [...rosaMatch[1].matchAll(/<div class="line-table"[\s\S]*?<\/div>\s*<\/div>/gi)]
+    .map((match) => {
+      const row = match[0];
+      const place = Number.parseInt(row.match(/<h5 class="position is-pink">(\d+)\s*<\/h5>/i)?.[1] || "", 10);
+      const firstName = cleanFeedText(row.match(/<div class="name p-3">([\s\S]*?)<\/div>/i)?.[1] || "");
+      const surname = cleanFeedText(row.match(/<div class="surname p-3 is-bold">([\s\S]*?)<\/div>/i)?.[1] || "");
+      const alpha3Code = (row.match(/athletes-flags\/([a-z]{3})\.png/i)?.[1] || "").toUpperCase();
+      const rider = toTitleCaseWords([firstName, surname].filter(Boolean).join(" "));
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, alpha3Code) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+async function fetchGiroDItaliaOfficialSnapshot(race) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  if (
+    race?.pageTitle !== "2026 Giro d'Italia" ||
+    getRaceYear(race) !== 2026 ||
+    !isSameUtcDay(race?.startDate, todayUtc)
+  ) {
+    return null;
+  }
+
+  const [livefeedJson, classificationsHtml] = await Promise.all([
+    fetchText(GIRO_D_ITALIA_LIVEFEED_STAGE_ONE_URL),
+    fetchText(GIRO_D_ITALIA_CLASSIFICATIONS_URL),
+  ]);
+  const stageStandings = parseGiroDItaliaLivefeedStageStandings(livefeedJson);
+  const gcStandings = parseGiroDItaliaGeneralClassificationStandings(classificationsHtml);
+
+  if (stageStandings.length === 0 && gcStandings.length === 0) {
+    return null;
+  }
+
+  return {
+    totalStages: 21,
+    completedStages: 1,
+    latestStage:
+      stageStandings.length > 0
+        ? {
+            number: 1,
+            label: "Stage 1",
+            standings: stageStandings,
+            ...getWinnerDetails(stageStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber: 1,
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
 }
 
 async function fetchTourOfGreeceOfficialSnapshot(race) {
@@ -2097,6 +2249,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "tour-of-greece-results",
     matches: (race) => race?.pageTitle === "Tour of Greece",
     load: fetchTourOfGreeceOfficialSnapshot,
+  },
+  {
+    id: "giro-ditalia-stage-one",
+    matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
+    load: fetchGiroDItaliaOfficialSnapshot,
   },
 ];
 
@@ -2657,7 +2814,7 @@ function selectRaceArticles(articlePool, refreshToken) {
 
 async function loadRaceData() {
   const now = Date.now();
-  if (cache.data && now - cache.updatedAt < CACHE_TTL_MS) {
+  if (cache.data && now - cache.updatedAt < getRaceDataCacheTtlMs(cache.data)) {
     return cache.data;
   }
 
