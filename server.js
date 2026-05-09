@@ -17,6 +17,7 @@ const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
+const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
@@ -430,7 +431,19 @@ let raceMetadataCache = {
   promise: null,
 };
 
+let deferredRaceMetadataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
 let raceDataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
+let deferredRaceDataCache = {
   updatedAt: 0,
   data: null,
   promise: null,
@@ -2549,6 +2562,12 @@ async function enrichLocations(races, loadWikiRaw = fetchWikiRaw) {
   return races;
 }
 
+function enrichLocationsInBackground(races, loadWikiRaw = fetchWikiRaw) {
+  enrichLocations(races, loadWikiRaw).catch(() => {
+    // Keep the season-table fallback locations if background enrichment fails.
+  });
+}
+
 function isMultiDayRace(race) {
   return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() !== race.endDate.getTime();
 }
@@ -3121,16 +3140,45 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
   };
 }
 
-async function buildRaceMetadata() {
+function selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates) {
+  const worldTourSeries = ["Men's WorldTour", "Women's WorldTour"];
+
+  return worldTourSeries.flatMap((series) =>
+    [...recentOneDayResults, ...finalizedStageCandidates]
+      .filter((race) => race.series === series)
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, WORLDTOUR_RECENT_RESULTS),
+  );
+}
+
+function selectHomepageRecentStandingsTargets(recentCandidates) {
+  return [...recentCandidates]
+    .sort((left, right) => right.endDate - left.endDate)
+    .slice(0, HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT);
+}
+
+function selectHomepageWorldTourUpcomingRaces(upcomingRaces) {
+  return [
+    ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Men's WorldTour"),
+    ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Women's WorldTour"),
+  ];
+}
+
+async function buildRaceMetadata(options = {}) {
+  const startedAt = Date.now();
+  const includeDeferred = options.includeDeferred === true;
   const wikiRawLoader = createWikiRawLoader();
+  const seasons = includeDeferred ? SEASONS : SEASONS.filter((season) => /WorldTour/.test(season.label));
+  const seasonPagesStartedAt = Date.now();
   const seasonPages = await Promise.all(
-    SEASONS.map(async (season) => {
+    seasons.map(async (season) => {
       const yearMatch = season.pageTitle.match(/20\d{2}/);
       const year = yearMatch ? Number(yearMatch[0]) : new Date().getUTCFullYear();
       const rawText = await fetchWikiRaw(season.pageTitle);
       return parseSeasonRows(rawText, season, year);
     }),
   );
+  const seasonPagesMs = Date.now() - seasonPagesStartedAt;
 
   const allRaces = seasonPages
     .flat()
@@ -3143,31 +3191,53 @@ async function buildRaceMetadata() {
     recentOneDayResults,
     finalizedStageCandidates,
     liveStageCandidates,
+    upcomingRaces,
     europeTourRecentResults,
     europeTourLiveStageRaces,
     europeTourUpcomingRaces,
     upcomingDisplayRaces,
   } = partitionRaceBuckets(allRaces);
 
+  const homepageWorldTourRecentCandidates = includeDeferred
+    ? []
+    : selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates);
+  const homepageWorldTourUpcomingRaces = includeDeferred ? [] : selectHomepageWorldTourUpcomingRaces(upcomingRaces);
+
   const displayRaces = [
-    ...recentOneDayResults,
-    ...finalizedStageCandidates,
-    ...liveStageCandidates,
-    ...upcomingDisplayRaces,
-    ...europeTourRecentResults,
-    ...europeTourLiveStageRaces,
-    ...europeTourUpcomingRaces,
+    ...(includeDeferred ? recentOneDayResults : homepageWorldTourRecentCandidates),
+    ...(includeDeferred ? finalizedStageCandidates : []),
+    ...liveStageCandidates.filter((race) => includeDeferred || /WorldTour/.test(race.series)),
+    ...(includeDeferred ? upcomingDisplayRaces : homepageWorldTourUpcomingRaces),
+    ...(includeDeferred ? europeTourRecentResults : []),
+    ...(includeDeferred ? europeTourLiveStageRaces : []),
+    ...(includeDeferred ? europeTourUpcomingRaces : []),
   ];
 
-  await enrichLocations(displayRaces, wikiRawLoader);
+  if (includeDeferred) {
+    const locationEnrichmentStartedAt = Date.now();
+    await enrichLocations(displayRaces, wikiRawLoader);
+    var locationEnrichmentMs = Date.now() - locationEnrichmentStartedAt;
+  } else {
+    enrichLocationsInBackground(displayRaces, wikiRawLoader);
+  }
 
   return {
     allRaces,
     fetchedAt: new Date().toISOString(),
+    buildTimings: {
+      totalMs: Date.now() - startedAt,
+      seasonPagesMs,
+      locationEnrichmentMs: includeDeferred ? locationEnrichmentMs : 0,
+      locationEnrichmentMode: includeDeferred ? "blocking" : "background",
+      seasonCount: seasons.length,
+      displayRaceCount: displayRaces.length,
+      allRaceCount: allRaces.length,
+    },
   };
 }
 
-async function buildRaceData(metadata) {
+async function buildRaceData(metadata, options = {}) {
+  const startedAt = Date.now();
   const allRaces = cloneRaces(metadata?.allRaces || []);
   const {
     todayUtc,
@@ -3179,19 +3249,63 @@ async function buildRaceData(metadata) {
     europeTourLiveStageRaces,
     europeTourUpcomingRaces,
   } = partitionRaceBuckets(allRaces);
-
-  const stageRaceDisplays = [...liveStageCandidates, ...europeTourRecentResults, ...europeTourLiveStageRaces].filter(
-    isMultiDayRace,
+  const includeDeferred = options.includeDeferred !== false;
+  const isWorldTourRace = (race) => race.series === "Men's WorldTour" || race.series === "Women's WorldTour";
+  const homepageWorldTourRecentCandidates = selectHomepageWorldTourRecentCandidates(
+    recentOneDayResults,
+    finalizedStageCandidates,
   );
+  const homepageRecentStandingsTargets = includeDeferred
+    ? []
+    : selectHomepageRecentStandingsTargets(homepageWorldTourRecentCandidates);
+  const selectedRecentOneDayResults = includeDeferred ? recentOneDayResults : [];
+  const selectedFinalizedStageCandidates = includeDeferred ? finalizedStageCandidates : [];
+  const selectedHomepageRecentCandidates = includeDeferred ? [] : homepageWorldTourRecentCandidates;
+  const selectedLiveStageCandidates = includeDeferred
+    ? liveStageCandidates
+    : liveStageCandidates.filter(isWorldTourRace);
+  const selectedUpcomingRaces = includeDeferred
+    ? upcomingRaces
+    : selectHomepageWorldTourUpcomingRaces(upcomingRaces);
+  const selectedEuropeTourRecentResults = includeDeferred ? europeTourRecentResults : [];
+  const selectedEuropeTourLiveStageRaces = includeDeferred ? europeTourLiveStageRaces : [];
+  const selectedEuropeTourUpcomingRaces = includeDeferred ? europeTourUpcomingRaces : [];
+
+  const stageRaceDisplays = [
+    ...selectedLiveStageCandidates,
+    ...selectedEuropeTourRecentResults,
+    ...selectedEuropeTourLiveStageRaces,
+  ].filter(isMultiDayRace);
 
   const wikiRawLoader = createWikiRawLoader();
-  await enrichRecentResultStandings(recentOneDayResults, wikiRawLoader);
-  await enrichRecentResultStandings(finalizedStageCandidates, wikiRawLoader);
+  const recentStandingsStartedAt = Date.now();
+  await enrichRecentResultStandings(
+    includeDeferred ? selectedRecentOneDayResults : homepageRecentStandingsTargets,
+    wikiRawLoader,
+  );
+  let recentStandingsMs = Date.now() - recentStandingsStartedAt;
+  let finalizedStageStandingsMs = 0;
+  if (includeDeferred) {
+    const finalizedStageStandingsStartedAt = Date.now();
+    await enrichRecentResultStandings(selectedFinalizedStageCandidates, wikiRawLoader);
+    finalizedStageStandingsMs = Date.now() - finalizedStageStandingsStartedAt;
+  }
+  const stageSnapshotsStartedAt = Date.now();
   await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+  const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
 
-  const finalizedStageRaces = finalizedStageCandidates.filter(isFinalizedStageRace);
-  const liveStageRaces = liveStageCandidates.filter((race) => !isFinalizedStageRace(race));
-  const recentResults = [...recentOneDayResults, ...finalizedStageRaces].sort((left, right) => right.endDate - left.endDate);
+  const finalizedStageRaces = (
+    includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates
+  ).filter(isFinalizedStageRace);
+  const liveStageRaces = selectedLiveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+  const recentResults = (
+    includeDeferred
+      ? [...selectedRecentOneDayResults, ...finalizedStageRaces]
+      : [
+          ...selectedHomepageRecentCandidates.filter(isOneDayRace),
+          ...finalizedStageRaces,
+        ]
+  ).sort((left, right) => right.endDate - left.endDate);
 
   finalizedStageRaces.forEach((race) => {
     if (!race.resultStandings?.length) {
@@ -3199,7 +3313,7 @@ async function buildRaceData(metadata) {
     }
   });
 
-  europeTourRecentResults.forEach((race) => {
+  selectedEuropeTourRecentResults.forEach((race) => {
     if (!race.resultStandings?.length) {
       race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
     }
@@ -3208,10 +3322,10 @@ async function buildRaceData(metadata) {
   [
     ...recentResults,
     ...liveStageRaces,
-    ...upcomingRaces,
-    ...europeTourRecentResults,
-    ...europeTourLiveStageRaces,
-    ...europeTourUpcomingRaces,
+    ...selectedUpcomingRaces,
+    ...selectedEuropeTourRecentResults,
+    ...selectedEuropeTourLiveStageRaces,
+    ...selectedEuropeTourUpcomingRaces,
   ].forEach((race) => {
     race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
   });
@@ -3222,92 +3336,160 @@ async function buildRaceData(metadata) {
     recentResults,
     finalizedStageRaces,
     liveStageRaces,
-    upcomingRaces,
-    europeTourRecentResults,
-    europeTourLiveStageRaces,
-    europeTourUpcomingRaces,
+    upcomingRaces: selectedUpcomingRaces,
+    europeTourRecentResults: selectedEuropeTourRecentResults,
+    europeTourLiveStageRaces: selectedEuropeTourLiveStageRaces,
+    europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
+    buildTimings: {
+      totalMs: Date.now() - startedAt,
+      recentStandingsMs,
+      finalizedStageStandingsMs,
+      stageSnapshotsMs,
+      recentResultCount: includeDeferred ? selectedRecentOneDayResults.length : selectedHomepageRecentCandidates.length,
+      recentStandingsTargetCount: includeDeferred ? selectedRecentOneDayResults.length : homepageRecentStandingsTargets.length,
+      finalizedStageCandidateCount: selectedFinalizedStageCandidates.length,
+      liveStageCandidateCount: selectedLiveStageCandidates.length,
+      stageRaceDisplayCount: stageRaceDisplays.length,
+      upcomingRaceCount: selectedUpcomingRaces.length,
+      includeDeferred,
+      metadataBuildTimings: metadata?.buildTimings || null,
+    },
   };
 }
 
-function refreshRaceMetadataInBackground(resetOnFailure = false) {
-  if (raceMetadataCache.promise) {
-    return raceMetadataCache.promise;
+function refreshRaceMetadataInBackground(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = includeDeferred ? deferredRaceMetadataCache : raceMetadataCache;
+  if (targetCache.promise) {
+    return targetCache.promise;
   }
 
-  raceMetadataCache.promise = buildRaceMetadata()
+  const buildPromise = buildRaceMetadata({ includeDeferred })
     .then((data) => {
-      raceMetadataCache = {
+      const nextCache = {
         updatedAt: Date.now(),
         data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceMetadataCache = nextCache;
+      } else {
+        raceMetadataCache = nextCache;
+      }
       return data;
     })
     .catch((error) => {
-      raceMetadataCache = {
-        updatedAt: resetOnFailure ? 0 : raceMetadataCache.updatedAt,
-        data: resetOnFailure ? null : raceMetadataCache.data,
+      const fallbackCache = {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceMetadataCache = fallbackCache;
+      } else {
+        raceMetadataCache = fallbackCache;
+      }
       throw error;
     });
 
-  return raceMetadataCache.promise;
+  if (includeDeferred) {
+    deferredRaceMetadataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  } else {
+    raceMetadataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  }
+
+  return buildPromise;
 }
 
-async function loadRaceMetadata() {
+async function loadRaceMetadata(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const targetCache = includeDeferred ? deferredRaceMetadataCache : raceMetadataCache;
   const now = Date.now();
-  if (raceMetadataCache.data) {
-    if (now - raceMetadataCache.updatedAt < RACE_METADATA_CACHE_TTL_MS) {
-      return raceMetadataCache.data;
+  if (targetCache.data) {
+    if (now - targetCache.updatedAt < RACE_METADATA_CACHE_TTL_MS) {
+      return targetCache.data;
     }
 
-    refreshRaceMetadataInBackground(false).catch(() => {});
-    return raceMetadataCache.data;
+    refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
   }
 
-  return refreshRaceMetadataInBackground(true);
+  return refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: true });
 }
 
-function refreshRaceDataInBackground(metadata, resetOnFailure = false) {
-  if (raceDataCache.promise) {
-    return raceDataCache.promise;
+function refreshRaceDataInBackground(metadata, options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = includeDeferred ? deferredRaceDataCache : raceDataCache;
+  if (targetCache.promise) {
+    return targetCache.promise;
   }
 
-  raceDataCache.promise = buildRaceData(metadata)
+  const buildPromise = buildRaceData(metadata, { includeDeferred })
     .then((data) => {
-      raceDataCache = {
+      const nextCache = {
         updatedAt: Date.now(),
         data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceDataCache = nextCache;
+      } else {
+        raceDataCache = nextCache;
+      }
       return data;
     })
     .catch((error) => {
-      raceDataCache = {
-        updatedAt: resetOnFailure ? 0 : raceDataCache.updatedAt,
-        data: resetOnFailure ? null : raceDataCache.data,
+      const fallbackCache = {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceDataCache = fallbackCache;
+      } else {
+        raceDataCache = fallbackCache;
+      }
       throw error;
     });
 
-  return raceDataCache.promise;
-}
-
-async function loadRaceData() {
-  const metadata = await loadRaceMetadata();
-  const now = Date.now();
-  if (raceDataCache.data) {
-    if (now - raceDataCache.updatedAt < getRaceDataCacheTtlMs(raceDataCache.data)) {
-      return raceDataCache.data;
-    }
-
-    refreshRaceDataInBackground(metadata, false).catch(() => {});
-    return raceDataCache.data;
+  if (includeDeferred) {
+    deferredRaceDataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  } else {
+    raceDataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
   }
 
-  return refreshRaceDataInBackground(metadata, true);
+  return buildPromise;
+}
+
+async function loadRaceData(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const metadata = await loadRaceMetadata({ includeDeferred });
+  const targetCache = includeDeferred ? deferredRaceDataCache : raceDataCache;
+  const now = Date.now();
+  if (targetCache.data) {
+    if (now - targetCache.updatedAt < getRaceDataCacheTtlMs(targetCache.data)) {
+      return targetCache.data;
+    }
+
+    refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
+  }
+
+  return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: true });
 }
 
 function warmRaceDataInBackground() {
@@ -3315,8 +3497,8 @@ function warmRaceDataInBackground() {
     return raceDataCache.promise;
   }
 
-  return loadRaceMetadata()
-    .then((metadata) => refreshRaceDataInBackground(metadata, true))
+  return loadRaceMetadata({ includeDeferred: false })
+    .then((metadata) => refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: true }))
     .catch((error) => {
       throw error;
     });
@@ -3327,17 +3509,39 @@ function buildRaceDataDebugPayload(data) {
     ...data,
     debug: {
       raceDataCacheUpdatedAt: raceDataCache.updatedAt ? new Date(raceDataCache.updatedAt).toISOString() : "",
+      deferredRaceDataCacheUpdatedAt: deferredRaceDataCache.updatedAt
+        ? new Date(deferredRaceDataCache.updatedAt).toISOString()
+        : "",
       raceMetadataCacheUpdatedAt: raceMetadataCache.updatedAt
         ? new Date(raceMetadataCache.updatedAt).toISOString()
         : "",
+      deferredRaceMetadataCacheUpdatedAt: deferredRaceMetadataCache.updatedAt
+        ? new Date(deferredRaceMetadataCache.updatedAt).toISOString()
+        : "",
       raceDataCacheAgeMs: raceDataCache.updatedAt ? Math.max(0, Date.now() - raceDataCache.updatedAt) : null,
-      raceMetadataCacheAgeMs: raceMetadataCache.updatedAt
-        ? Math.max(0, Date.now() - raceMetadataCache.updatedAt)
+      deferredRaceDataCacheAgeMs: deferredRaceDataCache.updatedAt
+        ? Math.max(0, Date.now() - deferredRaceDataCache.updatedAt)
+        : null,
+      raceMetadataCacheAgeMs: raceMetadataCache.updatedAt ? Math.max(0, Date.now() - raceMetadataCache.updatedAt) : null,
+      deferredRaceMetadataCacheAgeMs: deferredRaceMetadataCache.updatedAt
+        ? Math.max(0, Date.now() - deferredRaceMetadataCache.updatedAt)
         : null,
       liveRaceDataTtlMs: getRaceDataCacheTtlMs(data),
       metadataTtlMs: RACE_METADATA_CACHE_TTL_MS,
       liveRaceCount: Array.isArray(data?.liveStageRaces) ? data.liveStageRaces.length : 0,
+      buildTimings: data?.buildTimings || null,
     },
+  };
+}
+
+function buildHomepageDataPayload(data) {
+  return {
+    fetchedAt: data.fetchedAt,
+    metadataFetchedAt: data.metadataFetchedAt,
+    recentResults: data.recentResults,
+    finalizedStageRaces: data.finalizedStageRaces,
+    liveStageRaces: data.liveStageRaces,
+    upcomingRaces: data.upcomingRaces,
   };
 }
 
@@ -3603,6 +3807,13 @@ function buildRaceArticleControls(groupId, articleRaces, selectedRaceId, refresh
     </form>`;
 }
 
+function buildLoadCoverageButton(groupId) {
+  return `
+    <button type="button" class="load-coverage-button" data-coverage-group-id="${escapeHtml(groupId)}">
+      Load Race Coverage
+    </button>`;
+}
+
 function getCompetitionGroups(data) {
   const definitions = [
     {
@@ -3634,6 +3845,7 @@ function getCompetitionGroups(data) {
       label: "UCI ProSeries",
       tag: "Expanded Calendar",
       description: "The ProSeries races added today, with live stage races, fresh results, and upcoming events.",
+      deferred: true,
       predicate: (race) => /ProSeries/.test(race.series),
       recentSource: "recentResults",
       recentBlockTitle: "Recent Results",
@@ -3645,6 +3857,7 @@ function getCompetitionGroups(data) {
       label: "Europe Tour Spotlight",
       tag: "Selected 2.1 Races",
       description: "Selected Europe Tour stage races that are worth tracking alongside the top-tier calendars.",
+      deferred: true,
       predicate: (race) => race.series === "Men's Europe Tour",
       liveSource: "europeTourLiveStageRaces",
       recentSource: "europeTourRecentResults",
@@ -3666,6 +3879,26 @@ function getCompetitionGroups(data) {
   }));
 }
 
+async function buildCoverageViewForGroup(group, url) {
+  const articleRaces = [...group.liveStageRaces, ...group.recentResults];
+  const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
+  const refreshToken = Math.max(
+    0,
+    Number.parseInt(url.searchParams.get(`${group.id}-refresh`) || "0", 10) || 0,
+  );
+  const selectedRace =
+    articleRaces.find((race) => race.id === selectedRaceId) || articleRaces[0] || null;
+  const articlePool = selectedRace ? await loadRaceArticlePool(selectedRace) : [];
+
+  return {
+    articleRaces,
+    selectedRaceId: selectedRace?.id || "",
+    selectedRaceTitle: selectedRace?.title || "the selected race",
+    refreshToken,
+    raceArticles: selectRaceArticles(articlePool, refreshToken),
+  };
+}
+
 function buildCompetitionBlock(title, description, markup, options = {}) {
   if (!markup) {
     return "";
@@ -3684,7 +3917,19 @@ function buildCompetitionBlock(title, description, markup, options = {}) {
 }
 
 function buildCoverageBlock(group, coverageView) {
-  if (!coverageView || coverageView.articleRaces.length === 0) {
+  if (!coverageView) {
+    return `
+      <div class="competition-block competition-coverage" id="${escapeHtml(group.id)}-coverage">
+        <div class="competition-block-head">
+          <h3>Race Coverage</h3>
+          <p>Load article coverage to explore the latest stories for the above races.</p>
+        </div>
+        ${buildLoadCoverageButton(group.id)}
+        <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content"></div>
+      </div>`;
+  }
+
+  if (coverageView.articleRaces.length === 0) {
     return "";
   }
 
@@ -3706,7 +3951,9 @@ function buildCoverageBlock(group, coverageView) {
         <p>Choose one live or recent race from this competition to view article coverage.</p>
       </div>
       ${controls}
-      <div class="article-grid">${articleCards}</div>
+      <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content">
+        <div class="article-grid">${articleCards}</div>
+      </div>
     </div>`;
 }
 
@@ -3745,9 +3992,43 @@ function buildCompetitionSection(group, coverageView) {
     </section>`;
 }
 
+function buildDeferredSectionButtons(groups) {
+  if (groups.length === 0) {
+    return "";
+  }
+
+  const buttons = groups
+    .map(
+      (group) => `
+        <button
+          type="button"
+          class="hero-menu-link deferred-load-button"
+          data-deferred-group-id="${escapeHtml(group.id)}"
+          data-scroll-on-load="false"
+        >
+          ${escapeHtml(group.label)}
+        </button>`,
+    )
+    .join("");
+
+  return `
+    <section class="section section-cta">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">More Race Coverage</div>
+          <h2>Load More Racing</h2>
+          <p>Open the expanded UCI ProSeries and Europe Tour Spotlight sections only when you want them.</p>
+        </div>
+      </div>
+      <div class="deferred-button-row">${buttons}</div>
+    </section>`;
+}
+
 function buildHtmlPage(data, view) {
   const competitionGroups = getCompetitionGroups(data);
-  const competitionSections = competitionGroups
+  const eagerCompetitionGroups = competitionGroups.filter((group) => !group.deferred);
+  const deferredCompetitionGroups = competitionGroups.filter((group) => group.deferred);
+  const competitionSections = eagerCompetitionGroups
     .map((group) => buildCompetitionSection(group, view.coverageByGroup[group.id]))
     .filter(Boolean)
     .join("");
@@ -3760,7 +4041,30 @@ function buildHtmlPage(data, view) {
   const heroMenu = competitionGroups
     .map(
       (group) => `
-        <a class="hero-menu-link" href="#${escapeHtml(group.id)}">${escapeHtml(group.label)}</a>`,
+        ${
+          group.deferred
+            ? `<button
+                type="button"
+                class="hero-menu-link deferred-load-button"
+                data-deferred-group-id="${escapeHtml(group.id)}"
+                data-scroll-on-load="true"
+              >
+                ${escapeHtml(group.label)}
+              </button>`
+            : `<a class="hero-menu-link" href="#${escapeHtml(group.id)}">${escapeHtml(group.label)}</a>`
+        }`,
+    )
+    .join("");
+  const deferredSectionButtons = buildDeferredSectionButtons(deferredCompetitionGroups);
+  const deferredSectionMounts = deferredCompetitionGroups
+    .map(
+      (group) => `
+        <div
+          id="${escapeHtml(group.id)}-mount"
+          class="deferred-section-mount"
+          data-group-id="${escapeHtml(group.id)}"
+          hidden
+        ></div>`,
     )
     .join("");
   return `<!doctype html>
@@ -4011,6 +4315,7 @@ function buildHtmlPage(data, view) {
       }
 
       .hero-menu-link {
+        appearance: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -4029,6 +4334,7 @@ function buildHtmlPage(data, view) {
         text-decoration: none;
         text-transform: uppercase;
         transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        cursor: pointer;
       }
 
       .hero-menu-link:hover {
@@ -4099,6 +4405,36 @@ function buildHtmlPage(data, view) {
 
       .competition-section::before {
         background: linear-gradient(180deg, var(--uci-yellow), var(--uci-blue-bright));
+      }
+
+      .section-cta::before {
+        background: linear-gradient(180deg, var(--uci-red), var(--uci-yellow));
+      }
+
+      .deferred-button-row {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .section-cta .deferred-load-button {
+        color: var(--uci-blue-deep);
+        border-color: rgba(0, 51, 160, 0.14);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.12), rgba(0, 51, 160, 0.05));
+      }
+
+      .section-cta .deferred-load-button:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.18), rgba(0, 51, 160, 0.1));
+        border-color: rgba(0, 51, 160, 0.22);
+      }
+
+      .deferred-load-button.is-loading {
+        opacity: 0.78;
+        pointer-events: none;
+      }
+
+      .deferred-section-mount[hidden] {
+        display: none !important;
       }
 
       .competition-stack {
@@ -4383,6 +4719,34 @@ function buildHtmlPage(data, view) {
         box-shadow: 0 16px 30px rgba(0, 74, 184, 0.24);
       }
 
+      .load-coverage-button {
+        min-height: 3.2rem;
+        padding: 0.9rem 1.25rem;
+        border-radius: 16px;
+        border: 1px solid var(--line-strong);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.04));
+        color: var(--uci-blue-deep);
+        cursor: pointer;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .load-coverage-button:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.08));
+      }
+
+      .load-coverage-button.is-loading {
+        opacity: 0.78;
+        pointer-events: none;
+      }
+
+      .coverage-content {
+        margin-top: 1rem;
+      }
+
       .article-card {
         padding: 1rem 1rem 1.1rem;
       }
@@ -4503,32 +4867,164 @@ function buildHtmlPage(data, view) {
       </section>
 
       ${competitionSections}
+      ${deferredSectionButtons}
+      ${deferredSectionMounts}
 
       <p class="footer-note">Data refreshes automatically from live season pages when the server cache expires. Race coverage links update from current news feeds.</p>
     </main>
     <script>
-      document.querySelectorAll(".article-select").forEach((raceSelect) => {
-        raceSelect.addEventListener("change", () => {
-          const groupId = raceSelect.dataset.groupId;
-          const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-          if (refreshTokenInput) {
-            refreshTokenInput.value = "0";
+      const deferredSectionState = new Map();
+
+      async function loadCoverage(groupId, options = {}) {
+        const coverageBlock = document.getElementById(groupId + "-coverage");
+        const coverageContent = document.getElementById(groupId + "-coverage-content");
+        if (!coverageBlock || !coverageContent) {
+          return;
+        }
+
+        const trigger = coverageBlock.querySelector('[data-coverage-group-id="' + groupId + '"]');
+        if (trigger) {
+          trigger.classList.add("is-loading");
+        }
+
+        try {
+          const params = new URLSearchParams({ group: groupId });
+          if (options.selectedRaceId) {
+            params.set(groupId + "-race", options.selectedRaceId);
           }
-          raceSelect.form?.requestSubmit();
+          if (Number.isFinite(options.refreshToken)) {
+            params.set(groupId + "-refresh", String(options.refreshToken));
+          }
+
+          const response = await fetch("/api/competition-coverage?" + params.toString(), { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Unable to load coverage");
+          }
+
+          const payload = await response.json();
+          coverageBlock.outerHTML = payload.html || "";
+          bindArticleControls(document);
+        } catch (error) {
+          coverageContent.innerHTML = '<p class="meta">Unable to load race coverage right now. Please try again in a moment.</p>';
+        } finally {
+          if (trigger) {
+            trigger.classList.remove("is-loading");
+          }
+        }
+      }
+
+      function bindArticleControls(root = document) {
+        root.querySelectorAll(".article-select").forEach((raceSelect) => {
+          if (raceSelect.dataset.bound === "true") {
+            return;
+          }
+
+          raceSelect.dataset.bound = "true";
+          raceSelect.addEventListener("change", () => {
+            const groupId = raceSelect.dataset.groupId;
+            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
+            if (refreshTokenInput) {
+              refreshTokenInput.value = "0";
+            }
+            loadCoverage(groupId, {
+              selectedRaceId: raceSelect.value,
+              refreshToken: 0,
+            });
+          });
+        });
+
+        root.querySelectorAll(".refresh-button").forEach((refreshButton) => {
+          if (refreshButton.dataset.bound === "true") {
+            return;
+          }
+
+          refreshButton.dataset.bound = "true";
+          refreshButton.addEventListener("click", () => {
+            const groupId = refreshButton.dataset.groupId;
+            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
+            const currentValue = Number.parseInt(refreshTokenInput?.value || "0", 10) || 0;
+            const nextValue = currentValue + 1;
+            if (refreshTokenInput) {
+              refreshTokenInput.value = String(nextValue);
+            }
+            const raceSelect = document.getElementById(groupId + "-race-select");
+            loadCoverage(groupId, {
+              selectedRaceId: raceSelect?.value || "",
+              refreshToken: nextValue,
+            });
+          });
+        });
+
+        root.querySelectorAll(".load-coverage-button").forEach((coverageButton) => {
+          if (coverageButton.dataset.bound === "true") {
+            return;
+          }
+
+          coverageButton.dataset.bound = "true";
+          coverageButton.addEventListener("click", () => {
+            loadCoverage(coverageButton.dataset.coverageGroupId, { refreshToken: 0 });
+          });
+        });
+      }
+
+      async function loadDeferredSection(groupId, options = {}) {
+        const mount = document.getElementById(groupId + "-mount");
+        if (!mount) {
+          return;
+        }
+
+        const buttons = document.querySelectorAll('[data-deferred-group-id="' + groupId + '"]');
+        buttons.forEach((button) => button.classList.add("is-loading"));
+
+        try {
+          const params = new URLSearchParams({ group: groupId });
+          if (options.selectedRaceId) {
+            params.set(groupId + "-race", options.selectedRaceId);
+          }
+          if (Number.isFinite(options.refreshToken)) {
+            params.set(groupId + "-refresh", String(options.refreshToken));
+          }
+
+          const response = await fetch("/api/competition-section?" + params.toString(), { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Unable to load section");
+          }
+
+          const payload = await response.json();
+          mount.innerHTML = payload.html || "";
+          mount.hidden = false;
+          deferredSectionState.set(groupId, true);
+          bindArticleControls(mount);
+
+          if (options.scrollOnLoad) {
+            const section = mount.querySelector("#" + groupId);
+            section?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        } catch (error) {
+          mount.hidden = false;
+          mount.innerHTML = '<section class="section competition-section"><div class="section-head"><div><div class="section-tag">Load failed</div><h2>Unable to load this section</h2><p>Please try again in a moment.</p></div></div></section>';
+        } finally {
+          buttons.forEach((button) => button.classList.remove("is-loading"));
+        }
+      }
+
+      document.querySelectorAll(".deferred-load-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const groupId = button.dataset.deferredGroupId;
+          const scrollOnLoad = button.dataset.scrollOnLoad === "true";
+
+          if (deferredSectionState.has(groupId)) {
+            if (scrollOnLoad) {
+              document.getElementById(groupId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+            return;
+          }
+
+          loadDeferredSection(groupId, { scrollOnLoad });
         });
       });
 
-      document.querySelectorAll(".refresh-button").forEach((refreshButton) => {
-        refreshButton.addEventListener("click", () => {
-          const groupId = refreshButton.dataset.groupId;
-          const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-          const currentValue = Number.parseInt(refreshTokenInput?.value || "0", 10) || 0;
-          if (refreshTokenInput) {
-            refreshTokenInput.value = String(currentValue + 1);
-          }
-          refreshButton.form?.requestSubmit();
-        });
-      });
+      bindArticleControls();
     </script>
   </body>
 </html>`;
@@ -4665,7 +5161,7 @@ function buildWarmupPage() {
 
       async function pollRaceData() {
         try {
-          const response = await fetch("/api/races", { cache: "no-store" });
+          const response = await fetch("/api/homepage-data", { cache: "no-store" });
           if (response.ok) {
             window.location.reload();
             return;
@@ -4759,7 +5255,7 @@ const server = http.createServer(async (request, response) => {
     if (!raceDataCache.data) {
       warmRaceDataInBackground().catch(() => {});
 
-      if (url.pathname === "/api/races") {
+      if (url.pathname === "/api/homepage-data" || url.pathname === "/api/races") {
         sendJson(response, 202, {
           status: "warming",
           message: "Live race data is still loading.",
@@ -4773,11 +5269,51 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
-    const data = await loadRaceData();
-    const debugRequested = url.searchParams.get("debug") === "1";
-
     if (url.pathname !== "/") {
+      if (url.pathname === "/api/homepage-data") {
+        const data = await loadRaceData({ includeDeferred: false });
+        const debugRequested = url.searchParams.get("debug") === "1";
+        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : buildHomepageDataPayload(data));
+        return;
+      }
+
+      if (url.pathname === "/api/competition-section") {
+        const data = await loadRaceData({ includeDeferred: true });
+        const groupId = url.searchParams.get("group") || "";
+        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
+        if (!group) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+
+        const coverageView = await buildCoverageViewForGroup(group, url);
+        sendJson(response, 200, {
+          groupId,
+          html: buildCompetitionSection(group, coverageView),
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/competition-coverage") {
+        const data = await loadRaceData({ includeDeferred: true });
+        const groupId = url.searchParams.get("group") || "";
+        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
+        if (!group) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+
+        const coverageView = await buildCoverageViewForGroup(group, url);
+        sendJson(response, 200, {
+          groupId,
+          html: buildCoverageBlock(group, coverageView),
+        });
+        return;
+      }
+
       if (url.pathname === "/api/races") {
+        const data = await loadRaceData({ includeDeferred: true });
+        const debugRequested = url.searchParams.get("debug") === "1";
         sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : data);
         return;
       }
@@ -4790,32 +5326,10 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const competitionGroups = getCompetitionGroups(data);
-    const coverageEntries = await Promise.all(
-      competitionGroups.map(async (group) => {
-        const articleRaces = [...group.liveStageRaces, ...group.recentResults];
-        const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
-        const refreshToken = Math.max(
-          0,
-          Number.parseInt(url.searchParams.get(`${group.id}-refresh`) || "0", 10) || 0,
-        );
-        const selectedRace =
-          articleRaces.find((race) => race.id === selectedRaceId) || articleRaces[0] || null;
-        const articlePool = selectedRace ? await loadRaceArticlePool(selectedRace) : [];
+    const data = await loadRaceData({ includeDeferred: false });
 
-        return [
-          group.id,
-          {
-            articleRaces,
-            selectedRaceId: selectedRace?.id || "",
-            selectedRaceTitle: selectedRace?.title || "the selected race",
-            refreshToken,
-            raceArticles: selectRaceArticles(articlePool, refreshToken),
-          },
-        ];
-      }),
-    );
-    const coverageByGroup = Object.fromEntries(coverageEntries);
+    const competitionGroups = getCompetitionGroups(data);
+    const coverageByGroup = Object.fromEntries(competitionGroups.map((group) => [group.id, null]));
 
     sendHtml(
       response,
