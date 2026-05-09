@@ -17,7 +17,9 @@ const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
+const PROSERIES_RECENT_RESULTS = 10;
 const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
+const DEFERRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
@@ -448,6 +450,8 @@ let deferredRaceDataCache = {
   data: null,
   promise: null,
 };
+
+const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
 
@@ -3357,6 +3361,134 @@ async function buildRaceData(metadata, options = {}) {
   };
 }
 
+async function buildCompetitionGroupRaceData(metadata, groupId) {
+  const startedAt = Date.now();
+  const allRaces = cloneRaces(metadata?.allRaces || []);
+  const {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+  } = partitionRaceBuckets(allRaces);
+  const wikiRawLoader = createWikiRawLoader();
+
+  if (groupId === "proseries") {
+    const selectedRecentCandidates = [...recentOneDayResults, ...finalizedStageCandidates]
+      .filter((race) => /ProSeries/.test(race.series))
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, PROSERIES_RECENT_RESULTS);
+    const selectedLiveStageCandidates = liveStageCandidates.filter((race) => /ProSeries/.test(race.series));
+    const selectedUpcomingRaces = upcomingRaces.filter((race) => /ProSeries/.test(race.series));
+    const stageRaceDisplays = [...selectedLiveStageCandidates, ...selectedRecentCandidates].filter(isMultiDayRace);
+
+    const recentStandingsStartedAt = Date.now();
+    await enrichRecentResultStandings(selectedRecentCandidates, wikiRawLoader);
+    const recentStandingsMs = Date.now() - recentStandingsStartedAt;
+
+    const stageSnapshotsStartedAt = Date.now();
+    await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+    const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
+
+    const finalizedStageRaces = selectedRecentCandidates.filter(isFinalizedStageRace);
+    const liveStageRaces = selectedLiveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+    const recentResults = [
+      ...selectedRecentCandidates.filter(isOneDayRace),
+      ...finalizedStageRaces,
+    ].sort((left, right) => right.endDate - left.endDate);
+
+    finalizedStageRaces.forEach((race) => {
+      if (!race.resultStandings?.length) {
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
+      }
+    });
+
+    [...recentResults, ...liveStageRaces, ...selectedUpcomingRaces].forEach((race) => {
+      race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    });
+
+    return {
+      fetchedAt: new Date().toISOString(),
+      metadataFetchedAt: metadata?.fetchedAt || "",
+      recentResults,
+      finalizedStageRaces,
+      liveStageRaces,
+      upcomingRaces: selectedUpcomingRaces,
+      europeTourRecentResults: [],
+      europeTourLiveStageRaces: [],
+      europeTourUpcomingRaces: [],
+      buildTimings: {
+        totalMs: Date.now() - startedAt,
+        recentStandingsMs,
+        finalizedStageStandingsMs: 0,
+        stageSnapshotsMs,
+        recentResultCount: selectedRecentCandidates.length,
+        recentStandingsTargetCount: selectedRecentCandidates.length,
+        finalizedStageCandidateCount: finalizedStageRaces.length,
+        liveStageCandidateCount: selectedLiveStageCandidates.length,
+        stageRaceDisplayCount: stageRaceDisplays.length,
+        upcomingRaceCount: selectedUpcomingRaces.length,
+        includeDeferred: true,
+        targetGroupId: groupId,
+        metadataBuildTimings: metadata?.buildTimings || null,
+      },
+    };
+  }
+
+  if (groupId === "europe-tour") {
+    const selectedRecentResults = cloneRaces(europeTourRecentResults);
+    const selectedLiveStageRaces = cloneRaces(europeTourLiveStageRaces);
+    const selectedUpcomingRaces = cloneRaces(europeTourUpcomingRaces);
+    const stageRaceDisplays = [...selectedRecentResults, ...selectedLiveStageRaces].filter(isMultiDayRace);
+
+    const stageSnapshotsStartedAt = Date.now();
+    await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+    const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
+
+    selectedRecentResults.forEach((race) => {
+      if (!race.resultStandings?.length) {
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
+      }
+    });
+
+    [...selectedRecentResults, ...selectedLiveStageRaces, ...selectedUpcomingRaces].forEach((race) => {
+      race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    });
+
+    return {
+      fetchedAt: new Date().toISOString(),
+      metadataFetchedAt: metadata?.fetchedAt || "",
+      recentResults: [],
+      finalizedStageRaces: [],
+      liveStageRaces: [],
+      upcomingRaces: [],
+      europeTourRecentResults: selectedRecentResults,
+      europeTourLiveStageRaces: selectedLiveStageRaces,
+      europeTourUpcomingRaces: selectedUpcomingRaces,
+      buildTimings: {
+        totalMs: Date.now() - startedAt,
+        recentStandingsMs: 0,
+        finalizedStageStandingsMs: 0,
+        stageSnapshotsMs,
+        recentResultCount: selectedRecentResults.length,
+        recentStandingsTargetCount: 0,
+        finalizedStageCandidateCount: 0,
+        liveStageCandidateCount: selectedLiveStageRaces.length,
+        stageRaceDisplayCount: stageRaceDisplays.length,
+        upcomingRaceCount: selectedUpcomingRaces.length,
+        includeDeferred: true,
+        targetGroupId: groupId,
+        metadataBuildTimings: metadata?.buildTimings || null,
+      },
+    };
+  }
+
+  throw new Error(`Unsupported competition group: ${groupId}`);
+}
+
 function refreshRaceMetadataInBackground(options = {}) {
   const includeDeferred = options.includeDeferred === true;
   const resetOnFailure = options.resetOnFailure === true;
@@ -3490,6 +3622,71 @@ async function loadRaceData(options = {}) {
   }
 
   return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: true });
+}
+
+function getDeferredGroupDataCache(groupId) {
+  if (!deferredGroupDataCaches.has(groupId)) {
+    deferredGroupDataCaches.set(groupId, {
+      updatedAt: 0,
+      data: null,
+      promise: null,
+    });
+  }
+
+  return deferredGroupDataCaches.get(groupId);
+}
+
+function refreshCompetitionGroupDataInBackground(metadata, groupId, options = {}) {
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = getDeferredGroupDataCache(groupId);
+  if (targetCache.promise) {
+    return targetCache.promise;
+  }
+
+  const buildPromise = buildCompetitionGroupRaceData(metadata, groupId)
+    .then((data) => {
+      deferredGroupDataCaches.set(groupId, {
+        updatedAt: Date.now(),
+        data,
+        promise: null,
+      });
+      return data;
+    })
+    .catch((error) => {
+      deferredGroupDataCaches.set(groupId, {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
+        promise: null,
+      });
+      throw error;
+    });
+
+  deferredGroupDataCaches.set(groupId, {
+    ...targetCache,
+    promise: buildPromise,
+  });
+
+  return buildPromise;
+}
+
+async function loadCompetitionGroupData(groupId) {
+  if (!DEFERRED_COMPETITION_GROUP_IDS.has(groupId)) {
+    throw new Error(`Unsupported competition group: ${groupId}`);
+  }
+
+  const metadata = await loadRaceMetadata({ includeDeferred: true });
+  const targetCache = getDeferredGroupDataCache(groupId);
+  const now = Date.now();
+  if (targetCache.data) {
+    if (now - targetCache.updatedAt < getRaceDataCacheTtlMs(targetCache.data)) {
+      return targetCache.data;
+    }
+
+    refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
+  }
+
+  return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: true });
 }
 
 function warmRaceDataInBackground() {
@@ -4004,7 +4201,7 @@ function buildDeferredSectionButtons(groups) {
           type="button"
           class="hero-menu-link deferred-load-button"
           data-deferred-group-id="${escapeHtml(group.id)}"
-          data-scroll-on-load="false"
+          data-scroll-on-load="true"
         >
           ${escapeHtml(group.label)}
         </button>`,
@@ -4022,6 +4219,15 @@ function buildDeferredSectionButtons(groups) {
       </div>
       <div class="deferred-button-row">${buttons}</div>
     </section>`;
+}
+
+function buildDeferredGroupClientPayload(groups) {
+  return JSON.stringify(
+    groups.map((group) => ({
+      id: group.id,
+      label: group.label,
+    })),
+  );
 }
 
 function buildHtmlPage(data, view) {
@@ -4056,6 +4262,7 @@ function buildHtmlPage(data, view) {
     )
     .join("");
   const deferredSectionButtons = buildDeferredSectionButtons(deferredCompetitionGroups);
+  const deferredGroupClientPayload = buildDeferredGroupClientPayload(deferredCompetitionGroups);
   const deferredSectionMounts = deferredCompetitionGroups
     .map(
       (group) => `
@@ -4874,6 +5081,62 @@ function buildHtmlPage(data, view) {
     </main>
     <script>
       const deferredSectionState = new Map();
+      const deferredGroups = ${deferredGroupClientPayload};
+
+      function buildDeferredButtonMarkup(group, scrollOnLoad) {
+        return '<button type="button" class="hero-menu-link deferred-load-button" data-deferred-group-id="' +
+          group.id +
+          '" data-scroll-on-load="' +
+          (scrollOnLoad ? "true" : "false") +
+          '">' +
+          group.label +
+          '</button>';
+      }
+
+      function buildDeferredContinuationMarkup(groups) {
+        if (!groups.length) {
+          return "";
+        }
+
+        return '<section class="section section-cta deferred-followup-cta">' +
+          '<div class="section-head"><div><div class="section-tag">More Race Coverage</div><h2>Load More Racing</h2><p>Open the next deferred race section only when you want it.</p></div></div>' +
+          '<div class="deferred-button-row">' +
+          groups.map((group) => buildDeferredButtonMarkup(group, true)).join("") +
+          '</div></section>';
+      }
+
+      function buildDeferredLoadingMarkup(group) {
+        return '<section class="section competition-section" id="' +
+          group.id +
+          '-loading">' +
+          '<div class="section-head"><div><div class="section-tag">Loading</div><h2>' +
+          group.label +
+          '</h2><p>Fetching this section now. Race results and coverage will appear here shortly.</p></div></div>' +
+          '</section>';
+      }
+
+      function updateDeferredContinuationSections() {
+        deferredGroups.forEach((group, index) => {
+          const mount = document.getElementById(group.id + "-mount");
+          if (!mount || mount.hidden || !deferredSectionState.has(group.id)) {
+            return;
+          }
+
+          const existingContinuation = mount.querySelector(".deferred-followup-cta");
+          if (existingContinuation) {
+            existingContinuation.remove();
+          }
+
+          const remainingGroups = deferredGroups.filter(
+            (candidate, candidateIndex) => candidateIndex > index && !deferredSectionState.has(candidate.id),
+          );
+          if (!remainingGroups.length) {
+            return;
+          }
+
+          mount.insertAdjacentHTML("beforeend", buildDeferredContinuationMarkup(remainingGroups));
+        });
+      }
 
       async function loadCoverage(groupId, options = {}) {
         const coverageBlock = document.getElementById(groupId + "-coverage");
@@ -4972,9 +5235,19 @@ function buildHtmlPage(data, view) {
         if (!mount) {
           return;
         }
+        const group = deferredGroups.find((entry) => entry.id === groupId);
+        if (!group) {
+          return;
+        }
 
         const buttons = document.querySelectorAll('[data-deferred-group-id="' + groupId + '"]');
         buttons.forEach((button) => button.classList.add("is-loading"));
+
+        mount.hidden = false;
+        mount.innerHTML = buildDeferredLoadingMarkup(group);
+        if (options.scrollOnLoad) {
+          mount.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
 
         try {
           const params = new URLSearchParams({ group: groupId });
@@ -4995,8 +5268,9 @@ function buildHtmlPage(data, view) {
           mount.hidden = false;
           deferredSectionState.set(groupId, true);
           bindArticleControls(mount);
+          updateDeferredContinuationSections();
 
-          if (options.scrollOnLoad) {
+          if (options.scrollOnLoad && options.scrollAfterLoad !== false) {
             const section = mount.querySelector("#" + groupId);
             section?.scrollIntoView({ behavior: "smooth", block: "start" });
           }
@@ -5008,20 +5282,23 @@ function buildHtmlPage(data, view) {
         }
       }
 
-      document.querySelectorAll(".deferred-load-button").forEach((button) => {
-        button.addEventListener("click", () => {
-          const groupId = button.dataset.deferredGroupId;
-          const scrollOnLoad = button.dataset.scrollOnLoad === "true";
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest(".deferred-load-button");
+        if (!button) {
+          return;
+        }
 
-          if (deferredSectionState.has(groupId)) {
-            if (scrollOnLoad) {
-              document.getElementById(groupId)?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-            return;
+        const groupId = button.dataset.deferredGroupId;
+        const scrollOnLoad = button.dataset.scrollOnLoad === "true";
+
+        if (deferredSectionState.has(groupId)) {
+          if (scrollOnLoad) {
+            document.getElementById(groupId)?.scrollIntoView({ behavior: "smooth", block: "start" });
           }
+          return;
+        }
 
-          loadDeferredSection(groupId, { scrollOnLoad });
-        });
+        loadDeferredSection(groupId, { scrollOnLoad });
       });
 
       bindArticleControls();
@@ -5278,25 +5555,30 @@ const server = http.createServer(async (request, response) => {
       }
 
       if (url.pathname === "/api/competition-section") {
-        const data = await loadRaceData({ includeDeferred: true });
         const groupId = url.searchParams.get("group") || "";
+        if (!DEFERRED_COMPETITION_GROUP_IDS.has(groupId)) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+        const data = await loadCompetitionGroupData(groupId);
         const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
         if (!group) {
           sendJson(response, 404, { error: "Unknown competition group." });
           return;
         }
 
-        const coverageView = await buildCoverageViewForGroup(group, url);
         sendJson(response, 200, {
           groupId,
-          html: buildCompetitionSection(group, coverageView),
+          html: buildCompetitionSection(group, null),
         });
         return;
       }
 
       if (url.pathname === "/api/competition-coverage") {
-        const data = await loadRaceData({ includeDeferred: true });
         const groupId = url.searchParams.get("group") || "";
+        const data = DEFERRED_COMPETITION_GROUP_IDS.has(groupId)
+          ? await loadCompetitionGroupData(groupId)
+          : await loadRaceData({ includeDeferred: false });
         const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
         if (!group) {
           sendJson(response, 404, { error: "Unknown competition group." });
