@@ -50,6 +50,7 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - Do not assume there is a frontend framework, database, ORM, or hidden client app.
 - Prefer adding contained race-specific provider logic over weakening shared parsing heuristics when a single race is wrong.
 - Preserve current cache behavior unless the task clearly requires changing it. Live stage races intentionally use a shorter cache TTL than the default background race-data refresh.
+- Remember that cold-start load delay is mainly an upstream-fetch issue amplified by Wikipedia rate limiting, not usually a page-rendering problem.
 
 ## Validation
 

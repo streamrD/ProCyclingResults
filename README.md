@@ -193,6 +193,7 @@ At a high level it does the following:
 6. Enrich recent or live races with standings and stage-race snapshots.
    Official and Wikipedia-derived stage-race data are merged field-by-field rather than treated as all-or-nothing snapshots.
    Wikipedia fetches are rate-limited and retried because fresh live-race refreshes can otherwise hit upstream `429` responses during busy race windows.
+   Cold-cache latency is therefore mostly an upstream-fetch problem rather than a rendering problem: live race rebuilds can touch multiple Wikipedia and official race pages, and the Wikipedia throttling guard intentionally trades speed for safer refresh behavior.
 7. Mark races that finished today.
 8. Assign stable `id` values from page titles.
 9. Return the aggregate payload and cache it in memory.
@@ -367,6 +368,8 @@ There are two independent in-memory caches.
 - Stores `updatedAt`, `data`, and `promise`
 
 The `promise` field prevents duplicate upstream fetch work when concurrent requests arrive during a refresh.
+Once any race payload has been built, later expired requests use stale-while-revalidate behavior: the app serves the last cached payload immediately and refreshes in the background.
+True cold starts are the expensive case. They can be noticeably slower because the app may need to rebuild race data from several live upstream sources while also respecting Wikipedia retry and throttling behavior.
 
 ### Article cache
 
@@ -375,12 +378,16 @@ The `promise` field prevents duplicate upstream fetch work when concurrent reque
 - TTL: 15 minutes
 - Stores the same `updatedAt` / `data` / `promise` pattern
 
+Expired article-cache entries also refresh in the background once prior article data exists.
+
 Operational implications:
 
 - Cache is per-process only
 - Cache disappears on restart/redeploy
 - Multi-instance deployments do not share cache state
-- First request after cache expiry can be slower
+- First request after a true cold start can be slower
+- The slowdown is usually dominated by upstream fetch latency and Wikipedia rate limiting, not server-side HTML rendering
+- The warmup screen on `/` exists specifically to make cold starts feel intentional instead of looking hung
 
 ## Rendering Model
 
