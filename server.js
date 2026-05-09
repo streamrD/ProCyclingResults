@@ -17,6 +17,7 @@ const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
+const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
@@ -423,7 +424,13 @@ const MONTHS = {
   December: 11,
 };
 
-let cache = {
+let raceMetadataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
+let raceDataCache = {
   updatedAt: 0,
   data: null,
   promise: null,
@@ -1580,6 +1587,33 @@ function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now 
   return [Number(floor <= 0 || progress >= floor), progress, standingsLength];
 }
 
+function annotateStageRaceSnapshotSource(snapshot, sourceId) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    ...snapshot,
+    _sourceId: sourceId || snapshot._sourceId || "",
+  };
+}
+
+function getStageRaceFieldSourceId(field, primaryField, primarySnapshot, secondarySnapshot) {
+  if (!field) {
+    return "";
+  }
+
+  if (primaryField && field === primaryField) {
+    return primarySnapshot?._sourceId || "";
+  }
+
+  if (secondarySnapshot) {
+    return secondarySnapshot._sourceId || "";
+  }
+
+  return "";
+}
+
 function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   const preferredSnapshot = choosePreferredByQuality(primary, secondary, (snapshot) => {
     if (!snapshot) {
@@ -1648,6 +1682,25 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
     }
   }
 
+  const latestStageSourceId = getStageRaceFieldSourceId(
+    latestStage,
+    primary?.latestStage,
+    primary,
+    secondary,
+  );
+  const generalClassificationSourceId = getStageRaceFieldSourceId(
+    generalClassification,
+    primary?.generalClassification,
+    primary,
+    secondary,
+  );
+  const overallResultSourceId = getStageRaceFieldSourceId(
+    overallResult,
+    primary?.overallResult,
+    primary,
+    secondary,
+  );
+
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
         totalStages: resolvedTotalStages,
@@ -1665,6 +1718,12 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
             }
           : null,
         overallResult: Array.isArray(overallResult) ? overallResult : [],
+        provenance: {
+          snapshot: preferredSnapshot?._sourceId || "",
+          latestStage: latestStageSourceId,
+          generalClassification: generalClassificationSourceId,
+          overallResult: overallResultSourceId,
+        },
       }
     : null;
 }
@@ -1822,13 +1881,13 @@ function getStaticStageRaceSnapshot(race) {
     return null;
   }
 
-  return {
+  return annotateStageRaceSnapshotSource({
     totalStages: snapshot.totalStages,
     completedStages: snapshot.completedStages,
     latestStage: hydrateStoredStageRaceField(snapshot.latestStage, "latestStage"),
     generalClassification: hydrateStoredStageRaceField(snapshot.generalClassification, "generalClassification"),
     overallResult: buildStandings(snapshot.generalClassification?.standings || []),
-  };
+  }, "static-fallback");
 }
 
 function toTitleCaseWords(value) {
@@ -2371,7 +2430,12 @@ async function loadOfficialStageRaceSnapshot(race) {
   }
 
   const provider = findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, race);
-  return provider ? provider.load(race) : null;
+  if (!provider) {
+    return null;
+  }
+
+  const snapshot = await provider.load(race);
+  return annotateStageRaceSnapshotSource(snapshot, provider.id);
 }
 
 function parseEschbornFrankfurtOfficialStandings(html) {
@@ -2515,7 +2579,10 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const raw = await loadWikiRaw(race.pageTitle);
-        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = annotateStageRaceSnapshotSource(
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          "wikipedia-raw",
+        );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
@@ -2551,7 +2618,10 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw) {
         }
 
         const raw = await loadWikiRaw(race.pageTitle);
-        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = annotateStageRaceSnapshotSource(
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          "wikipedia-raw",
+        );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if (isStageRace && ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0)) {
@@ -2923,23 +2993,47 @@ function selectRaceArticles(articlePool, refreshToken) {
   return [...batch, ...orderedPool.slice(0, MAX_RACE_ARTICLES - batch.length)];
 }
 
-async function buildRaceData() {
-  const wikiRawLoader = createWikiRawLoader();
-  const seasonPages = await Promise.all(
-    SEASONS.map(async (season) => {
-      const yearMatch = season.pageTitle.match(/20\d{2}/);
-      const year = yearMatch ? Number(yearMatch[0]) : new Date().getUTCFullYear();
-      const rawText = await fetchWikiRaw(season.pageTitle);
-      return parseSeasonRows(rawText, season, year);
-    }),
-  );
+function cloneStandingEntry(entry) {
+  return entry ? { ...entry } : entry;
+}
 
-  const allRaces = seasonPages
-    .flat()
-    .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
-  const today = new Date();
+function cloneStageRaceField(field) {
+  if (!field) {
+    return null;
+  }
+
+  return {
+    ...field,
+    standings: Array.isArray(field.standings) ? field.standings.map(cloneStandingEntry) : [],
+  };
+}
+
+function cloneRace(race) {
+  return {
+    ...race,
+    startDate: race?.startDate instanceof Date ? new Date(race.startDate) : race?.startDate ? new Date(race.startDate) : null,
+    endDate: race?.endDate instanceof Date ? new Date(race.endDate) : race?.endDate ? new Date(race.endDate) : null,
+    resultStandings: Array.isArray(race?.resultStandings) ? race.resultStandings.map(cloneStandingEntry) : race?.resultStandings,
+    stageRace: race?.stageRace
+      ? {
+          ...race.stageRace,
+          latestStage: cloneStageRaceField(race.stageRace.latestStage),
+          generalClassification: cloneStageRaceField(race.stageRace.generalClassification),
+          overallResult: Array.isArray(race.stageRace.overallResult)
+            ? race.stageRace.overallResult.map(cloneStandingEntry)
+            : race.stageRace.overallResult,
+        }
+      : race?.stageRace,
+  };
+}
+
+function cloneRaces(races) {
+  return races.map(cloneRace);
+}
+
+function partitionRaceBuckets(allRaces, now = new Date()) {
   const todayUtc = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
 
   const recentOneDayResults = allRaces
@@ -3014,6 +3108,47 @@ async function buildRaceData() {
     ...selectUpcomingRaces(upcomingRaces, (race) => /ProSeries/.test(race.series)),
   ];
 
+  return {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+    upcomingDisplayRaces,
+  };
+}
+
+async function buildRaceMetadata() {
+  const wikiRawLoader = createWikiRawLoader();
+  const seasonPages = await Promise.all(
+    SEASONS.map(async (season) => {
+      const yearMatch = season.pageTitle.match(/20\d{2}/);
+      const year = yearMatch ? Number(yearMatch[0]) : new Date().getUTCFullYear();
+      const rawText = await fetchWikiRaw(season.pageTitle);
+      return parseSeasonRows(rawText, season, year);
+    }),
+  );
+
+  const allRaces = seasonPages
+    .flat()
+    .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
+  allRaces.forEach((race) => {
+    race.id = getRaceId(race);
+  });
+
+  const {
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+    upcomingDisplayRaces,
+  } = partitionRaceBuckets(allRaces);
+
   const displayRaces = [
     ...recentOneDayResults,
     ...finalizedStageCandidates,
@@ -3023,11 +3158,33 @@ async function buildRaceData() {
     ...europeTourLiveStageRaces,
     ...europeTourUpcomingRaces,
   ];
+
+  await enrichLocations(displayRaces, wikiRawLoader);
+
+  return {
+    allRaces,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function buildRaceData(metadata) {
+  const allRaces = cloneRaces(metadata?.allRaces || []);
+  const {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+  } = partitionRaceBuckets(allRaces);
+
   const stageRaceDisplays = [...liveStageCandidates, ...europeTourRecentResults, ...europeTourLiveStageRaces].filter(
     isMultiDayRace,
   );
 
-  await enrichLocations(displayRaces, wikiRawLoader);
+  const wikiRawLoader = createWikiRawLoader();
   await enrichRecentResultStandings(recentOneDayResults, wikiRawLoader);
   await enrichRecentResultStandings(finalizedStageCandidates, wikiRawLoader);
   await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
@@ -3059,36 +3216,9 @@ async function buildRaceData() {
     race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
   });
 
-  recentOneDayResults.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  finalizedStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  liveStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  upcomingRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourRecentResults.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourLiveStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourUpcomingRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
   return {
     fetchedAt: new Date().toISOString(),
+    metadataFetchedAt: metadata?.fetchedAt || "",
     recentResults,
     finalizedStageRaces,
     liveStageRaces,
@@ -3099,14 +3229,14 @@ async function buildRaceData() {
   };
 }
 
-function refreshRaceDataInBackground(resetOnFailure = false) {
-  if (cache.promise) {
-    return cache.promise;
+function refreshRaceMetadataInBackground(resetOnFailure = false) {
+  if (raceMetadataCache.promise) {
+    return raceMetadataCache.promise;
   }
 
-  cache.promise = buildRaceData()
+  raceMetadataCache.promise = buildRaceMetadata()
     .then((data) => {
-      cache = {
+      raceMetadataCache = {
         updatedAt: Date.now(),
         data,
         promise: null,
@@ -3114,29 +3244,101 @@ function refreshRaceDataInBackground(resetOnFailure = false) {
       return data;
     })
     .catch((error) => {
-      cache = {
-        updatedAt: resetOnFailure ? 0 : cache.updatedAt,
-        data: resetOnFailure ? null : cache.data,
+      raceMetadataCache = {
+        updatedAt: resetOnFailure ? 0 : raceMetadataCache.updatedAt,
+        data: resetOnFailure ? null : raceMetadataCache.data,
         promise: null,
       };
       throw error;
     });
 
-  return cache.promise;
+  return raceMetadataCache.promise;
+}
+
+async function loadRaceMetadata() {
+  const now = Date.now();
+  if (raceMetadataCache.data) {
+    if (now - raceMetadataCache.updatedAt < RACE_METADATA_CACHE_TTL_MS) {
+      return raceMetadataCache.data;
+    }
+
+    refreshRaceMetadataInBackground(false).catch(() => {});
+    return raceMetadataCache.data;
+  }
+
+  return refreshRaceMetadataInBackground(true);
+}
+
+function refreshRaceDataInBackground(metadata, resetOnFailure = false) {
+  if (raceDataCache.promise) {
+    return raceDataCache.promise;
+  }
+
+  raceDataCache.promise = buildRaceData(metadata)
+    .then((data) => {
+      raceDataCache = {
+        updatedAt: Date.now(),
+        data,
+        promise: null,
+      };
+      return data;
+    })
+    .catch((error) => {
+      raceDataCache = {
+        updatedAt: resetOnFailure ? 0 : raceDataCache.updatedAt,
+        data: resetOnFailure ? null : raceDataCache.data,
+        promise: null,
+      };
+      throw error;
+    });
+
+  return raceDataCache.promise;
 }
 
 async function loadRaceData() {
+  const metadata = await loadRaceMetadata();
   const now = Date.now();
-  if (cache.data) {
-    if (now - cache.updatedAt < getRaceDataCacheTtlMs(cache.data)) {
-      return cache.data;
+  if (raceDataCache.data) {
+    if (now - raceDataCache.updatedAt < getRaceDataCacheTtlMs(raceDataCache.data)) {
+      return raceDataCache.data;
     }
 
-    refreshRaceDataInBackground(false).catch(() => {});
-    return cache.data;
+    refreshRaceDataInBackground(metadata, false).catch(() => {});
+    return raceDataCache.data;
   }
 
-  return refreshRaceDataInBackground(true);
+  return refreshRaceDataInBackground(metadata, true);
+}
+
+function warmRaceDataInBackground() {
+  if (raceDataCache.promise) {
+    return raceDataCache.promise;
+  }
+
+  return loadRaceMetadata()
+    .then((metadata) => refreshRaceDataInBackground(metadata, true))
+    .catch((error) => {
+      throw error;
+    });
+}
+
+function buildRaceDataDebugPayload(data) {
+  return {
+    ...data,
+    debug: {
+      raceDataCacheUpdatedAt: raceDataCache.updatedAt ? new Date(raceDataCache.updatedAt).toISOString() : "",
+      raceMetadataCacheUpdatedAt: raceMetadataCache.updatedAt
+        ? new Date(raceMetadataCache.updatedAt).toISOString()
+        : "",
+      raceDataCacheAgeMs: raceDataCache.updatedAt ? Math.max(0, Date.now() - raceDataCache.updatedAt) : null,
+      raceMetadataCacheAgeMs: raceMetadataCache.updatedAt
+        ? Math.max(0, Date.now() - raceMetadataCache.updatedAt)
+        : null,
+      liveRaceDataTtlMs: getRaceDataCacheTtlMs(data),
+      metadataTtlMs: RACE_METADATA_CACHE_TTL_MS,
+      liveRaceCount: Array.isArray(data?.liveStageRaces) ? data.liveStageRaces.length : 0,
+    },
+  };
 }
 
 function buildPodiumMarkup(entries) {
@@ -4554,8 +4756,8 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
-    if (!cache.data) {
-      refreshRaceDataInBackground(true).catch(() => {});
+    if (!raceDataCache.data) {
+      warmRaceDataInBackground().catch(() => {});
 
       if (url.pathname === "/api/races") {
         sendJson(response, 202, {
@@ -4572,10 +4774,11 @@ const server = http.createServer(async (request, response) => {
     }
 
     const data = await loadRaceData();
+    const debugRequested = url.searchParams.get("debug") === "1";
 
     if (url.pathname !== "/") {
       if (url.pathname === "/api/races") {
-        sendJson(response, 200, data);
+        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : data);
         return;
       }
 

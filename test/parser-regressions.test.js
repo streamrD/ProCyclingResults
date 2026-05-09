@@ -482,6 +482,7 @@ test("selectPreferredStageRaceSnapshot merges the freshest stage and GC independ
         {
           totalStages: 7,
           completedStages: 4,
+          _sourceId: "official-stage",
           latestStage: {
             number: 4,
             label: "Stage 4",
@@ -496,6 +497,7 @@ test("selectPreferredStageRaceSnapshot merges the freshest stage and GC independ
         {
           totalStages: 7,
           completedStages: 4,
+          _sourceId: "wikipedia-raw",
           latestStage: {
             number: 3,
             label: "Stage 3",
@@ -528,6 +530,12 @@ test("selectPreferredStageRaceSnapshot merges the freshest stage and GC independ
     preferred.generalClassification.leader || preferred.generalClassification.standings[0].rider,
     "Lotte Kopecky",
   );
+  assert.deepEqual(preferred.provenance, {
+    snapshot: "wikipedia-raw",
+    latestStage: "official-stage",
+    generalClassification: "wikipedia-raw",
+    overallResult: "official-stage",
+  });
 });
 
 test("selectPreferredStageRaceSnapshot deprioritizes stale live progress during an active race", () => {
