@@ -734,6 +734,16 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
     }),
     "https://video.giroditalia.it/video/126977539",
   );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Giro d'Italia",
+      stageRace: {
+        completedStages: 3,
+      },
+    }),
+    "https://video.giroditalia.it/video/126996326",
+  );
 });
 
 test("getRaceDataCacheTtlMs shortens cache TTL while live stage races are active", () => {
