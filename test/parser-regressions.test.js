@@ -233,6 +233,41 @@ test("parseGiroDItaliaStageClassificationStandings parses the official Stage 1 t
   ]);
 });
 
+test("parseGiroDItaliaStageClassificationStandings accepts the current type-4 stage rankings table", () => {
+  const { parseGiroDItaliaStageClassificationStandings } = loadParserExports();
+  const html = `
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/fra.png"></div><div class="atleta-info"><div class="name p-3">Paul</div><div class="surname p-3 is-bold">MAGNIER</div></div></div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Jonathan</div><div class="surname p-3 is-bold">MILAN</div></div></div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">3</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Dylan</div><div class="surname p-3 is-bold">GROENEWEGEN</div></div></div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">4</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/est.png"></div><div class="atleta-info"><div class="name p-3">Madis</div><div class="surname p-3 is-bold">MIHKELS</div></div></div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">5</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Matteo</div><div class="surname p-3 is-bold">MALUCELLI</div></div></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const standings = JSON.parse(JSON.stringify(parseGiroDItaliaStageClassificationStandings(html)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Paul Magnier", countryCode: "FRA" },
+    { place: "2", rider: "Jonathan Milan", countryCode: "ITA" },
+    { place: "3", rider: "Dylan Groenewegen", countryCode: "NED" },
+    { place: "4", rider: "Madis Mihkels", countryCode: "EST" },
+    { place: "5", rider: "Matteo Malucelli", countryCode: "ITA" },
+  ]);
+});
+
 test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 2 top five", () => {
   const { parseGiroDItaliaLivefeedStageStandings } = loadParserExports();
   const json = JSON.stringify({

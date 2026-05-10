@@ -2210,7 +2210,7 @@ function parseGiroDItaliaClassificationStandings(html, category) {
   const normalized = String(html || "").replace(/</g, "\n<");
   const blockMatch = normalized.match(
     new RegExp(
-      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-1">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|$)`,
+      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-[^"]+">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|$)`,
       "i",
     ),
   );
