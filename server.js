@@ -590,7 +590,12 @@ function getRaceId(race) {
 }
 
 function getRaceYear(race) {
-  return race?.endDate instanceof Date ? race.endDate.getUTCFullYear() : null;
+  if (race?.endDate instanceof Date) {
+    return race.endDate.getUTCFullYear();
+  }
+
+  const parsed = race?.endDate ? new Date(race.endDate) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getUTCFullYear() : null;
 }
 
 function extractMentionedYears(text) {
@@ -1354,8 +1359,15 @@ function isSameUtcDay(left, right) {
 }
 
 function toUtcDateOnly(value) {
-  return value instanceof Date
-    ? new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
+  const date =
+    value instanceof Date
+      ? value
+      : value
+        ? new Date(value)
+        : null;
+
+  return date && !Number.isNaN(date.getTime())
+    ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
     : null;
 }
 
@@ -2370,7 +2382,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
   };
 }
 
-async function fetchTourOfGreeceOfficialSnapshot(race) {
+async function fetchTourOfGreeceOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
@@ -2381,13 +2393,12 @@ async function fetchTourOfGreeceOfficialSnapshot(race) {
     getRaceYear(race) !== 2026 ||
     !startUtc ||
     !endUtc ||
-    todayUtc.getTime() < startUtc.getTime() ||
-    todayUtc.getTime() > endUtc.getTime()
+    todayUtc.getTime() < startUtc.getTime()
   ) {
     return null;
   }
 
-  const html = await fetchText(TOUR_OF_GREECE_RESULTS_URL);
+  const html = await fetchHtml(TOUR_OF_GREECE_RESULTS_URL);
   const gcStandings = parseTourOfGreeceOfficialStandings(html, "General Classification");
   const latestStageNumber = extractTourOfGreeceLatestStageNumber(html);
   const latestStageStandings = latestStageNumber
