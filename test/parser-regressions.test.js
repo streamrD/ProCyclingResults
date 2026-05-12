@@ -33,6 +33,7 @@ function loadParserExports() {
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
       parseTourOfGreeceOfficialStandings,
+      extractTourOfGreeceLatestStageNumber,
       buildRaceCard,
       buildStageRaceCard,
       getRaceFinishVideoUrl,
@@ -374,6 +375,193 @@ test("parseTourOfGreeceOfficialStandings parses official stage 1 and GC standing
     { place: "5", rider: "Nahom Efriem", countryCode: "ERI" },
   ]);
   assert.deepEqual(gcStandings, stageStandings);
+});
+
+test("parseTourOfGreeceOfficialStandings handles the current GC and final-stage table layouts", () => {
+  const { parseTourOfGreeceOfficialStandings, extractTourOfGreeceLatestStageNumber } = loadParserExports();
+  const html = `
+    <h1>Results 2026</h1>
+    <h4>General Classification</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>&nbsp;Rank</th>
+          <th>&nbsp;</th>
+          <th>Name</th>
+          <th>Nation</th>
+          <th>Bib</th>
+          <th>Team</th>
+          <th>Jersey</th>
+          <th>&nbsp;Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1.</td>
+          <td>&nbsp;</td>
+          <td>Odd Christian EIKING</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/no_black.png" alt="" /></td>
+          <td>1</td>
+          <td>Uno-X</td>
+          <td>&nbsp;</td>
+          <td>20h27'34''</td>
+        </tr>
+        <tr>
+          <td>2.</td>
+          <td>&nbsp;</td>
+          <td>Alessandro VERRE</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/it_black.png" alt="" /></td>
+          <td>2</td>
+          <td>Arkea</td>
+          <td>&nbsp;</td>
+          <td>20h27'40''</td>
+        </tr>
+        <tr>
+          <td>3.</td>
+          <td>&nbsp;</td>
+          <td>Matteo FABBRO</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/it_black.png" alt="" /></td>
+          <td>3</td>
+          <td>Polti</td>
+          <td>&nbsp;</td>
+          <td>20h27'44''</td>
+        </tr>
+        <tr>
+          <td>4.</td>
+          <td>&nbsp;</td>
+          <td>Jose Manuel DIAZ GALLEGO</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/es_black.png" alt="" /></td>
+          <td>4</td>
+          <td>Burgos</td>
+          <td>&nbsp;</td>
+          <td>20h27'48''</td>
+        </tr>
+        <tr>
+          <td>5.</td>
+          <td>&nbsp;</td>
+          <td>Piotr PĘKALA</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/pl_black.png" alt="" /></td>
+          <td>5</td>
+          <td>Mazowsze</td>
+          <td>&nbsp;</td>
+          <td>20h27'55''</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4>Stage 4</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Name</th>
+          <th>Nation</th>
+          <th>Bib</th>
+          <th>Team</th>
+          <th>Jersey</th>
+          <th>Bon.</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1.</td>
+          <td>Old Stage Winner</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/gr_black.png" alt="" /></td>
+          <td>44</td>
+          <td>Greek Team</td>
+          <td>&nbsp;</td>
+          <td>-10</td>
+          <td>3h00'00''</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4>Stage 5</h4>
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Name</th>
+          <th>Nation</th>
+          <th>Bib</th>
+          <th>Team</th>
+          <th>Jersey</th>
+          <th>Bon.</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1.</td>
+          <td>Mads ANDERSEN</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/dk_black.png" alt="" /></td>
+          <td>131</td>
+          <td>SWATT CLUB</td>
+          <td>&nbsp;</td>
+          <td>-10</td>
+          <td>3h09'24''</td>
+        </tr>
+        <tr>
+          <td>2.</td>
+          <td>Dušan RAJOVIĆ</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/rs_black.png" alt="" /></td>
+          <td>36</td>
+          <td>SOLUTION TECH</td>
+          <td>&nbsp;</td>
+          <td>-9</td>
+          <td>&nbsp;</td>
+        </tr>
+        <tr>
+          <td>3.</td>
+          <td>Nikiforos ARVANITOU</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/gr_black.png" alt="" /></td>
+          <td>151</td>
+          <td>TEAM UNITED SHIPPING</td>
+          <td>&nbsp;</td>
+          <td>-4</td>
+          <td>&nbsp;</td>
+        </tr>
+        <tr>
+          <td>4.</td>
+          <td>Kasper ANDERSEN</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/dk_black.png" alt="" /></td>
+          <td>132</td>
+          <td>SWATT CLUB</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+        <tr>
+          <td>5.</td>
+          <td>Axel VAN DER TUUK</td>
+          <td><img src="https://timit.pro/events/graphics/flags/png/nl_black.png" alt="" /></td>
+          <td>23</td>
+          <td>Metec</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+          <td>&nbsp;</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const gcStandings = JSON.parse(JSON.stringify(parseTourOfGreeceOfficialStandings(html, "General Classification")));
+  const stageStandings = JSON.parse(JSON.stringify(parseTourOfGreeceOfficialStandings(html, "Stage 5")));
+
+  assert.equal(extractTourOfGreeceLatestStageNumber(html), 5);
+  assert.deepEqual(gcStandings, [
+    { place: "1", rider: "Odd Christian Eiking", countryCode: "NOR" },
+    { place: "2", rider: "Alessandro Verre", countryCode: "ITA" },
+    { place: "3", rider: "Matteo Fabbro", countryCode: "ITA" },
+    { place: "4", rider: "Jose Manuel Diaz Gallego", countryCode: "ESP" },
+    { place: "5", rider: "Piotr Pękala", countryCode: "POL" },
+  ]);
+  assert.deepEqual(stageStandings, [
+    { place: "1", rider: "Mads Andersen", countryCode: "DEN" },
+    { place: "2", rider: "Dušan Rajović", countryCode: "SRB" },
+    { place: "3", rider: "Nikiforos Arvanitou", countryCode: "GRE" },
+    { place: "4", rider: "Kasper Andersen", countryCode: "DEN" },
+    { place: "5", rider: "Axel Van Der Tuuk", countryCode: "NED" },
+  ]);
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {
@@ -743,6 +931,16 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
       },
     }),
     "https://video.giroditalia.it/video/126996326",
+  );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Giro d'Italia",
+      stageRace: {
+        completedStages: 4,
+      },
+    }),
+    "https://video.giroditalia.it/video/127117045",
   );
 });
 

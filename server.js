@@ -239,6 +239,7 @@ const RACE_FINISH_VIDEO_URLS = {
     1: "https://www.youtube.com/watch?v=k9etTDahUFo",
     2: "https://video.giroditalia.it/video/126977539",
     3: "https://video.giroditalia.it/video/126996326",
+    4: "https://video.giroditalia.it/video/127117045",
   },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
@@ -2188,23 +2189,44 @@ function parseTourOfGreeceOfficialStandings(html, heading) {
   }
 
   const tableMatch = section.match(
-    new RegExp(`<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>[\\s\\S]*?<tbody>([\\s\\S]*?)<\\/tbody>`, "i"),
+    new RegExp(
+      `<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>([\\s\\S]*?)<\\/table>`,
+      "i",
+    ),
   );
   if (!tableMatch) {
     return [];
   }
 
-  return [...tableMatch[1].matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
+  const tableHtml = tableMatch[1];
+  const headerRow = tableHtml.match(/<thead>[\s\S]*?<tr>([\s\S]*?)<\/tr>[\s\S]*?<\/thead>/i)?.[1] || "";
+  const headers = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((match) =>
+    cleanFeedText(match[1]).toLowerCase(),
+  );
+  const rankIndex = headers.findIndex((header) => header.includes("rank"));
+  const nameIndex = headers.findIndex((header) => header === "name" || header.includes("name"));
+  const nationIndex = headers.findIndex((header) => header.includes("nation"));
+
+  const tbody = tableHtml.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] || "";
+
+  return [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
     .map((match) => {
       const cells = [...match[1].matchAll(/<td>([\s\S]*?)<\/td>/gi)].map((cellMatch) => cellMatch[1]);
-      const place = Number.parseInt(cleanFeedText(cells[1] || "").match(/\d+/)?.[0] || "", 10);
-      const rider = toTitleCaseWords(cleanFeedText(cells[2] || "").replace(/\*/g, ""));
-      const alpha2Code = (cells[3] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
+      const place = Number.parseInt(cleanFeedText(cells[rankIndex] || "").match(/\d+/)?.[0] || "", 10);
+      const rider = toTitleCaseWords(cleanFeedText(cells[nameIndex] || "").replace(/\*/g, ""));
+      const alpha2Code = (cells[nationIndex] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
       const countryCode = normalizeAlpha2CountryCode(alpha2Code);
       return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
     })
     .filter(Boolean)
     .slice(0, MAX_RESULT_RIDERS);
+}
+
+function extractTourOfGreeceLatestStageNumber(html) {
+  return [...extractTourOfGreeceResultsSection(html).matchAll(/<h4>\s*Stage\s+(\d+)\s*<\/h4>/gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite)
+    .reduce((max, stageNumber) => Math.max(max, stageNumber), 0);
 }
 
 function parseGiroDItaliaClassificationStandings(html, category) {
@@ -2367,32 +2389,35 @@ async function fetchTourOfGreeceOfficialSnapshot(race) {
 
   const html = await fetchText(TOUR_OF_GREECE_RESULTS_URL);
   const gcStandings = parseTourOfGreeceOfficialStandings(html, "General Classification");
-  const stageOneStandings = parseTourOfGreeceOfficialStandings(html, "Stage 1");
-  if (gcStandings.length === 0 && stageOneStandings.length === 0) {
+  const latestStageNumber = extractTourOfGreeceLatestStageNumber(html);
+  const latestStageStandings = latestStageNumber
+    ? parseTourOfGreeceOfficialStandings(html, `Stage ${latestStageNumber}`)
+    : [];
+  if (gcStandings.length === 0 && latestStageStandings.length === 0) {
     return null;
   }
 
   return {
     totalStages: inferStageCountFromDates(race) || 5,
-    completedStages: 1,
+    completedStages: latestStageNumber,
     latestStage:
-      stageOneStandings.length > 0
+      latestStageStandings.length > 0
         ? {
-            number: 1,
-            label: "Stage 1",
-            standings: stageOneStandings,
-            ...getWinnerDetails(stageOneStandings),
+            number: latestStageNumber,
+            label: `Stage ${latestStageNumber}`,
+            standings: latestStageStandings,
+            ...getWinnerDetails(latestStageStandings),
           }
         : null,
     generalClassification:
       gcStandings.length > 0
         ? {
-            stageNumber: 1,
+            stageNumber: latestStageNumber,
             standings: gcStandings,
             ...getLeaderDetails(gcStandings),
           }
         : null,
-    overallResult: [],
+    overallResult: gcStandings,
   };
 }
 
