@@ -66,6 +66,8 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 │   └── static-stage-race-snapshots.json
 ├── package.json
 ├── README.md
+├── scripts/
+│   └── benchmark-load.js
 ├── server.js
 └── test/
     ├── parser-regressions.test.js
@@ -92,6 +94,9 @@ Then open `http://localhost:3000`.
 
 - `start`: `node server.js`
 - `test`: `node --test`
+- `benchmark:load`: benchmark warmed endpoint response times
+- `benchmark:ready`: measure cold-start readiness for `/api/races`
+- `benchmark:homepage-ready`: measure cold-start readiness for `/api/homepage-data`
 
 There is currently:
 
@@ -102,9 +107,15 @@ There is currently:
 ## Endpoints
 
 - `/`
-  Returns the fully rendered HTML application.
+  Returns the server-rendered HTML shell. On cold start, this can initially render a warmup state while homepage WorldTour data loads.
+- `/api/homepage-data`
+  Returns the lighter homepage payload used by `/`. This contains only the WorldTour-first data needed for the initial page experience.
 - `/api/races`
-  Returns the aggregated race payload as JSON.
+  Returns the full aggregated race payload as JSON, including deferred competition sections.
+- `/api/competition-section?group=<id>`
+  Returns a lazily loaded section payload for deferred groups such as `proseries` and `europe-tour`.
+- `/api/competition-coverage?group=<id>`
+  Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
 - `/assets/*`
   Serves static assets from the local `assets` directory.
 
@@ -116,9 +127,12 @@ The app follows a single-process request/response model:
 
 1. An incoming request reaches the Node `http` server.
 2. If the request is for `/assets/*`, the file is served directly.
-3. Otherwise the server loads or reuses cached race data.
-4. For `/api/races`, it returns the cached aggregated JSON.
-5. For `/`, it additionally loads article coverage for the selected race in each competition group, renders the page, and returns HTML.
+3. The homepage path and the full-data path are intentionally split.
+4. `/api/homepage-data` loads or reuses a lighter WorldTour-first payload used to bring the initial page out of warming state faster.
+5. `/api/races` loads or reuses the fuller payload that includes deferred sections and broader enrichment work.
+6. `/api/competition-section` loads deferred competition sections on demand.
+7. `/api/competition-coverage` loads article coverage on demand for the requested section.
+8. `/` renders the shell plus inline client JS that warms the homepage payload, loads deferred sections when clicked, and lazy-loads article coverage.
 
 There is no persistence layer. All state is in memory and rebuilt from live upstream sources when caches expire.
 
@@ -167,7 +181,7 @@ Current special cases:
 - Tour of Greece
   Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
 - Giro d'Italia
-  Uses the official livefeed plus the official classifications page for opening-day Stage 1 and Maglia Rosa top-five coverage when Wikipedia is still sparse
+  Uses the official livefeed plus the official classifications page for stage / GC coverage when Wikipedia is still sparse. Giro finish-video links are sourced first from official livefeed `Last Km` video entries, with a small explicit fallback map retained for resilience.
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
 - Eschborn-Frankfurt
@@ -181,11 +195,16 @@ This source logic is centralized behind provider registries plus `loadOfficialSt
 
 ## Data Model and Aggregation Flow
 
-The central pipeline is `loadRaceData()`.
+The central pipeline is `loadRaceData()`, but it now operates in two important modes:
+
+- `includeDeferred: false`
+  Homepage mode. This powers `/api/homepage-data` and the initial `/` experience. It only loads the WorldTour-first data needed for the initial page, keeps location enrichment non-blocking, and limits recent-standings enrichment so cold-start readiness is materially faster.
+- `includeDeferred: true`
+  Full mode. This powers `/api/races` and the deferred sections. It includes the broader competition set plus the heavier enrichment paths.
 
 At a high level it does the following:
 
-1. Fetch each configured season page from Wikipedia.
+1. Fetch the configured season pages from Wikipedia.
 2. Parse the season tables into normalized race objects.
 3. Remove cancelled or malformed rows.
 4. Split races into display buckets based on date and category.
@@ -208,6 +227,8 @@ The returned JSON shape currently contains:
 - `europeTourRecentResults`
 - `europeTourLiveStageRaces`
 - `europeTourUpcomingRaces`
+
+The homepage payload returned by `/api/homepage-data` is intentionally narrower than `/api/races`. It omits deferred section data so the first user-visible render is not blocked on ProSeries and Europe Tour work.
 
 ## Core Race Object Shape
 
@@ -319,9 +340,9 @@ If the extracted string looks implausible, it falls back to the season-table-der
 
 ## Article Coverage Workflow
 
-Article coverage is race-specific and separate from the main race-data cache.
+Article coverage is race-specific and separate from the main race-data cache. It is also lazy-loaded now: the initial homepage render does not fetch article pools for the visible competitions until a user clicks `Load Race Coverage`.
 
-For each competition group on the HTML page:
+For a requested competition group:
 
 1. The server builds a list of article-eligible races from live races plus recent results.
 2. A selected race is chosen from query params or defaults to the first race in the group.
@@ -358,14 +379,24 @@ If more than 8 strong articles exist, the app does not simply take the top 8. It
 
 ## Caching Model
 
-There are two independent in-memory caches.
+There are several independent in-memory caches.
 
-### Race data cache
+### Race metadata caches
 
-- Global object: `cache`
-- TTL: 15 minutes by default
-- Live-race TTL: 5 minutes when `liveStageRaces` or `europeTourLiveStageRaces` are non-empty
-- Stores `updatedAt`, `data`, and `promise`
+- `raceMetadataCache` for homepage metadata
+- `deferredRaceMetadataCache` for the full/deferred metadata path
+- TTL: 60 minutes
+- Store `updatedAt`, `data`, and `promise`
+
+Homepage metadata is intentionally lighter than the deferred/full metadata path. The homepage metadata builder only parses the WorldTour pages and lets some location enrichment continue in the background.
+
+### Race data caches
+
+- `raceDataCache` for homepage data
+- `deferredRaceDataCache` for full `/api/races`
+- group-specific deferred section caches for `proseries` and `europe-tour`
+- Live-race TTL: 5 minutes
+- Store `updatedAt`, `data`, and `promise`
 
 The `promise` field prevents duplicate upstream fetch work when concurrent requests arrive during a refresh.
 Once any race payload has been built, later expired requests use stale-while-revalidate behavior: the app serves the last cached payload immediately and refreshes in the background.
@@ -386,8 +417,24 @@ Operational implications:
 - Cache disappears on restart/redeploy
 - Multi-instance deployments do not share cache state
 - First request after a true cold start can be slower
+- The homepage and full API now have different cold-start profiles. `/api/homepage-data` is the user-visible readiness path for the initial page, while `/api/races` may still take longer because it includes deferred sections.
 - The slowdown is usually dominated by upstream fetch latency and Wikipedia rate limiting, not server-side HTML rendering
 - The warmup screen on `/` exists specifically to make cold starts feel intentional instead of looking hung
+
+### Benchmarking
+
+The repo now includes `scripts/benchmark-load.js` so performance changes can be measured rather than guessed.
+
+Useful commands:
+
+- `npm run benchmark:homepage-ready`
+  Measures cold-start readiness for `/api/homepage-data`, which is the key metric for the main page experience.
+- `npm run benchmark:ready`
+  Measures cold-start readiness for `/api/races`.
+- `npm run benchmark:load -- --runs=5 --include-deferred --include-coverage`
+  Measures warmed response times for the homepage, full API, deferred section endpoints, and coverage endpoints.
+
+The script can also target another environment via `--base-url=<url>`.
 
 ## Rendering Model
 
@@ -414,12 +461,16 @@ The design system is encoded directly in the inline `<style>` block:
 
 ## Browser Interactivity
 
-Client-side JS is minimal and only handles coverage form behavior:
+Client-side JS is still intentionally small, but it now does more than simple form submission:
 
-- Changing a race selector submits the form
-- Clicking refresh increments a hidden refresh token and submits the form
+- Polls `/api/homepage-data` while the homepage is warming
+- Loads `UCI ProSeries` and `Europe Tour Spotlight` on demand from hero and in-page buttons
+- Shows a loading state for deferred sections before their payload returns
+- Loads race coverage on demand for each competition group
+- Changing a race selector submits the coverage request
+- Clicking refresh increments a hidden refresh token and reloads the coverage block
 
-There is no SPA behavior, no hydration, and no XHR/fetch from the browser.
+There is still no frontend framework and no SPA state model. The browser only fetches server-rendered fragments and JSON payloads for these targeted interactions.
 
 ## Static Assets
 
