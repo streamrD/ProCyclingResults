@@ -240,6 +240,7 @@ const RACE_FINISH_VIDEO_URLS = {
     2: "https://video.giroditalia.it/video/126977539",
     3: "https://video.giroditalia.it/video/126996326",
     4: "https://video.giroditalia.it/video/127117045",
+    5: "https://video.giroditalia.it/video/127169105",
   },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
@@ -2306,6 +2307,31 @@ function parseGiroDItaliaLivefeedStageStandings(jsonText) {
     .slice(0, MAX_RESULT_RIDERS);
 }
 
+function extractGiroDItaliaFinishVideoUrl(jsonText) {
+  let payload;
+
+  try {
+    payload = JSON.parse(String(jsonText || ""));
+  } catch {
+    return "";
+  }
+
+  const finishVideoEntry = [...(payload?.cronaca_sintesi?.entries || [])]
+    .reverse()
+    .find((entry) => {
+      const title = cleanFeedText(entry?.titolo || "");
+      const url = cleanFeedText(entry?.url_media || "");
+      return (
+        entry?.categoria === "VIDEO" &&
+        /last[\s-]*(?:[^a-z0-9]{0,6}|\w+[\s-]+){0,4}(km|kilomet(?:re|er))/i.test(title) &&
+        /again|enjoy/i.test(title) &&
+        /^https:\/\/video\.giroditalia\.it\/video\/\d+/i.test(url)
+      );
+    });
+
+  return cleanFeedText(finishVideoEntry?.url_media || "");
+}
+
 function extractGiroDItaliaLatestCompletedStageNumber(html) {
   return [...String(html || "").matchAll(/classifiche\/di-tappa\/(\d+)\/?/gi)]
     .map((match) => Number.parseInt(match[1], 10))
@@ -2324,7 +2350,7 @@ function inferGiroDItaliaCurrentStageNumber(race, now = new Date()) {
   return Math.max(0, Math.min(inferStageCountFromDates(race) || elapsedDays, elapsedDays));
 }
 
-async function fetchGiroDItaliaOfficialSnapshot(race) {
+async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
@@ -2341,15 +2367,19 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
     return null;
   }
 
-  const classificationsHtml = await fetchText(GIRO_D_ITALIA_CLASSIFICATIONS_URL);
+  const classificationsHtml = await fetchHtml(GIRO_D_ITALIA_CLASSIFICATIONS_URL);
   const linkedStageNumber = extractGiroDItaliaLatestCompletedStageNumber(classificationsHtml);
   const livefeedStageNumber = inferGiroDItaliaCurrentStageNumber(race, today);
   const livefeedJson = livefeedStageNumber
-    ? await fetchText(`${GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL}${livefeedStageNumber}/`)
+    ? await fetchHtml(`${GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL}${livefeedStageNumber}/`)
     : "";
   const livefeedStageStandings = parseGiroDItaliaLivefeedStageStandings(livefeedJson);
+  const finishVideoUrl = extractGiroDItaliaFinishVideoUrl(livefeedJson);
   const stageNumber = livefeedStageStandings.length > 1 ? livefeedStageNumber : linkedStageNumber || 1;
-  const stageHtml = await fetchText(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
+  if (finishVideoUrl && livefeedStageNumber > 0) {
+    RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"][livefeedStageNumber] = finishVideoUrl;
+  }
+  const stageHtml = await fetchHtml(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
   const officialStageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
   const stageStandings = officialStageStandings.length > 1 ? officialStageStandings : livefeedStageStandings;
   const gcStandings = parseGiroDItaliaGeneralClassificationStandings(classificationsHtml);
@@ -2367,6 +2397,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
             number: stageNumber,
             label: `Stage ${stageNumber}`,
             standings: stageStandings,
+            finishVideoUrl,
             ...getWinnerDetails(stageStandings),
           }
         : null,
@@ -3795,6 +3826,11 @@ function buildPodiumMarkup(entries) {
 }
 
 function getRaceFinishVideoUrl(race) {
+  const stageFinishVideoUrl = cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || "");
+  if (stageFinishVideoUrl) {
+    return stageFinishVideoUrl;
+  }
+
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
   if (!mapped) {
     return "";

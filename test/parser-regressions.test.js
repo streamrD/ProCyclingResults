@@ -28,6 +28,8 @@ function loadParserExports() {
       buildLaVueltaFemeninaOfficialSnapshot,
       extractLaVueltaFemeninaGeneralAjaxUrl,
       extractLaVueltaFemeninaStageAjaxUrl,
+      fetchGiroDItaliaOfficialSnapshot,
+      extractGiroDItaliaFinishVideoUrl,
       extractGiroDItaliaLatestCompletedStageNumber,
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
@@ -296,6 +298,31 @@ test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 2 top fiv
     { place: "4", rider: "Christian Scaroni" },
     { place: "5", rider: "Giulio Pellizzari", countryCode: "ITA" },
   ]);
+});
+
+test("extractGiroDItaliaFinishVideoUrl finds the official post-stage Last Km clip", () => {
+  const { extractGiroDItaliaFinishVideoUrl } = loadParserExports();
+  const json = JSON.stringify({
+    cronaca_sintesi: {
+      entries: [
+        {
+          categoria: "VIDEO",
+          titolo: "A relentless up-and-down stage today, with Montagna Grande di Viggiano as the final judge (Video)",
+          url_media: "https://video.giroditalia.it/video/127057425",
+        },
+        {
+          categoria: "VIDEO",
+          titolo: "Let's enjoy the Last Km of this jaw-dropping Stage again (Video)",
+          url_media: "https://video.giroditalia.it/video/127169105",
+        },
+      ],
+    },
+  });
+
+  assert.equal(
+    extractGiroDItaliaFinishVideoUrl(json),
+    "https://video.giroditalia.it/video/127169105",
+  );
 });
 
 test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia Rosa top five", () => {
@@ -941,6 +968,20 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
       },
     }),
     "https://video.giroditalia.it/video/127117045",
+  );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Giro d'Italia",
+      stageRace: {
+        completedStages: 5,
+        latestStage: {
+          number: 5,
+          finishVideoUrl: "https://video.giroditalia.it/video/127169105",
+        },
+      },
+    }),
+    "https://video.giroditalia.it/video/127169105",
   );
 });
 
