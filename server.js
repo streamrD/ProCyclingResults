@@ -2350,6 +2350,22 @@ function inferGiroDItaliaCurrentStageNumber(race, now = new Date()) {
   return Math.max(0, Math.min(inferStageCountFromDates(race) || elapsedDays, elapsedDays));
 }
 
+function resolveGiroDItaliaLivefeedStageNumber(linkedStageNumber, race, now = new Date()) {
+  return Number(linkedStageNumber || 0) || inferGiroDItaliaCurrentStageNumber(race, now);
+}
+
+function resolveGiroDItaliaCompletedStageNumber(linkedStageNumber, livefeedStageNumber, livefeedStageStandings) {
+  if (Number(linkedStageNumber || 0) > 0) {
+    return Number(linkedStageNumber);
+  }
+
+  if (Array.isArray(livefeedStageStandings) && livefeedStageStandings.length > 1) {
+    return Number(livefeedStageNumber || 0);
+  }
+
+  return Number(livefeedStageNumber || 0) || 1;
+}
+
 async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -2369,15 +2385,19 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
 
   const classificationsHtml = await fetchHtml(GIRO_D_ITALIA_CLASSIFICATIONS_URL);
   const linkedStageNumber = extractGiroDItaliaLatestCompletedStageNumber(classificationsHtml);
-  const livefeedStageNumber = inferGiroDItaliaCurrentStageNumber(race, today);
+  const livefeedStageNumber = resolveGiroDItaliaLivefeedStageNumber(linkedStageNumber, race, today);
   const livefeedJson = livefeedStageNumber
     ? await fetchHtml(`${GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL}${livefeedStageNumber}/`)
     : "";
   const livefeedStageStandings = parseGiroDItaliaLivefeedStageStandings(livefeedJson);
   const finishVideoUrl = extractGiroDItaliaFinishVideoUrl(livefeedJson);
-  const stageNumber = livefeedStageStandings.length > 1 ? livefeedStageNumber : linkedStageNumber || 1;
-  if (finishVideoUrl && livefeedStageNumber > 0) {
-    RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"][livefeedStageNumber] = finishVideoUrl;
+  const stageNumber = resolveGiroDItaliaCompletedStageNumber(
+    linkedStageNumber,
+    livefeedStageNumber,
+    livefeedStageStandings,
+  );
+  if (finishVideoUrl && stageNumber > 0) {
+    RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"][stageNumber] = finishVideoUrl;
   }
   const stageHtml = await fetchHtml(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
   const officialStageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);

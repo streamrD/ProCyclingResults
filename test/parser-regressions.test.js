@@ -31,6 +31,8 @@ function loadParserExports() {
       fetchGiroDItaliaOfficialSnapshot,
       extractGiroDItaliaFinishVideoUrl,
       extractGiroDItaliaLatestCompletedStageNumber,
+      resolveGiroDItaliaCompletedStageNumber,
+      resolveGiroDItaliaLivefeedStageNumber,
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
@@ -376,7 +378,11 @@ test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia 
 });
 
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {
-  const { extractGiroDItaliaLatestCompletedStageNumber } = loadParserExports();
+  const {
+    extractGiroDItaliaLatestCompletedStageNumber,
+    resolveGiroDItaliaCompletedStageNumber,
+    resolveGiroDItaliaLivefeedStageNumber,
+  } = loadParserExports();
   const html = `
     <a href="https://www.giroditalia.it/en/classifiche/di-tappa/1">Stage 1</a>
     <a href="https://www.giroditalia.it/en/classifiche/di-tappa/2/">Stage 2</a>
@@ -384,6 +390,30 @@ test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankin
   `;
 
   assert.equal(extractGiroDItaliaLatestCompletedStageNumber(html), 10);
+
+  const race = {
+    startDate: new Date("2026-05-08T00:00:00.000Z"),
+    endDate: new Date("2026-05-31T00:00:00.000Z"),
+  };
+  const inferredStageNumber = resolveGiroDItaliaLivefeedStageNumber(
+    0,
+    race,
+    new Date("2026-05-14T18:30:00.000Z"),
+  );
+
+  assert.equal(inferredStageNumber, 7);
+  assert.equal(
+    resolveGiroDItaliaLivefeedStageNumber(6, race, new Date("2026-05-14T18:30:00.000Z")),
+    6,
+  );
+  assert.equal(resolveGiroDItaliaCompletedStageNumber(6, 7, []), 6);
+  assert.equal(
+    resolveGiroDItaliaCompletedStageNumber(0, 6, [
+      { place: "1", rider: "Davide Ballerini" },
+      { place: "2", rider: "Jasper Stuyven" },
+    ]),
+    6,
+  );
 });
 
 test("parseTourOfGreeceOfficialStandings parses official stage 1 and GC standings", () => {
