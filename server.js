@@ -1839,16 +1839,32 @@ function parseSpanishStageNumber(text) {
   return 0;
 }
 
-function buildStandingEntry(place, rider, countryCode = "") {
+function normalizeStandingGap(value) {
+  const cleaned = cleanFeedText(String(value || ""))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned === "0:00" || cleaned === "+ 0:00" || cleaned === "+0:00") {
+    return "";
+  }
+
+  const match = cleaned.match(/\+?\s*(\d+(?::\d{2}){1,2})/);
+  return match ? `+${match[1]}` : "";
+}
+
+function buildStandingEntry(place, rider, countryCode = "", gap = "") {
   const details =
     rider && typeof rider === "object"
       ? {
           rider: String(rider.rider || "").trim(),
           countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
+          gap: normalizeStandingGap(rider.gap || ""),
         }
       : {
           rider: String(rider || "").trim(),
           countryCode: normalizeCountryCode(countryCode || getRiderCountryCode(rider)),
+          gap: normalizeStandingGap(gap),
         };
 
   return details.rider
@@ -1856,6 +1872,7 @@ function buildStandingEntry(place, rider, countryCode = "") {
         place: String(place),
         rider: details.rider,
         ...(details.countryCode ? { countryCode: details.countryCode } : {}),
+        ...(details.gap ? { gap: details.gap } : {}),
       }
     : null;
 }
@@ -2254,15 +2271,20 @@ function parseGiroDItaliaClassificationStandings(html, category) {
     return [];
   }
 
-  return [...blockMatch[1].matchAll(/<div class="line-table"[\s\S]*?<\/div>\s*<\/div>/gi)]
+  const rows = [...blockMatch[1].matchAll(/<div class="line-table"[\s\S]*?(?=<div class="line-table"|$)/gi)].map(
+    (match) => match[0],
+  );
+
+  return rows
     .map((match) => {
-      const row = match[0];
+      const row = match;
       const place = Number.parseInt(row.match(/<h5 class="position is-pink">(\d+)\s*<\/h5>/i)?.[1] || "", 10);
       const firstName = cleanFeedText(row.match(/<div class="name p-3">([\s\S]*?)<\/div>/i)?.[1] || "");
       const surname = cleanFeedText(row.match(/<div class="surname p-3 is-bold">([\s\S]*?)<\/div>/i)?.[1] || "");
       const alpha3Code = (row.match(/athletes-flags\/([a-z]{3})\.png/i)?.[1] || "").toUpperCase();
+      const gap = normalizeStandingGap(row.match(/<div class="distacco p-3 is-text-right">([\s\S]*?)<\/div>/i)?.[1] || "");
       const rider = toTitleCaseWords([firstName, surname].filter(Boolean).join(" "));
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, alpha3Code) : null;
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, { rider, countryCode: alpha3Code, gap }) : null;
     })
     .filter(Boolean)
     .slice(0, MAX_RESULT_RIDERS);
@@ -4052,8 +4074,10 @@ function buildRiderMarkup(entry, className = "podium-rider") {
   const flagMarkup = flag
     ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
     : "";
+  const gap = normalizeStandingGap(entry?.gap || "");
+  const gapMarkup = gap ? `<span class="standing-gap">${escapeHtml(gap)}</span>` : "";
 
-  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span>${escapeHtml(rider)}</span></span>`;
+  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span>${escapeHtml(rider)}</span>${gapMarkup}</span>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -4881,6 +4905,14 @@ function buildHtmlPage(data, view) {
         flex: 0 0 auto;
         font-size: 0.95em;
         line-height: 1;
+      }
+
+      .standing-gap {
+        flex: 0 0 auto;
+        margin-left: 0.2rem;
+        font-size: 0.92em;
+        font-weight: 700;
+        color: var(--muted);
       }
 
       .race-finish-link {

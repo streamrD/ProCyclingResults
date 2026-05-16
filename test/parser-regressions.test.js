@@ -370,10 +370,10 @@ test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia 
 
   assert.deepEqual(standings, [
     { place: "1", rider: "Paul Magnier", countryCode: "FRA" },
-    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN" },
-    { place: "3", rider: "Manuele Tarozzi", countryCode: "ITA" },
-    { place: "4", rider: "Ethan Vernon", countryCode: "GBR" },
-    { place: "5", rider: "Diego Pablo Sevilla", countryCode: "ESP" },
+    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN", gap: "+0:04" },
+    { place: "3", rider: "Manuele Tarozzi", countryCode: "ITA", gap: "+0:04" },
+    { place: "4", rider: "Ethan Vernon", countryCode: "GBR", gap: "+0:06" },
+    { place: "5", rider: "Diego Pablo Sevilla", countryCode: "ESP", gap: "+0:06" },
   ]);
 });
 
