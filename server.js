@@ -2430,9 +2430,11 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
     livefeedStageNumber,
     livefeedStageStandings,
   );
-  if (finishVideoUrl && stageNumber > 0) {
+  const explicitStageVideoOverride = RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"]?.[stageNumber] || "";
+  if (finishVideoUrl && stageNumber > 0 && !explicitStageVideoOverride) {
     RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"][stageNumber] = finishVideoUrl;
   }
+  const resolvedFinishVideoUrl = explicitStageVideoOverride || finishVideoUrl;
   const stageHtml = await fetchHtml(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
   const officialStageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
   const stageStandings = officialStageStandings.length > 1 ? officialStageStandings : livefeedStageStandings;
@@ -2451,7 +2453,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
             number: stageNumber,
             label: `Stage ${stageNumber}`,
             standings: stageStandings,
-            finishVideoUrl,
+            finishVideoUrl: resolvedFinishVideoUrl,
             ...getWinnerDetails(stageStandings),
           }
         : null,
