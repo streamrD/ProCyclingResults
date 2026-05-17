@@ -2702,6 +2702,21 @@ function isFinalizedStageRace(race) {
   );
 }
 
+function isRaceWithinScheduledLiveWindow(race, todayUtc = new Date()) {
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const currentUtc = toUtcDateOnly(todayUtc);
+
+  return Boolean(
+    startUtc &&
+      endUtc &&
+      currentUtc &&
+      startUtc.getTime() !== endUtc.getTime() &&
+      startUtc.getTime() <= currentUtc.getTime() &&
+      endUtc.getTime() >= currentUtc.getTime(),
+  );
+}
+
 async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
   await Promise.all(
     races.map(async (race) => {
@@ -3411,7 +3426,9 @@ async function buildRaceData(metadata, options = {}) {
   const finalizedStageRaces = (
     includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates
   ).filter(isFinalizedStageRace);
-  const liveStageRaces = selectedLiveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+  const liveStageRaces = selectedLiveStageCandidates.filter(
+    (race) => !isFinalizedStageRace(race) || isRaceWithinScheduledLiveWindow(race, todayUtc),
+  );
   const recentResults = (
     includeDeferred
       ? [...selectedRecentOneDayResults, ...finalizedStageRaces]

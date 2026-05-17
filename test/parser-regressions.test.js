@@ -42,6 +42,7 @@ function loadParserExports() {
       buildStageRaceCard,
       getRaceFinishVideoUrl,
       isMultiDayRace,
+      isRaceWithinScheduledLiveWindow,
       getStaticStageRaceSnapshot,
       selectPreferredStageRaceSnapshot,
       getRaceDataCacheTtlMs,
@@ -955,6 +956,22 @@ test("selectPreferredStageRaceSnapshot drops stale GC when a newer stage is know
   assert.equal(preferred.completedStages, 2);
   assert.equal(preferred.latestStage.number, 2);
   assert.equal(preferred.generalClassification, null);
+});
+
+test("isRaceWithinScheduledLiveWindow keeps a scheduled live stage race visible", () => {
+  const { isRaceWithinScheduledLiveWindow } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Giro d'Italia",
+    startDate: new Date("2026-05-08T00:00:00Z"),
+    endDate: new Date("2026-05-31T00:00:00Z"),
+    stageRace: {
+      totalStages: 21,
+      completedStages: 21,
+    },
+  };
+
+  assert.equal(isRaceWithinScheduledLiveWindow(race, new Date("2026-05-17T00:00:00Z")), true);
+  assert.equal(isRaceWithinScheduledLiveWindow(race, new Date("2026-06-01T00:00:00Z")), false);
 });
 
 test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () => {
