@@ -3901,22 +3901,19 @@ function buildPodiumMarkup(entries) {
 }
 
 function getRaceFinishVideoUrl(race) {
-  const stageFinishVideoUrl = cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || "");
-  if (stageFinishVideoUrl) {
-    return stageFinishVideoUrl;
-  }
-
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
-  if (!mapped) {
-    return "";
-  }
-
-  if (typeof mapped === "string") {
-    return mapped;
-  }
-
   const stageNumber = Number(race?.stageRace?.completedStages || race?.stageRace?.latestStage?.number || 0);
-  return mapped[stageNumber] || "";
+  if (mapped) {
+    if (typeof mapped === "string") {
+      return mapped;
+    }
+
+    if (mapped[stageNumber]) {
+      return mapped[stageNumber];
+    }
+  }
+
+  return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || "");
 }
 
 function buildRaceFinishLink(race) {
