@@ -1588,7 +1588,10 @@ function getLiveStageRaceFreshnessFloor(race, now = new Date()) {
   }
 
   const elapsedDays = Math.floor((todayUtc.getTime() - startUtc.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 1));
+  // Allow a small buffer for rest days and slower official updates so an
+  // in-progress grand tour does not get treated as stale and lose to a
+  // future-stage placeholder parsed from a route table.
+  return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 2));
 }
 
 function choosePreferredByQuality(primary, secondary, getQuality) {
@@ -1615,8 +1618,12 @@ function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now 
       ? getStageRaceSnapshotProgress(snapshot)
       : getStageRaceFieldProgress(field);
   const standingsLength = Array.isArray(field?.standings) ? field.standings.length : Array.isArray(field) ? field.length : 0;
+  const suspiciousSparseJump =
+    floor > 0 &&
+    standingsLength <= 1 &&
+    progress > floor + 2;
 
-  return [Number(floor <= 0 || progress >= floor), progress, standingsLength];
+  return [Number(floor <= 0 || progress >= floor), Number(!suspiciousSparseJump), progress, standingsLength];
 }
 
 function annotateStageRaceSnapshotSource(snapshot, sourceId) {
@@ -1653,9 +1660,13 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
     }
 
     const floor = getLiveStageRaceFreshnessFloor(race, now);
+    const snapshotQuality = getStageRaceSnapshotQuality(snapshot);
     return [
       Number(floor <= 0 || getStageRaceSnapshotProgress(snapshot) >= floor),
-      ...getStageRaceSnapshotQuality(snapshot),
+      snapshotQuality[2],
+      snapshotQuality[3],
+      snapshotQuality[0],
+      snapshotQuality[1],
     ];
   });
 
@@ -2683,11 +2694,15 @@ function enrichLocationsInBackground(races, loadWikiRaw = fetchWikiRaw) {
 }
 
 function isMultiDayRace(race) {
-  return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() !== race.endDate.getTime();
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  return Boolean(startUtc && endUtc && startUtc.getTime() !== endUtc.getTime());
 }
 
 function isOneDayRace(race) {
-  return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() === race.endDate.getTime();
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  return Boolean(startUtc && endUtc && startUtc.getTime() === endUtc.getTime());
 }
 
 function selectUpcomingRaces(races, predicate, limit = MAX_UPCOMING_RACES) {

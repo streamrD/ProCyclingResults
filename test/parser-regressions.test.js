@@ -958,6 +958,63 @@ test("selectPreferredStageRaceSnapshot drops stale GC when a newer stage is know
   assert.equal(preferred.generalClassification, null);
 });
 
+test("selectPreferredStageRaceSnapshot prefers a rich current Giro snapshot over a sparse future placeholder", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const preferred = JSON.parse(
+    JSON.stringify(
+      selectPreferredStageRaceSnapshot(
+        {
+          totalStages: 21,
+          completedStages: 8,
+          latestStage: {
+            number: 8,
+            label: "Stage 8",
+            standings: [
+              { place: "1", rider: "Jhonatan Narvaez" },
+              { place: "2", rider: "Andreas Leknessund" },
+              { place: "3", rider: "Martin Tjøtta" },
+              { place: "4", rider: "Guillermo Silva" },
+              { place: "5", rider: "Lorenzo Milesi" },
+            ],
+          },
+          generalClassification: {
+            stageNumber: 8,
+            standings: [
+              { place: "1", rider: "Afonso Eulálio" },
+              { place: "2", rider: "Jonas Vingegaard" },
+              { place: "3", rider: "Felix Gall" },
+              { place: "4", rider: "Christian Scaroni" },
+              { place: "5", rider: "Jai Hindley" },
+            ],
+          },
+          overallResult: [],
+        },
+        {
+          totalStages: 21,
+          completedStages: 21,
+          latestStage: {
+            number: 21,
+            label: "Stage 21",
+            standings: [{ place: "1", rider: "Placeholder Winner" }],
+          },
+          generalClassification: null,
+          overallResult: [],
+        },
+        {
+          pageTitle: "2026 Giro d'Italia",
+          startDate: new Date("2026-05-08T00:00:00Z"),
+          endDate: new Date("2026-05-31T00:00:00Z"),
+        },
+        new Date("2026-05-17T18:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(preferred.completedStages, 8);
+  assert.equal(preferred.latestStage.number, 8);
+  assert.equal(preferred.generalClassification.stageNumber, 8);
+});
+
 test("isRaceWithinScheduledLiveWindow keeps a scheduled live stage race visible", () => {
   const { isRaceWithinScheduledLiveWindow } = loadParserExports();
   const race = {
