@@ -4109,7 +4109,7 @@ function buildRiderMarkup(entry, className = "podium-rider") {
   const gap = normalizeStandingGap(entry?.gap || "");
   const gapMarkup = gap ? `<span class="standing-gap">${escapeHtml(gap)}</span>` : "";
 
-  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span>${escapeHtml(rider)}</span>${gapMarkup}</span>`;
+  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span class="rider-text">${escapeHtml(rider)}</span>${gapMarkup}</span>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -4927,9 +4927,15 @@ function buildHtmlPage(data, view) {
       }
 
       .rider-name {
-        display: inline-flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
         gap: 0.45rem;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .rider-text {
         min-width: 0;
       }
 
@@ -4940,10 +4946,13 @@ function buildHtmlPage(data, view) {
       }
 
       .standing-gap {
-        flex: 0 0 auto;
-        margin-left: 0.2rem;
+        justify-self: end;
+        min-width: 4.2ch;
         font-size: 0.92em;
         font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+        white-space: nowrap;
         color: var(--muted);
       }
 
