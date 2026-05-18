@@ -4927,12 +4927,11 @@ function buildHtmlPage(data, view) {
       }
 
       .rider-name {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
+        display: inline-flex;
         align-items: center;
         gap: 0.45rem;
         min-width: 0;
-        width: 100%;
+        flex-wrap: wrap;
       }
 
       .rider-text {
@@ -4946,12 +4945,11 @@ function buildHtmlPage(data, view) {
       }
 
       .standing-gap {
-        justify-self: end;
-        min-width: 4.2ch;
+        flex: 0 0 auto;
+        margin-left: 0.1rem;
         font-size: 0.92em;
         font-weight: 700;
         font-variant-numeric: tabular-nums;
-        text-align: right;
         white-space: nowrap;
         color: var(--muted);
       }
