@@ -1117,10 +1117,10 @@ test("getRaceDataCacheTtlMs shortens cache TTL while live stage races are active
   const { getRaceDataCacheTtlMs } = loadParserExports();
 
   assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [] }), 15 * 60 * 1000);
-  assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [{ id: "giro" }], europeTourLiveStageRaces: [] }), 5 * 60 * 1000);
+  assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [{ id: "giro" }], europeTourLiveStageRaces: [] }), 60 * 1000);
   assert.equal(
     getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [{ id: "greece" }] }),
-    5 * 60 * 1000,
+    60 * 1000,
   );
 });
 

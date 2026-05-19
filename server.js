@@ -21,7 +21,7 @@ const PROSERIES_RECENT_RESULTS = 10;
 const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
 const DEFERRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
-const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
+const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
 const TOP_TIER_PUBLISHERS = [
@@ -3758,8 +3758,14 @@ async function loadRaceData(options = {}) {
   const targetCache = includeDeferred ? deferredRaceDataCache : raceDataCache;
   const now = Date.now();
   if (targetCache.data) {
-    if (now - targetCache.updatedAt < getRaceDataCacheTtlMs(targetCache.data)) {
+    const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
+    const hasLiveRaces = (targetCache.data.liveStageRaces?.length || targetCache.data.europeTourLiveStageRaces?.length) > 0;
+    if (now - targetCache.updatedAt < ttlMs) {
       return targetCache.data;
+    }
+
+    if (hasLiveRaces) {
+      return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false });
     }
 
     refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch(() => {});
@@ -3823,8 +3829,14 @@ async function loadCompetitionGroupData(groupId) {
   const targetCache = getDeferredGroupDataCache(groupId);
   const now = Date.now();
   if (targetCache.data) {
-    if (now - targetCache.updatedAt < getRaceDataCacheTtlMs(targetCache.data)) {
+    const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
+    const hasLiveRaces = (targetCache.data.liveStageRaces?.length || targetCache.data.europeTourLiveStageRaces?.length) > 0;
+    if (now - targetCache.updatedAt < ttlMs) {
       return targetCache.data;
+    }
+
+    if (hasLiveRaces) {
+      return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false });
     }
 
     refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false }).catch(() => {});
