@@ -3334,7 +3334,7 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
 
   const europeTourRaces = allRaces.filter((race) => race.series === "Men's Europe Tour");
   const europeTourRecentResults = europeTourRaces
-    .filter((race) => isMultiDayRace(race) && race.winner && race.endDate && race.endDate <= todayUtc)
+    .filter((race) => isMultiDayRace(race) && race.endDate && race.endDate <= todayUtc)
     .sort((left, right) => right.endDate - left.endDate)
     .slice(0, MAX_EUROPE_TOUR_RESULTS);
   const europeTourLiveStageRaces = europeTourRaces

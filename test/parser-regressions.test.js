@@ -47,6 +47,7 @@ function loadParserExports() {
       isMultiDayRace,
       isRaceWithinScheduledLiveWindow,
       getStaticStageRaceSnapshot,
+      partitionRaceBuckets,
       selectPreferredStageRaceSnapshot,
       getRaceDataCacheTtlMs,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
@@ -754,6 +755,55 @@ test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallbac
     { place: "4", rider: "Xabier Berasategi" },
     { place: "5", rider: "Joan Bou" },
   ]);
+});
+
+test("getStaticStageRaceSnapshot returns the 2026 Flèche du Sud fallback", () => {
+  const { getStaticStageRaceSnapshotForTest } = loadParserExports();
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      getStaticStageRaceSnapshotForTest("Flèche du Sud", "2026-05-17T00:00:00Z"),
+    ),
+  );
+
+  assert.equal(snapshot.totalStages, 5);
+  assert.equal(snapshot.completedStages, 5);
+  assert.deepEqual(snapshot.latestStage, {
+    number: 5,
+    label: "Stage 5",
+    standings: [{ place: "1", rider: "Matthew Brennan" }],
+    winner: "Matthew Brennan",
+  });
+  assert.deepEqual(snapshot.generalClassification, {
+    stageNumber: 5,
+    standings: [
+      { place: "1", rider: "Matisse Van Kerckhove" },
+      { place: "2", rider: "Mats Wenzel" },
+      { place: "3", rider: "Arno Wallenborn" },
+      { place: "4", rider: "Anton Schiffer", countryCode: "GER" },
+      { place: "5", rider: "Toralf Rydningen Martinsen" },
+    ],
+    leader: "Matisse Van Kerckhove",
+  });
+});
+
+test("partitionRaceBuckets keeps completed Europe Tour stage races even when the season table winner is blank", () => {
+  const { partitionRaceBuckets } = loadParserExports();
+  const buckets = partitionRaceBuckets(
+    [
+      {
+        pageTitle: "Flèche du Sud",
+        title: "Flèche du Sud",
+        series: "Men's Europe Tour",
+        winner: "",
+        startDate: new Date("2026-05-13T00:00:00Z"),
+        endDate: new Date("2026-05-17T00:00:00Z"),
+      },
+    ],
+    new Date("2026-05-19T12:00:00Z"),
+  );
+
+  assert.equal(buckets.europeTourRecentResults.length, 1);
+  assert.equal(buckets.europeTourRecentResults[0].title, "Flèche du Sud");
 });
 
 test("selectPreferredStageRaceSnapshot prefers richer fallback when stage progress is tied", () => {

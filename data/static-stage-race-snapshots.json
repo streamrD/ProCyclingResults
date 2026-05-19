@@ -98,5 +98,19 @@
       "stageNumber": 3,
       "standings": ["Alexis Guérin", "Javier Jamaica", "Tiago Antunes", "Xabier Berasategi", "Joan Bou"]
     }
+  },
+  "Flèche du Sud": {
+    "year": 2026,
+    "totalStages": 5,
+    "completedStages": 5,
+    "latestStage": {
+      "number": 5,
+      "label": "Stage 5",
+      "standings": ["Matthew Brennan"]
+    },
+    "generalClassification": {
+      "stageNumber": 5,
+      "standings": ["Matisse Van Kerckhove", "Mats Wenzel", "Arno Wallenborn", "Anton Schiffer", "Toralf Rydningen Martinsen"]
+    }
   }
 }
