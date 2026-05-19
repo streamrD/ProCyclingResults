@@ -600,6 +600,17 @@ function getRaceYear(race) {
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getUTCFullYear() : null;
 }
 
+function getRaceCoverageStageNumber(race) {
+  const stageNumber = Number(
+    race?.stageRace?.latestStage?.number ||
+      race?.stageRace?.generalClassification?.stageNumber ||
+      race?.stageRace?.completedStages ||
+      0,
+  );
+
+  return Number.isFinite(stageNumber) && stageNumber > 0 ? stageNumber : 0;
+}
+
 function extractMentionedYears(text) {
   return [...String(text || "").matchAll(/\b(19|20)\d{2}\b/g)].map((match) => Number(match[0]));
 }
@@ -2867,17 +2878,37 @@ function extractFirstXmlTag(block, tagNames) {
 function buildRaceArticleQueries(race) {
   const raceYear = getRaceYear(race);
   const variants = getRaceArticleVariants(race).slice(0, 8);
+  const stageNumber = getRaceCoverageStageNumber(race);
+  const latestStageWinner = cleanWikiText(race?.stageRace?.latestStage?.winner || "");
+  const queries = variants.flatMap((variant) => {
+    const variantQueries = [];
 
-  return variants.flatMap((variant) => {
     if (raceYear) {
-      return [
-        `"${variant}" ${raceYear} cycling`,
-        `"${variant}" ${raceYear} results cycling`,
-      ];
+      variantQueries.push(`"${variant}" ${raceYear} cycling`);
+      variantQueries.push(`"${variant}" ${raceYear} results cycling`);
+    } else {
+      variantQueries.push(`"${variant}" cycling`);
     }
 
-    return [`"${variant}" cycling`];
+    if (stageNumber > 0) {
+      variantQueries.push(`"${variant}" stage ${stageNumber} cycling`);
+      variantQueries.push(`"${variant}" stage ${stageNumber} results`);
+      variantQueries.push(`"${variant}" stage ${stageNumber} winner`);
+    }
+
+    if (stageNumber > 0 && raceYear) {
+      variantQueries.push(`"${variant}" ${raceYear} stage ${stageNumber}`);
+      variantQueries.push(`"${variant}" ${raceYear} stage ${stageNumber} results`);
+    }
+
+    if (stageNumber > 0 && latestStageWinner) {
+      variantQueries.push(`"${variant}" "${latestStageWinner}" stage ${stageNumber}`);
+    }
+
+    return variantQueries;
   });
+
+  return [...new Set(queries)].slice(0, 32);
 }
 
 function getPublisherScore(publisher) {
@@ -3002,14 +3033,102 @@ function scoreRaceArticle(article, race) {
   const descriptionMatches = raceTokens.filter((token) => description.includes(token)).length;
   const publishedAt = article.publishedAt ? new Date(article.publishedAt).getTime() : 0;
   const hoursOld = publishedAt ? Math.max(0, (Date.now() - publishedAt) / (1000 * 60 * 60)) : 9999;
+  const stageNumber = getRaceCoverageStageNumber(race);
+  const latestStageWinner = normalizeSearchText(race?.stageRace?.latestStage?.winner || "");
+  const combinedText = `${title} ${description}`;
 
   let score = getPublisherScore(article.publisher);
   score += titleMatches * 28;
   score += descriptionMatches * 12;
   score += /result|results|wins|won|victory|podium|preview|report|gallery|highlights/i.test(article.title) ? 18 : 0;
   score += Math.max(0, 48 - Math.min(hoursOld, 48));
+  if (stageNumber > 0 && combinedText.includes(`stage ${stageNumber}`)) {
+    score += 36;
+  }
+  if (latestStageWinner && title.includes(latestStageWinner)) {
+    score += 18;
+  }
 
   return score;
+}
+
+function isStageSpecificRaceArticle(article, race) {
+  const stageNumber = getRaceCoverageStageNumber(race);
+  if (stageNumber <= 0) {
+    return false;
+  }
+
+  const combinedText = normalizeSearchText([article?.title, article?.description].join(" "));
+  const latestStageWinner = normalizeSearchText(race?.stageRace?.latestStage?.winner || "");
+
+  if (combinedText.includes(`stage ${stageNumber}`)) {
+    return true;
+  }
+
+  return Boolean(latestStageWinner && combinedText.includes(latestStageWinner) && /\bwin|wins|won|victory|result|results|report\b/.test(combinedText));
+}
+
+function selectRaceArticles(articlePool, refreshToken, race = null) {
+  const rankedPool = [...articlePool]
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 32);
+
+  if (rankedPool.length <= MAX_RACE_ARTICLES) {
+    return rankedPool;
+  }
+
+  const hasLiveStageContext = Boolean(race && isMultiDayRace(race) && !isFinalizedStageRace(race) && getRaceCoverageStageNumber(race) > 0);
+  if (hasLiveStageContext) {
+    const stageSpecific = rankedPool.filter((article) => isStageSpecificRaceArticle(article, race));
+    const broaderContext = rankedPool.filter((article) => !isStageSpecificRaceArticle(article, race));
+    const selected = [];
+    const usedUrls = new Set();
+    const addArticles = (articles, limit) => {
+      for (const article of articles) {
+        if (selected.length >= limit) {
+          break;
+        }
+        if (usedUrls.has(article.url)) {
+          continue;
+        }
+        usedUrls.add(article.url);
+        selected.push(article);
+      }
+    };
+
+    addArticles(stageSpecific, Math.min(4, MAX_RACE_ARTICLES));
+    addArticles(broaderContext, Math.min(6, MAX_RACE_ARTICLES));
+
+    if (selected.length < MAX_RACE_ARTICLES) {
+      const fillerPool = [...rankedPool]
+        .filter((article) => !usedUrls.has(article.url))
+        .sort((left, right) => {
+          const leftValue = seededValue(refreshToken, `${left.url}|${left.title}`);
+          const rightValue = seededValue(refreshToken, `${right.url}|${right.title}`);
+          return leftValue - rightValue;
+        });
+      addArticles(fillerPool, MAX_RACE_ARTICLES);
+    }
+
+    return selected.slice(0, MAX_RACE_ARTICLES);
+  }
+  const orderedPool = [...rankedPool]
+    .sort((left, right) => {
+      const leftValue = seededValue(0, `${left.url}|${left.title}`);
+      const rightValue = seededValue(0, `${right.url}|${right.title}`);
+      return leftValue - rightValue;
+    })
+    .slice(0);
+  const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
+  const batchIndex = refreshToken % batchCount;
+  const startIndex = batchIndex * MAX_RACE_ARTICLES;
+  const batch = orderedPool.slice(startIndex, startIndex + MAX_RACE_ARTICLES);
+
+  if (batch.length === MAX_RACE_ARTICLES || startIndex === 0) {
+    return batch;
+  }
+
+  return [...batch, ...orderedPool.slice(0, MAX_RACE_ARTICLES - batch.length)];
 }
 
 function buildArticleItem(block, race) {
@@ -3129,34 +3248,6 @@ async function loadRaceArticlePool(race) {
   });
 
   return promise;
-}
-
-function selectRaceArticles(articlePool, refreshToken) {
-  const rankedPool = [...articlePool]
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 32);
-
-  if (rankedPool.length <= MAX_RACE_ARTICLES) {
-    return rankedPool;
-  }
-
-  const orderedPool = [...rankedPool]
-    .sort((left, right) => {
-      const leftValue = seededValue(0, `${left.url}|${left.title}`);
-      const rightValue = seededValue(0, `${right.url}|${right.title}`);
-      return leftValue - rightValue;
-    })
-    .slice(0);
-  const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
-  const batchIndex = refreshToken % batchCount;
-  const startIndex = batchIndex * MAX_RACE_ARTICLES;
-  const batch = orderedPool.slice(startIndex, startIndex + MAX_RACE_ARTICLES);
-
-  if (batch.length === MAX_RACE_ARTICLES || startIndex === 0) {
-    return batch;
-  }
-
-  return [...batch, ...orderedPool.slice(0, MAX_RACE_ARTICLES - batch.length)];
 }
 
 function cloneStandingEntry(entry) {
@@ -4253,7 +4344,7 @@ async function buildCoverageViewForGroup(group, url) {
     selectedRaceId: selectedRace?.id || "",
     selectedRaceTitle: selectedRace?.title || "the selected race",
     refreshToken,
-    raceArticles: selectRaceArticles(articlePool, refreshToken),
+    raceArticles: selectRaceArticles(articlePool, refreshToken, selectedRace),
   };
 }
 

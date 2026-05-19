@@ -160,6 +160,8 @@ It parses season tables, race pages, infobox fields, result templates, and stage
 
 Race coverage articles are pulled from Bing News RSS search feeds, using several search queries per race name variant. The app then filters, deduplicates, and scores those results.
 
+For live stage races, the query builder also adds stage-aware searches derived from the current snapshot, including the current stage number and latest stage winner. That helps races like the Giro surface same-stage result stories more reliably than a generic race-name search alone.
+
 Used for:
 
 - Article title
@@ -354,6 +356,12 @@ For a requested competition group:
 
 The app generates multiple search variants from race titles and page titles. It normalizes punctuation, removes year prefixes where appropriate, and handles women-specific naming variants such as `Women` and `Femmes`.
 
+For live multi-stage races with a current stage snapshot, it also adds targeted stage-result variants such as:
+
+- `"<race>" <year> stage <n>`
+- `"<race>" stage <n> results`
+- `"<race>" "<latest winner>" stage <n>`
+
 ### Filtering and ranking
 
 Articles are scored using several signals:
@@ -362,6 +370,7 @@ Articles are scored using several signals:
 - Whether the title/description matches race tokens
 - Whether it looks like results / victory / preview coverage
 - Recency
+- For live stage races, whether it mentions the current stage number or latest stage winner
 
 It also filters out:
 
@@ -372,6 +381,12 @@ It also filters out:
 - duplicate title/publisher combinations
 
 Recognized top-tier publishers have manually assigned scores. If any top-tier coverage exists for a race, lower-tier coverage is suppressed from the final pool.
+
+For active stage races, the final 8 articles are also intentionally blended:
+
+- current-stage reports are favored first
+- broader race-context stories are still retained when available
+- remaining slots are filled from the best overall articles
 
 ### Article rotation
 
@@ -395,11 +410,11 @@ Homepage metadata is intentionally lighter than the deferred/full metadata path.
 - `raceDataCache` for homepage data
 - `deferredRaceDataCache` for full `/api/races`
 - group-specific deferred section caches for `proseries` and `europe-tour`
-- Live-race TTL: 5 minutes
+- Live-race TTL: 60 seconds
 - Store `updatedAt`, `data`, and `promise`
 
 The `promise` field prevents duplicate upstream fetch work when concurrent requests arrive during a refresh.
-Once any race payload has been built, later expired requests use stale-while-revalidate behavior: the app serves the last cached payload immediately and refreshes in the background.
+Once any race payload has been built, expired payloads without active live races can still use stale-while-revalidate behavior. For active live-race payloads, the app now rebuilds immediately once the cache expires so today’s stage results are less likely to lag behind official publication.
 True cold starts are the expensive case. They can be noticeably slower because the app may need to rebuild race data from several live upstream sources while also respecting Wikipedia retry and throttling behavior.
 
 ### Article cache
@@ -418,6 +433,7 @@ Operational implications:
 - Multi-instance deployments do not share cache state
 - First request after a true cold start can be slower
 - The homepage and full API now have different cold-start profiles. `/api/homepage-data` is the user-visible readiness path for the initial page, while `/api/races` may still take longer because it includes deferred sections.
+- Active stage-race updates are intentionally fresher than before because live data now revalidates on a shorter cadence and does not always serve stale results first.
 - The slowdown is usually dominated by upstream fetch latency and Wikipedia rate limiting, not server-side HTML rendering
 - The warmup screen on `/` exists specifically to make cold starts feel intentional instead of looking hung
 

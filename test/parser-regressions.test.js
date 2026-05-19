@@ -36,6 +36,9 @@ function loadParserExports() {
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
+      buildRaceArticleQueries,
+      scoreRaceArticle,
+      selectRaceArticles,
       parseTourOfGreeceOfficialStandings,
       extractTourOfGreeceLatestStageNumber,
       buildRaceCard,
@@ -272,6 +275,95 @@ test("parseGiroDItaliaStageClassificationStandings accepts the current type-4 st
     { place: "4", rider: "Madis Mihkels", countryCode: "EST" },
     { place: "5", rider: "Matteo Malucelli", countryCode: "ITA" },
   ]);
+});
+
+test("buildRaceArticleQueries adds stage-specific Giro coverage searches", () => {
+  const { buildRaceArticleQueries, scoreRaceArticle, selectRaceArticles } = loadParserExports();
+  const race = {
+    title: "Giro d'Italia",
+    pageTitle: "2026 Giro d'Italia",
+    endDate: new Date("2026-06-01T00:00:00Z"),
+    startDate: new Date("2026-05-09T00:00:00Z"),
+    stageRace: {
+      totalStages: 21,
+      completedStages: 10,
+      latestStage: {
+        number: 10,
+        winner: "Filippo Ganna",
+      },
+    },
+  };
+
+  const queries = JSON.parse(JSON.stringify(buildRaceArticleQueries(race)));
+
+  assert.ok(queries.includes(`"Giro d'Italia" 2026 stage 10 results`));
+  assert.ok(queries.includes(`"Giro d'Italia" "Filippo Ganna" stage 10`));
+
+  const genericScore = scoreRaceArticle(
+    {
+      title: "Giro d'Italia preview and standings update",
+      description: "",
+      publisher: "Cycling Weekly",
+      publishedAt: new Date().toISOString(),
+    },
+    race,
+  );
+  const stageScore = scoreRaceArticle(
+    {
+      title: "Filippo Ganna wins Giro d'Italia stage 10 in dramatic finish",
+      description: "",
+      publisher: "Cycling Weekly",
+      publishedAt: new Date().toISOString(),
+    },
+    race,
+  );
+
+  assert.ok(stageScore > genericScore);
+
+  const selectedArticles = selectRaceArticles(
+    [
+      {
+        title: "Filippo Ganna wins Giro d'Italia stage 10 in dramatic finish",
+        description: "",
+        publisher: "Cycling Weekly",
+        url: "https://example.com/stage-a",
+        score: 300,
+      },
+      {
+        title: "Giro d'Italia stage 10 results and highlights",
+        description: "",
+        publisher: "Cyclingnews",
+        url: "https://example.com/stage-b",
+        score: 290,
+      },
+      {
+        title: "Afonso Eulalio keeps Giro d'Italia lead after tough day",
+        description: "General classification story",
+        publisher: "Reuters",
+        url: "https://example.com/general-a",
+        score: 280,
+      },
+      {
+        title: "What stage 10 means for the Giro d'Italia overall battle",
+        description: "",
+        publisher: "Velo",
+        url: "https://example.com/general-b",
+        score: 270,
+      },
+      {
+        title: "Giro d'Italia transfer news and team notes",
+        description: "",
+        publisher: "Road.cc",
+        url: "https://example.com/general-c",
+        score: 260,
+      },
+    ],
+    0,
+    race,
+  );
+
+  assert.ok(selectedArticles.some((article) => article.url === "https://example.com/stage-a"));
+  assert.ok(selectedArticles.some((article) => article.url === "https://example.com/general-a"));
 });
 
 test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 2 top five", () => {
