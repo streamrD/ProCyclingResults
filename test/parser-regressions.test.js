@@ -41,6 +41,7 @@ function loadParserExports() {
       extractVueltaABurgosFeminasStageStandings,
       extractVueltaABurgosFeminasLiveblogEndpoint,
       extractVueltaABurgosFeminasLatestMetaUpdateText,
+      getKnownVueltaABurgosFeminasGcStandings,
       fetchVueltaABurgosFeminasOfficialSnapshot,
       buildRaceArticleQueries,
       scoreRaceArticle,
@@ -773,6 +774,19 @@ test("isVueltaABurgosFeminasRace matches accented and unaccented page titles", (
     isVueltaABurgosFeminasRace({ pageTitle: "2026 Vuelta a Burgos Feminas", title: "Vuelta a Burgos Feminas" }),
     true,
   );
+});
+
+test("getKnownVueltaABurgosFeminasGcStandings returns stage 2 top five with gaps", () => {
+  const { getKnownVueltaABurgosFeminasGcStandings } = loadParserExports();
+  const standings = JSON.parse(JSON.stringify(getKnownVueltaABurgosFeminasGcStandings(2)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Lorena Wiebes", countryCode: "NED" },
+    { place: "2", rider: "Chiara Consonni", countryCode: "ITA", gap: "+0:14" },
+    { place: "3", rider: "Elisa Balsamo", countryCode: "ITA", gap: "+0:14" },
+    { place: "4", rider: "Ally Wollaston", gap: "+0:16" },
+    { place: "5", rider: "Dominika Wlodarczyk", gap: "+0:17" },
+  ]);
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {

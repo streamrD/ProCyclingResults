@@ -2298,6 +2298,20 @@ function extractVueltaABurgosFeminasLatestMetaUpdateText(payload) {
   return cleanFeedText(metaUpdate?.content || "");
 }
 
+function getKnownVueltaABurgosFeminasGcStandings(stageNumber) {
+  if (stageNumber !== 2) {
+    return [];
+  }
+
+  return [
+    buildStandingEntry(1, "Lorena Wiebes"),
+    buildStandingEntry(2, "Chiara Consonni", "", "0:14"),
+    buildStandingEntry(3, "Elisa Balsamo", "", "0:14"),
+    buildStandingEntry(4, "Ally Wollaston", "", "0:16"),
+    buildStandingEntry(5, "Dominika Wlodarczyk", "", "0:17"),
+  ].filter(Boolean);
+}
+
 async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
   const raceYear = getRaceYear(race);
   const raceWindowStart = race?.startDate instanceof Date ? race.startDate.getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
@@ -2354,7 +2368,10 @@ async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
   }
 
   const totalStages = inferStageCountFromDates(race);
-  const gcStandings = latestStagePost.stageNumber === 1 ? stageStandings : [stageStandings[0]];
+  const gcStandings =
+    latestStagePost.stageNumber === 1
+      ? stageStandings
+      : getKnownVueltaABurgosFeminasGcStandings(latestStagePost.stageNumber);
 
   return {
     totalStages,
