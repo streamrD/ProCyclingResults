@@ -33,6 +33,7 @@ function loadParserExports() {
       extractGiroDItaliaLatestCompletedStageNumber,
       resolveGiroDItaliaCompletedStageNumber,
       resolveGiroDItaliaLivefeedStageNumber,
+      parseSpanishStageNumber,
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
@@ -729,6 +730,14 @@ test("extractVueltaABurgosFeminasStageStandings parses the official liveblog fin
     { place: "3", rider: "Baker" },
     { place: "5", rider: "Shari Bossuyt", countryCode: "BEL" },
   ]);
+});
+
+test("parseSpanishStageNumber recognizes ordinal-digit Spanish stage titles", () => {
+  const { parseSpanishStageNumber } = loadParserExports();
+
+  assert.equal(parseSpanishStageNumber("Película de la 1ª etapa – 2026"), 1);
+  assert.equal(parseSpanishStageNumber("Película de la 2ª etapa – 2026"), 2);
+  assert.equal(parseSpanishStageNumber("Película de la 3ª etapa – 2026"), 3);
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {

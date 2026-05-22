@@ -1879,6 +1879,11 @@ function parseSpanishStageNumber(text) {
     return Number(digitMatch[1]);
   }
 
+  const ordinalDigitMatch = normalized.match(/\b(\d+)(?:a|o)\s+etapa\b/);
+  if (ordinalDigitMatch) {
+    return Number(ordinalDigitMatch[1]);
+  }
+
   const stageWords = [
     ["primera etapa", 1],
     ["segunda etapa", 2],
