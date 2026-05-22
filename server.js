@@ -2287,6 +2287,17 @@ function extractVueltaABurgosFeminasStageStandings(text) {
   );
 }
 
+function extractVueltaABurgosFeminasLiveblogEndpoint(contentHtml) {
+  const match = String(contentHtml || "").match(/data-endpoint="([^"]+)"/i);
+  return cleanFeedText(match?.[1] || "");
+}
+
+function extractVueltaABurgosFeminasLatestMetaUpdateText(payload) {
+  const updates = Array.isArray(payload?.updates) ? payload.updates : [];
+  const metaUpdate = updates.find((update) => /meta:/i.test(cleanFeedText(update?.content || "")));
+  return cleanFeedText(metaUpdate?.content || "");
+}
+
 async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
   const raceYear = getRaceYear(race);
   const raceWindowStart = race?.startDate instanceof Date ? race.startDate.getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
@@ -2300,11 +2311,13 @@ async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
   const stagePosts = (Array.isArray(posts) ? posts : [])
     .map((post) => {
       const title = cleanFeedText(post?.title?.rendered || "");
-      const content = cleanFeedText(post?.content?.rendered || post?.excerpt?.rendered || "");
+      const contentHtml = String(post?.content?.rendered || "");
+      const content = cleanFeedText(contentHtml || post?.excerpt?.rendered || "");
       const combinedText = [title, content].join(" ").trim();
 
       return {
         title,
+        contentHtml,
         content,
         combinedText,
         stageNumber: parseSpanishStageNumber(combinedText),
@@ -2334,7 +2347,10 @@ async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
     return null;
   }
 
-  const stageStandings = extractVueltaABurgosFeminasStageStandings(latestStagePost.combinedText);
+  const liveblogEndpoint = extractVueltaABurgosFeminasLiveblogEndpoint(latestStagePost.contentHtml);
+  const liveblogPayload = liveblogEndpoint ? await fetchJson(liveblogEndpoint) : null;
+  const updateText = extractVueltaABurgosFeminasLatestMetaUpdateText(liveblogPayload);
+  const stageStandings = extractVueltaABurgosFeminasStageStandings(updateText || latestStagePost.combinedText);
   if (stageStandings.length === 0) {
     return null;
   }

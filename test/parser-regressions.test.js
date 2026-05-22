@@ -39,6 +39,8 @@ function loadParserExports() {
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
       extractVueltaABurgosFeminasStageStandings,
+      extractVueltaABurgosFeminasLiveblogEndpoint,
+      extractVueltaABurgosFeminasLatestMetaUpdateText,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -719,11 +721,27 @@ test("parseTourOfGreeceOfficialStandings handles the current GC and final-stage 
 });
 
 test("extractVueltaABurgosFeminasStageStandings parses the official liveblog finish line", () => {
-  const { extractVueltaABurgosFeminasStageStandings } = loadParserExports();
+  const {
+    extractVueltaABurgosFeminasStageStandings,
+    extractVueltaABurgosFeminasLiveblogEndpoint,
+    extractVueltaABurgosFeminasLatestMetaUpdateText,
+  } = loadParserExports();
   const text =
     "Película de la 1ª etapa – 2026 Burgos Eclipsa: Burgos (Catedral) – Burgos (Gamonal). Km 127 BURGOS. META: 1ª 16 WIEBES (SDW), 2ª 51 CONSONNI (CSZ), 3ª 112 BAKER (LIV), 4ª 112 BAKER (LIV) y 5ª 85 BOSSUYT (AGS)";
+  const contentHtml =
+    '<div id="elb-liveblog" data-endpoint="https://www.vueltaburgos.com/feminas/wp-json/easy-liveblogs/v1/liveblog/10729"></div>';
+  const liveblogPayload = {
+    updates: [
+      {
+        content:
+          "<p><strong>BODEGAS VIÑA PEDROSA. META:</strong> 1ª 16 WIEBES (SDW), 2ª 21 BALSAMO (LTK), 3ª 36 WOLLASTON (TFS), 4ª 54 SKALNIAK-SOJKA (CSZ) y 5ª 51 CONSONNI (CSZ), todas en el mismo tiempo</p>",
+      },
+    ],
+  };
 
   const standings = JSON.parse(JSON.stringify(extractVueltaABurgosFeminasStageStandings(text)));
+  const endpoint = extractVueltaABurgosFeminasLiveblogEndpoint(contentHtml);
+  const updateText = extractVueltaABurgosFeminasLatestMetaUpdateText(liveblogPayload);
 
   assert.deepEqual(standings, [
     { place: "1", rider: "Lorena Wiebes", countryCode: "NED" },
@@ -731,6 +749,8 @@ test("extractVueltaABurgosFeminasStageStandings parses the official liveblog fin
     { place: "3", rider: "Baker" },
     { place: "5", rider: "Shari Bossuyt", countryCode: "BEL" },
   ]);
+  assert.equal(endpoint, "https://www.vueltaburgos.com/feminas/wp-json/easy-liveblogs/v1/liveblog/10729");
+  assert.match(updateText, /BALSAMO/);
 });
 
 test("parseSpanishStageNumber recognizes ordinal-digit Spanish stage titles", () => {
