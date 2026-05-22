@@ -34,6 +34,7 @@ function loadParserExports() {
       resolveGiroDItaliaCompletedStageNumber,
       resolveGiroDItaliaLivefeedStageNumber,
       parseSpanishStageNumber,
+      isVueltaABurgosFeminasRace,
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
@@ -738,6 +739,19 @@ test("parseSpanishStageNumber recognizes ordinal-digit Spanish stage titles", ()
   assert.equal(parseSpanishStageNumber("Película de la 1ª etapa – 2026"), 1);
   assert.equal(parseSpanishStageNumber("Película de la 2ª etapa – 2026"), 2);
   assert.equal(parseSpanishStageNumber("Película de la 3ª etapa – 2026"), 3);
+});
+
+test("isVueltaABurgosFeminasRace matches accented and unaccented page titles", () => {
+  const { isVueltaABurgosFeminasRace } = loadParserExports();
+
+  assert.equal(
+    isVueltaABurgosFeminasRace({ pageTitle: "2026 Vuelta a Burgos Féminas", title: "Vuelta a Burgos Féminas" }),
+    true,
+  );
+  assert.equal(
+    isVueltaABurgosFeminasRace({ pageTitle: "2026 Vuelta a Burgos Feminas", title: "Vuelta a Burgos Feminas" }),
+    true,
+  );
 });
 
 test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallback", () => {

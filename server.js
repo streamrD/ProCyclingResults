@@ -595,6 +595,11 @@ function resolveKnownRiderName(rawName) {
   return titleCased;
 }
 
+function isVueltaABurgosFeminasRace(race) {
+  const text = normalizeSearchText([race?.pageTitle, race?.title].join(" "));
+  return text.includes("vuelta a burgos feminas");
+}
+
 function parseAthleteDetails(cell) {
   const text = String(cell || "");
   const match = text.match(/\{\{\s*flagathlete\s*\|([\s\S]+?)\}\}/i);
@@ -2700,7 +2705,7 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
   },
   {
     id: "vuelta-a-burgos-feminas-liveblog",
-    matches: (race) => /Vuelta a Burgos Feminas/i.test(race?.pageTitle || ""),
+    matches: (race) => isVueltaABurgosFeminasRace(race),
     load: fetchVueltaABurgosFeminasOfficialSnapshot,
   },
 ];
