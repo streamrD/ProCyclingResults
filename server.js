@@ -3949,6 +3949,19 @@ function warmRaceDataInBackground() {
     });
 }
 
+function shouldServeHomepageWarmup(now = Date.now()) {
+  if (!raceDataCache.data) {
+    return true;
+  }
+
+  const ttlMs = getRaceDataCacheTtlMs(raceDataCache.data);
+  const hasLiveRaces =
+    (raceDataCache.data.liveStageRaces?.length || raceDataCache.data.europeTourLiveStageRaces?.length || 0) > 0;
+  const isExpired = now - raceDataCache.updatedAt >= ttlMs;
+
+  return Boolean(raceDataCache.promise || (hasLiveRaces && isExpired));
+}
+
 function buildRaceDataDebugPayload(data) {
   return {
     ...data,
@@ -5788,6 +5801,7 @@ async function sendStaticFile(response, pathname) {
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    const shouldWarmHomepage = shouldServeHomepageWarmup();
 
     if (url.pathname.startsWith("/assets/")) {
       const handled = await sendStaticFile(response, url.pathname);
@@ -5796,10 +5810,10 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
-    if (!raceDataCache.data) {
+    if (shouldWarmHomepage) {
       warmRaceDataInBackground().catch(() => {});
 
-      if (url.pathname === "/api/homepage-data" || url.pathname === "/api/races") {
+      if (url.pathname === "/api/homepage-data") {
         sendJson(response, 202, {
           status: "warming",
           message: "Live race data is still loading.",
