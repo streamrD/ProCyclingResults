@@ -41,6 +41,7 @@ function loadParserExports() {
       extractVueltaABurgosFeminasStageStandings,
       extractVueltaABurgosFeminasLiveblogEndpoint,
       extractVueltaABurgosFeminasLatestMetaUpdateText,
+      fetchVueltaABurgosFeminasOfficialSnapshot,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,

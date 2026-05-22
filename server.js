@@ -2328,8 +2328,6 @@ async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
     .filter(
       (post) =>
         post.stageNumber > 0 &&
-        /\bvuelta\s+a\s+burgos\b/i.test(normalizeSearchText(post.combinedText)) &&
-        /\bfeminas\b|\bfeminas\b|\bfeminas\b/i.test(normalizeSearchText(post.combinedText)) &&
         (!raceYear || post.publishedYear === raceYear) &&
         post.publishedAt >= raceWindowStart &&
         post.publishedAt <= raceWindowEnd,
