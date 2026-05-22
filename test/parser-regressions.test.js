@@ -36,6 +36,7 @@ function loadParserExports() {
       parseGiroDItaliaGeneralClassificationStandings,
       parseGiroDItaliaLivefeedStageStandings,
       parseGiroDItaliaStageClassificationStandings,
+      extractVueltaABurgosFeminasStageStandings,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -712,6 +713,21 @@ test("parseTourOfGreeceOfficialStandings handles the current GC and final-stage 
     { place: "3", rider: "Nikiforos Arvanitou", countryCode: "GRE" },
     { place: "4", rider: "Kasper Andersen", countryCode: "DEN" },
     { place: "5", rider: "Axel Van Der Tuuk", countryCode: "NED" },
+  ]);
+});
+
+test("extractVueltaABurgosFeminasStageStandings parses the official liveblog finish line", () => {
+  const { extractVueltaABurgosFeminasStageStandings } = loadParserExports();
+  const text =
+    "Película de la 1ª etapa – 2026 Burgos Eclipsa: Burgos (Catedral) – Burgos (Gamonal). Km 127 BURGOS. META: 1ª 16 WIEBES (SDW), 2ª 51 CONSONNI (CSZ), 3ª 112 BAKER (LIV), 4ª 112 BAKER (LIV) y 5ª 85 BOSSUYT (AGS)";
+
+  const standings = JSON.parse(JSON.stringify(extractVueltaABurgosFeminasStageStandings(text)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Lorena Wiebes", countryCode: "NED" },
+    { place: "2", rider: "Chiara Consonni", countryCode: "ITA" },
+    { place: "3", rider: "Baker" },
+    { place: "5", rider: "Shari Bossuyt", countryCode: "BEL" },
   ]);
 });
 

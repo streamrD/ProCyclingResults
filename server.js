@@ -556,6 +556,45 @@ function getRiderCountryCode(name) {
   return RIDER_COUNTRY_CODES.get(key) || "";
 }
 
+function resolveKnownRiderName(rawName) {
+  const cleaned = cleanFeedText(String(rawName || ""))
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const exactCode = getRiderCountryCode(cleaned);
+  if (exactCode) {
+    return cleaned;
+  }
+
+  const titleCased = toTitleCaseWords(cleaned);
+  if (getRiderCountryCode(titleCased)) {
+    return titleCased;
+  }
+
+  const normalizedTarget = cleaned
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toLowerCase()
+    .trim();
+  const tokens = normalizedTarget.split(/\s+/).filter(Boolean);
+  const surname = tokens[tokens.length - 1] || normalizedTarget;
+  const matchingNames = [...RIDER_COUNTRY_CODES.keys()].filter((key) => {
+    const keyTokens = key.split(/\s+/).filter(Boolean);
+    return keyTokens[keyTokens.length - 1] === surname;
+  });
+
+  if (matchingNames.length === 1) {
+    return toTitleCaseWords(matchingNames[0]);
+  }
+
+  return titleCased;
+}
+
 function parseAthleteDetails(cell) {
   const text = String(cell || "");
   const match = text.match(/\{\{\s*flagathlete\s*\|([\s\S]+?)\}\}/i);
@@ -2221,6 +2260,98 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
   };
 }
 
+function extractVueltaABurgosFeminasStageStandings(text) {
+  const cleanedText = cleanFeedText(text);
+  const finishSegmentMatch = cleanedText.match(/meta:\s*1[ªa][^.]*/iu);
+  const finishSegment = finishSegmentMatch ? finishSegmentMatch[0] : cleanedText;
+  const matches = [...finishSegment.matchAll(/([1-5])[ªa]\s+\d+\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ'’.-]+)/gu)];
+
+  return uniqueStandings(
+    matches
+      .map((match) => {
+        const place = Number(match[1]);
+        const rider = resolveKnownRiderName(match[2]);
+        return Number.isInteger(place) && rider ? buildStandingEntry(place, rider) : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
+  const raceYear = getRaceYear(race);
+  const raceWindowStart = race?.startDate instanceof Date ? race.startDate.getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
+  const raceWindowEnd = race?.endDate instanceof Date ? race.endDate.getTime() + 2 * 24 * 60 * 60 * 1000 : Number.POSITIVE_INFINITY;
+  const params = new URLSearchParams({
+    search: "Película",
+    per_page: "10",
+    _fields: "id,date,title,content,excerpt",
+  });
+  const posts = await fetchJson(`https://www.vueltaburgos.com/feminas/wp-json/wp/v2/posts?${params.toString()}`);
+  const stagePosts = (Array.isArray(posts) ? posts : [])
+    .map((post) => {
+      const title = cleanFeedText(post?.title?.rendered || "");
+      const content = cleanFeedText(post?.content?.rendered || post?.excerpt?.rendered || "");
+      const combinedText = [title, content].join(" ").trim();
+
+      return {
+        title,
+        content,
+        combinedText,
+        stageNumber: parseSpanishStageNumber(combinedText),
+        publishedAt: post?.date ? new Date(post.date).getTime() : 0,
+        publishedYear: post?.date ? new Date(post.date).getUTCFullYear() : 0,
+      };
+    })
+    .filter(
+      (post) =>
+        post.stageNumber > 0 &&
+        /\bvuelta\s+a\s+burgos\b/i.test(normalizeSearchText(post.combinedText)) &&
+        /\bfeminas\b|\bfeminas\b|\bfeminas\b/i.test(normalizeSearchText(post.combinedText)) &&
+        (!raceYear || post.publishedYear === raceYear) &&
+        post.publishedAt >= raceWindowStart &&
+        post.publishedAt <= raceWindowEnd,
+    )
+    .sort((left, right) => {
+      if (left.stageNumber !== right.stageNumber) {
+        return right.stageNumber - left.stageNumber;
+      }
+
+      return right.publishedAt - left.publishedAt;
+    });
+
+  const latestStagePost = stagePosts[0] || null;
+  if (!latestStagePost) {
+    return null;
+  }
+
+  const stageStandings = extractVueltaABurgosFeminasStageStandings(latestStagePost.combinedText);
+  if (stageStandings.length === 0) {
+    return null;
+  }
+
+  const totalStages = inferStageCountFromDates(race);
+  const gcStandings = latestStagePost.stageNumber === 1 ? stageStandings : [stageStandings[0]];
+
+  return {
+    totalStages,
+    completedStages: latestStagePost.stageNumber,
+    latestStage: {
+      number: latestStagePost.stageNumber,
+      label: `Stage ${latestStagePost.stageNumber}`,
+      standings: stageStandings,
+      ...getWinnerDetails(stageStandings),
+    },
+    generalClassification: gcStandings.length > 0
+      ? {
+          stageNumber: latestStagePost.stageNumber,
+          standings: gcStandings,
+          ...getLeaderDetails(gcStandings),
+        }
+      : null,
+    overallResult: [],
+  };
+}
+
 const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-2026";
 const GIRO_D_ITALIA_CLASSIFICATIONS_URL = "https://www.giroditalia.it/en/classifiche/";
 const GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL = "https://www.giroditalia.it/en/classifiche/di-tappa/";
@@ -2561,6 +2692,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "giro-ditalia-stage-one",
     matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
     load: fetchGiroDItaliaOfficialSnapshot,
+  },
+  {
+    id: "vuelta-a-burgos-feminas-liveblog",
+    matches: (race) => /Vuelta a Burgos Feminas/i.test(race?.pageTitle || ""),
+    load: fetchVueltaABurgosFeminasOfficialSnapshot,
   },
 ];
 
