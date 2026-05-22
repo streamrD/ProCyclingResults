@@ -242,6 +242,7 @@ const RACE_FINISH_VIDEO_URLS = {
     4: "https://video.giroditalia.it/video/127117045",
     5: "https://video.giroditalia.it/video/127169105",
     9: "https://www.youtube.com/watch?v=ZhO3_roH_mg",
+    13: "https://www.youtube.com/watch?v=RUOs9YzSato",
   },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
