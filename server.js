@@ -1400,8 +1400,20 @@ function inferStageCountFromDates(race) {
   return Math.max(0, Math.round(durationMs / (1000 * 60 * 60 * 24)) + 1);
 }
 
+function hasFreshnessSensitiveRaceData(data) {
+  if ((data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length || 0) > 0) {
+    return true;
+  }
+
+  return [
+    ...(data?.recentResults || []),
+    ...(data?.finalizedStageRaces || []),
+    ...(data?.europeTourRecentResults || []),
+  ].some((race) => race?.finishedToday);
+}
+
 function getRaceDataCacheTtlMs(data) {
-  return (data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length)
+  return hasFreshnessSensitiveRaceData(data)
     ? LIVE_RACE_CACHE_TTL_MS
     : CACHE_TTL_MS;
 }
@@ -4028,12 +4040,12 @@ async function loadRaceData(options = {}) {
   const now = Date.now();
   if (targetCache.data) {
     const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
-    const hasLiveRaces = (targetCache.data.liveStageRaces?.length || targetCache.data.europeTourLiveStageRaces?.length) > 0;
+    const hasFreshData = hasFreshnessSensitiveRaceData(targetCache.data);
     if (now - targetCache.updatedAt < ttlMs) {
       return targetCache.data;
     }
 
-    if (hasLiveRaces) {
+    if (hasFreshData) {
       return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false });
     }
 
@@ -4099,12 +4111,12 @@ async function loadCompetitionGroupData(groupId) {
   const now = Date.now();
   if (targetCache.data) {
     const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
-    const hasLiveRaces = (targetCache.data.liveStageRaces?.length || targetCache.data.europeTourLiveStageRaces?.length) > 0;
+    const hasFreshData = hasFreshnessSensitiveRaceData(targetCache.data);
     if (now - targetCache.updatedAt < ttlMs) {
       return targetCache.data;
     }
 
-    if (hasLiveRaces) {
+    if (hasFreshData) {
       return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false });
     }
 

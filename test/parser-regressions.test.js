@@ -56,6 +56,7 @@ function loadParserExports() {
       getStaticStageRaceSnapshot,
       partitionRaceBuckets,
       selectPreferredStageRaceSnapshot,
+      hasFreshnessSensitiveRaceData,
       getRaceDataCacheTtlMs,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
@@ -1339,13 +1340,21 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
   );
 });
 
-test("getRaceDataCacheTtlMs shortens cache TTL while live stage races are active", () => {
-  const { getRaceDataCacheTtlMs } = loadParserExports();
+test("getRaceDataCacheTtlMs shortens cache TTL while live or just-finished races are active", () => {
+  const { hasFreshnessSensitiveRaceData, getRaceDataCacheTtlMs } = loadParserExports();
 
   assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [] }), 15 * 60 * 1000);
   assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [{ id: "giro" }], europeTourLiveStageRaces: [] }), 60 * 1000);
   assert.equal(
     getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [{ id: "greece" }] }),
+    60 * 1000,
+  );
+  assert.equal(
+    hasFreshnessSensitiveRaceData({ recentResults: [{ title: "Race", finishedToday: true }] }),
+    true,
+  );
+  assert.equal(
+    getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [], recentResults: [{ finishedToday: true }] }),
     60 * 1000,
   );
 });
