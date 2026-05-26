@@ -2486,7 +2486,10 @@ function parseGiroDItaliaClassificationStandings(html, category) {
   return rows
     .map((match) => {
       const row = match;
-      const place = Number.parseInt(row.match(/<h5 class="position is-pink">(\d+)\s*<\/h5>/i)?.[1] || "", 10);
+      const place = Number.parseInt(
+        row.match(/<h5 class="position(?:\s+[^"]*)?">(\d+)\s*<\/h5>/i)?.[1] || "",
+        10,
+      );
       const firstName = cleanFeedText(row.match(/<div class="name p-3">([\s\S]*?)<\/div>/i)?.[1] || "");
       const surname = cleanFeedText(row.match(/<div class="surname p-3 is-bold">([\s\S]*?)<\/div>/i)?.[1] || "");
       const alpha3Code = (row.match(/athletes-flags\/([a-z]{3})\.png/i)?.[1] || "").toUpperCase();

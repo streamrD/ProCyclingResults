@@ -479,6 +479,39 @@ test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia 
   ]);
 });
 
+test("parseGiroDItaliaGeneralClassificationStandings accepts mixed position classes", () => {
+  const { parseGiroDItaliaGeneralClassificationStandings } = loadParserExports();
+  const html = `
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/den.png"></div><div class="atleta-info"><div class="name p-3">Jonas</div><div class="surname p-3 is-bold">VINGEGAARD</div></div></div>
+          <div class="tempo p-3 is-text-right">59:12:56</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/por.png"></div><div class="atleta-info"><div class="name p-3">Afonso</div><div class="surname p-3 is-bold">EULALIO</div></div></div>
+          <div class="tempo p-3 is-text-right">59:15:22</div>
+          <div class="distacco p-3 is-text-right">2:26</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-dark">3</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/aut.png"></div><div class="atleta-info"><div class="name p-3">Felix</div><div class="surname p-3 is-bold">GALL</div></div></div>
+          <div class="tempo p-3 is-text-right">59:15:46</div>
+          <div class="distacco p-3 is-text-right">2:50</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const standings = JSON.parse(JSON.stringify(parseGiroDItaliaGeneralClassificationStandings(html)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Jonas Vingegaard", countryCode: "DEN" },
+    { place: "2", rider: "Afonso Eulalio", countryCode: "POR", gap: "+2:26" },
+    { place: "3", rider: "Felix Gall", countryCode: "AUT", gap: "+2:50" },
+  ]);
+});
+
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {
   const {
     extractGiroDItaliaLatestCompletedStageNumber,
