@@ -2518,26 +2518,51 @@ function parseGiroDItaliaLivefeedStageStandings(jsonText) {
     return [];
   }
 
-  const topTenEntry = (payload?.cronaca_sintesi?.entries || []).find((entry) =>
-    /here'?s today'?s top 10/i.test(cleanFeedText(entry?.titolo || "")),
-  );
-  const abstract = decodeHtml(String(topTenEntry?.abstract || ""))
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ");
-  const lines = abstract
-    .split("\n")
-    .map((line) => cleanFeedText(line))
-    .filter(Boolean);
+  const entries = payload?.cronaca_sintesi?.entries || [];
+  let bestStandings = [];
+  let bestScore = -1;
 
-  return lines
-    .map((line) => {
-      const match = line.match(/^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+s\.t\.$|^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+\d+h/i);
-      const place = Number.parseInt(match?.[1] || match?.[3] || "", 10);
-      const rider = cleanFeedText(match?.[2] || match?.[4] || "");
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, toTitleCaseWords(rider)) : null;
-    })
-    .filter(Boolean)
-    .slice(0, MAX_RESULT_RIDERS);
+  for (const entry of entries) {
+    const title = cleanFeedText(entry?.titolo || "");
+    const abstract = decodeHtml(String(entry?.abstract || ""))
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, " ");
+    const lines = abstract
+      .split("\n")
+      .map((line) => cleanFeedText(line))
+      .filter(Boolean);
+
+    const standings = lines
+      .map((line) => {
+        const match = line.match(/^(\d+)[\.\-]\s+(.+?)\s+\([^)]+\)\s+(.+)$/i);
+        const place = Number.parseInt(match?.[1] || "", 10);
+        const rider = cleanFeedText(match?.[2] || "");
+        const tail = cleanFeedText(match?.[3] || "");
+        const hasResultTime =
+          /s\.t\.|[+\-]?\d+h|[+\-]?\d+:\d+(?::\d+)?|[+\-]?\d+[’'](?:\d+[”"]?)?|[+\-]?\d+[”"]/i.test(tail);
+        return Number.isInteger(place) && rider && hasResultTime
+          ? buildStandingEntry(place, toTitleCaseWords(rider))
+          : null;
+      })
+      .filter(Boolean)
+      .slice(0, MAX_RESULT_RIDERS);
+
+    if (standings.length === 0) {
+      continue;
+    }
+
+    const score =
+      standings.length * 10 +
+      Number(/top\s*10|order of arrival|results|winner/i.test(title)) +
+      Number(entry?.sintesi === true);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestStandings = standings;
+    }
+  }
+
+  return bestStandings;
 }
 
 function extractGiroDItaliaFinishVideoUrl(jsonText) {

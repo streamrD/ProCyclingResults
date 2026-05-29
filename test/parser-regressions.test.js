@@ -404,6 +404,39 @@ test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 2 top fiv
   ]);
 });
 
+test("parseGiroDItaliaLivefeedStageStandings accepts alternate finished-stage result titles", () => {
+  const { parseGiroDItaliaLivefeedStageStandings } = loadParserExports();
+  const json = JSON.stringify({
+    cronaca_sintesi: {
+      entries: [
+        {
+          titolo: "No changes in the general classification",
+          abstract: "Jonas Vingegaard remains in pink.",
+        },
+        {
+          titolo: "Order of arrival",
+          abstract:
+            "1. Sepp Kuss (Team Visma | Lease a Bike) 4h28’12”<br />\n" +
+            "2. Derek Gee (Lidl-Trek) +29”<br />\n" +
+            "3. Afonso Eulalio (Bahrain Victorious) +1:00<br />\n" +
+            "4. Felix Gall (Decathlon CMA CGM Team) +1:00<br />\n" +
+            "5. Jai Hindley (Red Bull-BORA-hansgrohe) +1:00\n",
+        },
+      ],
+    },
+  });
+
+  const standings = JSON.parse(JSON.stringify(parseGiroDItaliaLivefeedStageStandings(json)));
+
+  assert.deepEqual(standings, [
+    { place: "1", rider: "Sepp Kuss" },
+    { place: "2", rider: "Derek Gee" },
+    { place: "3", rider: "Afonso Eulalio" },
+    { place: "4", rider: "Felix Gall", countryCode: "AUT" },
+    { place: "5", rider: "Jai Hindley" },
+  ]);
+});
+
 test("extractGiroDItaliaFinishVideoUrl finds the official post-stage Last Km clip", () => {
   const { extractGiroDItaliaFinishVideoUrl } = loadParserExports();
   const json = JSON.stringify({
