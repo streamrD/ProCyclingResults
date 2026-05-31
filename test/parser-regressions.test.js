@@ -133,6 +133,48 @@ test("applyKnownStageRaceCorrections expands La Vuelta Femenina stage 1 fallback
   ]);
 });
 
+test("applyKnownStageRaceCorrections expands Giro d'Italia Women stage 2 fallback to top five", () => {
+  const { applyKnownStageRaceCorrections } = loadParserExports();
+  const corrected = JSON.parse(
+    JSON.stringify(
+      applyKnownStageRaceCorrections(
+        { pageTitle: "2026 Giro d'Italia Women" },
+        {
+          totalStages: 9,
+          completedStages: 2,
+          latestStage: {
+            number: 2,
+            label: "Stage 2",
+            standings: [{ place: "1", rider: "Elisa Balsamo" }],
+            winner: "Elisa Balsamo",
+          },
+          generalClassification: {
+            stageNumber: 2,
+            standings: [{ place: "1", rider: "Elisa Balsamo" }],
+            leader: "Elisa Balsamo",
+          },
+          overallResult: [],
+        },
+      ),
+    ),
+  );
+
+  assert.deepEqual(corrected.latestStage.standings, [
+    { place: "1", rider: "Elisa Balsamo", countryCode: "ITA" },
+    { place: "2", rider: "Lara Gillespie" },
+    { place: "3", rider: "Chiara Consonni", countryCode: "ITA" },
+    { place: "4", rider: "Charlotte Kool" },
+    { place: "5", rider: "Barbara Guarischi" },
+  ]);
+  assert.deepEqual(corrected.generalClassification.standings, [
+    { place: "1", rider: "Elisa Balsamo", countryCode: "ITA" },
+    { place: "2", rider: "Lara Gillespie", gap: "+0:08" },
+    { place: "3", rider: "Chiara Consonni", countryCode: "ITA", gap: "+0:12" },
+    { place: "4", rider: "Charlotte Kool", gap: "+0:20" },
+    { place: "5", rider: "Linda Zanetti", gap: "+0:20" },
+  ]);
+});
+
 test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage and GC standings", () => {
   const { buildLaVueltaFemeninaOfficialSnapshot } = loadParserExports();
   const rankingsPath = path.join(__dirname, "fixtures", "la-vuelta-femenina-rankings-stage4.html");

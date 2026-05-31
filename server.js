@@ -1359,6 +1359,50 @@ function applyKnownStageRaceCorrections(race, snapshot) {
     return snapshot;
   }
 
+  if (race?.pageTitle === "2026 Giro d'Italia Women") {
+    const correctedStageTwoStandings = buildStandings([
+      "Elisa Balsamo",
+      "Lara Gillespie",
+      "Chiara Consonni",
+      "Charlotte Kool",
+      "Barbara Guarischi",
+    ]);
+    const correctedStageTwoGcStandings = buildStandings([
+      { rider: "Elisa Balsamo" },
+      { rider: "Lara Gillespie", gap: "+0:08" },
+      { rider: "Chiara Consonni", gap: "+0:12" },
+      { rider: "Charlotte Kool", gap: "+0:20" },
+      { rider: "Linda Zanetti", gap: "+0:20" },
+    ]);
+    const latestStageNumber = snapshot.latestStage?.number || 0;
+    const gcStageNumber = snapshot.generalClassification?.stageNumber || 0;
+    const hasSparseStageTwoData =
+      (latestStageNumber > 0 && latestStageNumber <= 2 && (snapshot.latestStage?.standings?.length || 0) < 5) ||
+      (gcStageNumber > 0 && gcStageNumber <= 2 && (snapshot.generalClassification?.standings?.length || 0) < 5);
+
+    if (hasSparseStageTwoData) {
+      return {
+        ...snapshot,
+        totalStages: snapshot.totalStages || 9,
+        completedStages: Math.max(snapshot.completedStages || 0, 2),
+        latestStage: {
+          number: 2,
+          label: "Stage 2",
+          standings: correctedStageTwoStandings,
+          winner: correctedStageTwoStandings[0]?.rider || "",
+        },
+        generalClassification: {
+          stageNumber: 2,
+          standings: correctedStageTwoGcStandings,
+          leader: correctedStageTwoGcStandings[0]?.rider || "",
+        },
+        overallResult: [],
+      };
+    }
+
+    return snapshot;
+  }
+
   if (race?.pageTitle !== "2026 Tour de Romandie") {
     return snapshot;
   }
