@@ -4380,7 +4380,7 @@ function getStandingMetric(entry, context = "default") {
   const gap = normalizeStandingGap(entry?.gap || "");
 
   if (context === "stage") {
-    return entry?.place === "1" ? time || gap : gap || time;
+    return time || gap;
   }
 
   if (context === "gc") {

@@ -1703,9 +1703,13 @@ test("buildStageRaceCard shows stage time separately from cumulative GC timing w
     },
   });
 
+  const [stageSection = "", gcSection = ""] = html.split("Overall after stage 4");
   assert.match(html, /stage-winner-rider[^>]*>.*31:38/s);
+  assert.match(stageSection, /Marlen Reusser.*32:42/s);
+  assert.doesNotMatch(stageSection, /\+01:04/);
   assert.match(html, /Overall after stage 4/);
-  assert.match(html, /11:31:32/);
+  assert.match(gcSection, /11:31:32/);
+  assert.match(gcSection, /Marlen Reusser.*\+01:04/s);
 });
 
 test("buildRaceCard does not render one-day races as stage races", () => {
