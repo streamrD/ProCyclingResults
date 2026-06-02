@@ -5,6 +5,9 @@
   "description": "Live pro cycling results and upcoming races",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "benchmark:load": "node scripts/benchmark-load.js",
+    "benchmark:ready": "node scripts/benchmark-load.js --wait-ready",
+    "benchmark:homepage-ready": "node scripts/benchmark-load.js --wait-homepage-ready"
   }
 }

@@ -17,7 +17,11 @@ const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
-const LIVE_RACE_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROSERIES_RECENT_RESULTS = 10;
+const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
+const DEFERRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
+const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
+const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
 const TOP_TIER_PUBLISHERS = [
@@ -234,6 +238,12 @@ const RACE_FINISH_VIDEO_URLS = {
   "2026 Giro d'Italia": {
     1: "https://www.youtube.com/watch?v=k9etTDahUFo",
     2: "https://video.giroditalia.it/video/126977539",
+    3: "https://video.giroditalia.it/video/126996326",
+    4: "https://video.giroditalia.it/video/127117045",
+    5: "https://video.giroditalia.it/video/127169105",
+    9: "https://www.youtube.com/watch?v=ZhO3_roH_mg",
+    13: "https://www.youtube.com/watch?v=RUOs9YzSato",
+    19: "https://www.youtube.com/watch?v=CyQsfq_O6S4",
   },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
@@ -423,11 +433,31 @@ const MONTHS = {
   December: 11,
 };
 
-let cache = {
+let raceMetadataCache = {
   updatedAt: 0,
   data: null,
   promise: null,
 };
+
+let deferredRaceMetadataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
+let raceDataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
+let deferredRaceDataCache = {
+  updatedAt: 0,
+  data: null,
+  promise: null,
+};
+
+const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
 
@@ -527,6 +557,50 @@ function getRiderCountryCode(name) {
   return RIDER_COUNTRY_CODES.get(key) || "";
 }
 
+function resolveKnownRiderName(rawName) {
+  const cleaned = cleanFeedText(String(rawName || ""))
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) {
+    return "";
+  }
+
+  const exactCode = getRiderCountryCode(cleaned);
+  if (exactCode) {
+    return cleaned;
+  }
+
+  const titleCased = toTitleCaseWords(cleaned);
+  if (getRiderCountryCode(titleCased)) {
+    return titleCased;
+  }
+
+  const normalizedTarget = cleaned
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toLowerCase()
+    .trim();
+  const tokens = normalizedTarget.split(/\s+/).filter(Boolean);
+  const surname = tokens[tokens.length - 1] || normalizedTarget;
+  const matchingNames = [...RIDER_COUNTRY_CODES.keys()].filter((key) => {
+    const keyTokens = key.split(/\s+/).filter(Boolean);
+    return keyTokens[keyTokens.length - 1] === surname;
+  });
+
+  if (matchingNames.length === 1) {
+    return toTitleCaseWords(matchingNames[0]);
+  }
+
+  return titleCased;
+}
+
+function isVueltaABurgosFeminasRace(race) {
+  const text = normalizeSearchText([race?.pageTitle, race?.title].join(" "));
+  return text.includes("vuelta a burgos feminas");
+}
+
 function parseAthleteDetails(cell) {
   const text = String(cell || "");
   const match = text.match(/\{\{\s*flagathlete\s*\|([\s\S]+?)\}\}/i);
@@ -564,7 +638,23 @@ function getRaceId(race) {
 }
 
 function getRaceYear(race) {
-  return race?.endDate instanceof Date ? race.endDate.getUTCFullYear() : null;
+  if (race?.endDate instanceof Date) {
+    return race.endDate.getUTCFullYear();
+  }
+
+  const parsed = race?.endDate ? new Date(race.endDate) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getUTCFullYear() : null;
+}
+
+function getRaceCoverageStageNumber(race) {
+  const stageNumber = Number(
+    race?.stageRace?.latestStage?.number ||
+      race?.stageRace?.generalClassification?.stageNumber ||
+      race?.stageRace?.completedStages ||
+      0,
+  );
+
+  return Number.isFinite(stageNumber) && stageNumber > 0 ? stageNumber : 0;
 }
 
 function extractMentionedYears(text) {
@@ -1269,6 +1359,50 @@ function applyKnownStageRaceCorrections(race, snapshot) {
     return snapshot;
   }
 
+  if (race?.pageTitle === "2026 Giro d'Italia Women") {
+    const correctedStageTwoStandings = buildStandings([
+      "Elisa Balsamo",
+      "Lara Gillespie",
+      "Chiara Consonni",
+      "Charlotte Kool",
+      "Barbara Guarischi",
+    ]);
+    const correctedStageTwoGcStandings = buildStandings([
+      { rider: "Elisa Balsamo" },
+      { rider: "Lara Gillespie", gap: "+0:08" },
+      { rider: "Chiara Consonni", gap: "+0:12" },
+      { rider: "Charlotte Kool", gap: "+0:20" },
+      { rider: "Linda Zanetti", gap: "+0:20" },
+    ]);
+    const latestStageNumber = snapshot.latestStage?.number || 0;
+    const gcStageNumber = snapshot.generalClassification?.stageNumber || 0;
+    const hasSparseStageTwoData =
+      (latestStageNumber > 0 && latestStageNumber <= 2 && (snapshot.latestStage?.standings?.length || 0) < 5) ||
+      (gcStageNumber > 0 && gcStageNumber <= 2 && (snapshot.generalClassification?.standings?.length || 0) < 5);
+
+    if (hasSparseStageTwoData) {
+      return {
+        ...snapshot,
+        totalStages: snapshot.totalStages || 9,
+        completedStages: Math.max(snapshot.completedStages || 0, 2),
+        latestStage: {
+          number: 2,
+          label: "Stage 2",
+          standings: correctedStageTwoStandings,
+          winner: correctedStageTwoStandings[0]?.rider || "",
+        },
+        generalClassification: {
+          stageNumber: 2,
+          standings: correctedStageTwoGcStandings,
+          leader: correctedStageTwoGcStandings[0]?.rider || "",
+        },
+        overallResult: [],
+      };
+    }
+
+    return snapshot;
+  }
+
   if (race?.pageTitle !== "2026 Tour de Romandie") {
     return snapshot;
   }
@@ -1311,8 +1445,20 @@ function inferStageCountFromDates(race) {
   return Math.max(0, Math.round(durationMs / (1000 * 60 * 60 * 24)) + 1);
 }
 
+function hasFreshnessSensitiveRaceData(data) {
+  if ((data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length || 0) > 0) {
+    return true;
+  }
+
+  return [
+    ...(data?.recentResults || []),
+    ...(data?.finalizedStageRaces || []),
+    ...(data?.europeTourRecentResults || []),
+  ].some((race) => race?.finishedToday);
+}
+
 function getRaceDataCacheTtlMs(data) {
-  return (data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length)
+  return hasFreshnessSensitiveRaceData(data)
     ? LIVE_RACE_CACHE_TTL_MS
     : CACHE_TTL_MS;
 }
@@ -1328,8 +1474,15 @@ function isSameUtcDay(left, right) {
 }
 
 function toUtcDateOnly(value) {
-  return value instanceof Date
-    ? new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
+  const date =
+    value instanceof Date
+      ? value
+      : value
+        ? new Date(value)
+        : null;
+
+  return date && !Number.isNaN(date.getTime())
+    ? new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
     : null;
 }
 
@@ -1549,7 +1702,10 @@ function getLiveStageRaceFreshnessFloor(race, now = new Date()) {
   }
 
   const elapsedDays = Math.floor((todayUtc.getTime() - startUtc.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-  return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 1));
+  // Allow a small buffer for rest days and slower official updates so an
+  // in-progress grand tour does not get treated as stale and lose to a
+  // future-stage placeholder parsed from a route table.
+  return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 2));
 }
 
 function choosePreferredByQuality(primary, secondary, getQuality) {
@@ -1576,8 +1732,39 @@ function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now 
       ? getStageRaceSnapshotProgress(snapshot)
       : getStageRaceFieldProgress(field);
   const standingsLength = Array.isArray(field?.standings) ? field.standings.length : Array.isArray(field) ? field.length : 0;
+  const suspiciousSparseJump =
+    floor > 0 &&
+    standingsLength <= 1 &&
+    progress > floor + 2;
 
-  return [Number(floor <= 0 || progress >= floor), progress, standingsLength];
+  return [Number(floor <= 0 || progress >= floor), Number(!suspiciousSparseJump), progress, standingsLength];
+}
+
+function annotateStageRaceSnapshotSource(snapshot, sourceId) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    ...snapshot,
+    _sourceId: sourceId || snapshot._sourceId || "",
+  };
+}
+
+function getStageRaceFieldSourceId(field, primaryField, primarySnapshot, secondarySnapshot) {
+  if (!field) {
+    return "";
+  }
+
+  if (primaryField && field === primaryField) {
+    return primarySnapshot?._sourceId || "";
+  }
+
+  if (secondarySnapshot) {
+    return secondarySnapshot._sourceId || "";
+  }
+
+  return "";
 }
 
 function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
@@ -1587,9 +1774,13 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
     }
 
     const floor = getLiveStageRaceFreshnessFloor(race, now);
+    const snapshotQuality = getStageRaceSnapshotQuality(snapshot);
     return [
       Number(floor <= 0 || getStageRaceSnapshotProgress(snapshot) >= floor),
-      ...getStageRaceSnapshotQuality(snapshot),
+      snapshotQuality[2],
+      snapshotQuality[3],
+      snapshotQuality[0],
+      snapshotQuality[1],
     ];
   });
 
@@ -1648,6 +1839,25 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
     }
   }
 
+  const latestStageSourceId = getStageRaceFieldSourceId(
+    latestStage,
+    primary?.latestStage,
+    primary,
+    secondary,
+  );
+  const generalClassificationSourceId = getStageRaceFieldSourceId(
+    generalClassification,
+    primary?.generalClassification,
+    primary,
+    secondary,
+  );
+  const overallResultSourceId = getStageRaceFieldSourceId(
+    overallResult,
+    primary?.overallResult,
+    primary,
+    secondary,
+  );
+
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
         totalStages: resolvedTotalStages,
@@ -1665,6 +1875,12 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
             }
           : null,
         overallResult: Array.isArray(overallResult) ? overallResult : [],
+        provenance: {
+          snapshot: preferredSnapshot?._sourceId || "",
+          latestStage: latestStageSourceId,
+          generalClassification: generalClassificationSourceId,
+          overallResult: overallResultSourceId,
+        },
       }
     : null;
 }
@@ -1725,6 +1941,11 @@ function parseSpanishStageNumber(text) {
     return Number(digitMatch[1]);
   }
 
+  const ordinalDigitMatch = normalized.match(/\b(\d+)(?:a|o)\s+etapa\b/);
+  if (ordinalDigitMatch) {
+    return Number(ordinalDigitMatch[1]);
+  }
+
   const stageWords = [
     ["primera etapa", 1],
     ["segunda etapa", 2],
@@ -1748,16 +1969,48 @@ function parseSpanishStageNumber(text) {
   return 0;
 }
 
-function buildStandingEntry(place, rider, countryCode = "") {
+function normalizeStandingGap(value) {
+  const cleaned = cleanFeedText(String(value || ""))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned === "0:00" || cleaned === "+ 0:00" || cleaned === "+0:00") {
+    return "";
+  }
+
+  const match = cleaned.match(/\+?\s*(\d+(?::\d{2}){1,2})/);
+  return match ? `+${match[1]}` : "";
+}
+
+function normalizeStandingTime(value) {
+  const cleaned = cleanFeedText(String(value || ""))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned === "-" || cleaned === "0:00") {
+    return "";
+  }
+
+  const match = cleaned.match(/\b(\d+(?::\d{2}){1,2})\b/);
+  return match ? match[1] : "";
+}
+
+function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "") {
   const details =
     rider && typeof rider === "object"
       ? {
           rider: String(rider.rider || "").trim(),
           countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
+          gap: normalizeStandingGap(rider.gap || ""),
+          time: normalizeStandingTime(rider.time || ""),
         }
       : {
           rider: String(rider || "").trim(),
           countryCode: normalizeCountryCode(countryCode || getRiderCountryCode(rider)),
+          gap: normalizeStandingGap(gap),
+          time: normalizeStandingTime(time),
         };
 
   return details.rider
@@ -1765,6 +2018,8 @@ function buildStandingEntry(place, rider, countryCode = "") {
         place: String(place),
         rider: details.rider,
         ...(details.countryCode ? { countryCode: details.countryCode } : {}),
+        ...(details.gap ? { gap: details.gap } : {}),
+        ...(details.time ? { time: details.time } : {}),
       }
     : null;
 }
@@ -1822,13 +2077,13 @@ function getStaticStageRaceSnapshot(race) {
     return null;
   }
 
-  return {
+  return annotateStageRaceSnapshotSource({
     totalStages: snapshot.totalStages,
     completedStages: snapshot.completedStages,
     latestStage: hydrateStoredStageRaceField(snapshot.latestStage, "latestStage"),
     generalClassification: hydrateStoredStageRaceField(snapshot.generalClassification, "generalClassification"),
     overallResult: buildStandings(snapshot.generalClassification?.standings || []),
-  };
+  }, "static-fallback");
 }
 
 function toTitleCaseWords(value) {
@@ -2089,10 +2344,135 @@ async function fetchVueltaAsturiasOfficialSnapshot(race) {
   };
 }
 
+function extractVueltaABurgosFeminasStageStandings(text) {
+  const cleanedText = cleanFeedText(text);
+  const finishSegmentMatch = cleanedText.match(/meta:\s*1[ªa][^.]*/iu);
+  const finishSegment = finishSegmentMatch ? finishSegmentMatch[0] : cleanedText;
+  const matches = [...finishSegment.matchAll(/([1-5])[ªa]\s+\d+\s+([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ'’.-]+)/gu)];
+
+  return uniqueStandings(
+    matches
+      .map((match) => {
+        const place = Number(match[1]);
+        const rider = resolveKnownRiderName(match[2]);
+        return Number.isInteger(place) && rider ? buildStandingEntry(place, rider) : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function extractVueltaABurgosFeminasLiveblogEndpoint(contentHtml) {
+  const match = String(contentHtml || "").match(/data-endpoint="([^"]+)"/i);
+  return cleanFeedText(match?.[1] || "");
+}
+
+function extractVueltaABurgosFeminasLatestMetaUpdateText(payload) {
+  const updates = Array.isArray(payload?.updates) ? payload.updates : [];
+  const metaUpdate = updates.find((update) => /meta:/i.test(cleanFeedText(update?.content || "")));
+  return cleanFeedText(metaUpdate?.content || "");
+}
+
+function getKnownVueltaABurgosFeminasGcStandings(stageNumber) {
+  if (stageNumber !== 2) {
+    return [];
+  }
+
+  return [
+    buildStandingEntry(1, "Lorena Wiebes"),
+    buildStandingEntry(2, "Chiara Consonni", "", "0:14"),
+    buildStandingEntry(3, "Elisa Balsamo", "", "0:14"),
+    buildStandingEntry(4, "Ally Wollaston", "", "0:16"),
+    buildStandingEntry(5, "Dominika Wlodarczyk", "", "0:17"),
+  ].filter(Boolean);
+}
+
+async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
+  const raceYear = getRaceYear(race);
+  const raceWindowStart = race?.startDate instanceof Date ? race.startDate.getTime() - 7 * 24 * 60 * 60 * 1000 : 0;
+  const raceWindowEnd = race?.endDate instanceof Date ? race.endDate.getTime() + 2 * 24 * 60 * 60 * 1000 : Number.POSITIVE_INFINITY;
+  const params = new URLSearchParams({
+    search: "Película",
+    per_page: "10",
+    _fields: "id,date,title,content,excerpt",
+  });
+  const posts = await fetchJson(`https://www.vueltaburgos.com/feminas/wp-json/wp/v2/posts?${params.toString()}`);
+  const stagePosts = (Array.isArray(posts) ? posts : [])
+    .map((post) => {
+      const title = cleanFeedText(post?.title?.rendered || "");
+      const contentHtml = String(post?.content?.rendered || "");
+      const content = cleanFeedText(contentHtml || post?.excerpt?.rendered || "");
+      const combinedText = [title, content].join(" ").trim();
+
+      return {
+        title,
+        contentHtml,
+        content,
+        combinedText,
+        stageNumber: parseSpanishStageNumber(combinedText),
+        publishedAt: post?.date ? new Date(post.date).getTime() : 0,
+        publishedYear: post?.date ? new Date(post.date).getUTCFullYear() : 0,
+      };
+    })
+    .filter(
+      (post) =>
+        post.stageNumber > 0 &&
+        (!raceYear || post.publishedYear === raceYear) &&
+        post.publishedAt >= raceWindowStart &&
+        post.publishedAt <= raceWindowEnd,
+    )
+    .sort((left, right) => {
+      if (left.stageNumber !== right.stageNumber) {
+        return right.stageNumber - left.stageNumber;
+      }
+
+      return right.publishedAt - left.publishedAt;
+    });
+
+  const latestStagePost = stagePosts[0] || null;
+  if (!latestStagePost) {
+    return null;
+  }
+
+  const liveblogEndpoint = extractVueltaABurgosFeminasLiveblogEndpoint(latestStagePost.contentHtml);
+  const liveblogPayload = liveblogEndpoint ? await fetchJson(liveblogEndpoint) : null;
+  const updateText = extractVueltaABurgosFeminasLatestMetaUpdateText(liveblogPayload);
+  const stageStandings = extractVueltaABurgosFeminasStageStandings(updateText || latestStagePost.combinedText);
+  if (stageStandings.length === 0) {
+    return null;
+  }
+
+  const totalStages = inferStageCountFromDates(race);
+  const gcStandings =
+    latestStagePost.stageNumber === 1
+      ? stageStandings
+      : getKnownVueltaABurgosFeminasGcStandings(latestStagePost.stageNumber);
+
+  return {
+    totalStages,
+    completedStages: latestStagePost.stageNumber,
+    latestStage: {
+      number: latestStagePost.stageNumber,
+      label: `Stage ${latestStagePost.stageNumber}`,
+      standings: stageStandings,
+      ...getWinnerDetails(stageStandings),
+    },
+    generalClassification: gcStandings.length > 0
+      ? {
+          stageNumber: latestStagePost.stageNumber,
+          standings: gcStandings,
+          ...getLeaderDetails(gcStandings),
+        }
+      : null,
+    overallResult: [],
+  };
+}
+
 const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-2026";
 const GIRO_D_ITALIA_CLASSIFICATIONS_URL = "https://www.giroditalia.it/en/classifiche/";
 const GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL = "https://www.giroditalia.it/en/classifiche/di-tappa/";
 const GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL = "https://www.giroditalia.it/en/livefeed/tappa/";
+const GIRO_D_ITALIA_WOMEN_RANKINGS_URL = "https://www.giroditaliawomen.it/en/rankings/";
+const GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL = "https://www.giroditaliawomen.it/en/rankings/di-tappa/";
 
 function extractTourOfGreeceResultsSection(html) {
   const text = String(html || "");
@@ -2111,18 +2491,32 @@ function parseTourOfGreeceOfficialStandings(html, heading) {
   }
 
   const tableMatch = section.match(
-    new RegExp(`<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>[\\s\\S]*?<tbody>([\\s\\S]*?)<\\/tbody>`, "i"),
+    new RegExp(
+      `<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>([\\s\\S]*?)<\\/table>`,
+      "i",
+    ),
   );
   if (!tableMatch) {
     return [];
   }
 
-  return [...tableMatch[1].matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
+  const tableHtml = tableMatch[1];
+  const headerRow = tableHtml.match(/<thead>[\s\S]*?<tr>([\s\S]*?)<\/tr>[\s\S]*?<\/thead>/i)?.[1] || "";
+  const headers = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((match) =>
+    cleanFeedText(match[1]).toLowerCase(),
+  );
+  const rankIndex = headers.findIndex((header) => header.includes("rank"));
+  const nameIndex = headers.findIndex((header) => header === "name" || header.includes("name"));
+  const nationIndex = headers.findIndex((header) => header.includes("nation"));
+
+  const tbody = tableHtml.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] || "";
+
+  return [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
     .map((match) => {
       const cells = [...match[1].matchAll(/<td>([\s\S]*?)<\/td>/gi)].map((cellMatch) => cellMatch[1]);
-      const place = Number.parseInt(cleanFeedText(cells[1] || "").match(/\d+/)?.[0] || "", 10);
-      const rider = toTitleCaseWords(cleanFeedText(cells[2] || "").replace(/\*/g, ""));
-      const alpha2Code = (cells[3] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
+      const place = Number.parseInt(cleanFeedText(cells[rankIndex] || "").match(/\d+/)?.[0] || "", 10);
+      const rider = toTitleCaseWords(cleanFeedText(cells[nameIndex] || "").replace(/\*/g, ""));
+      const alpha2Code = (cells[nationIndex] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
       const countryCode = normalizeAlpha2CountryCode(alpha2Code);
       return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
     })
@@ -2130,11 +2524,18 @@ function parseTourOfGreeceOfficialStandings(html, heading) {
     .slice(0, MAX_RESULT_RIDERS);
 }
 
+function extractTourOfGreeceLatestStageNumber(html) {
+  return [...extractTourOfGreeceResultsSection(html).matchAll(/<h4>\s*Stage\s+(\d+)\s*<\/h4>/gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite)
+    .reduce((max, stageNumber) => Math.max(max, stageNumber), 0);
+}
+
 function parseGiroDItaliaClassificationStandings(html, category) {
   const normalized = String(html || "").replace(/</g, "\n<");
   const blockMatch = normalized.match(
     new RegExp(
-      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-1">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|$)`,
+      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-[^"]+">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|<div class="single-tab js-tab-|$)`,
       "i",
     ),
   );
@@ -2142,15 +2543,26 @@ function parseGiroDItaliaClassificationStandings(html, category) {
     return [];
   }
 
-  return [...blockMatch[1].matchAll(/<div class="line-table"[\s\S]*?<\/div>\s*<\/div>/gi)]
+  const rows = [...blockMatch[1].matchAll(/<div class="line-table"[\s\S]*?(?=<div class="line-table"|$)/gi)].map(
+    (match) => match[0],
+  );
+
+  return rows
     .map((match) => {
-      const row = match[0];
-      const place = Number.parseInt(row.match(/<h5 class="position is-pink">(\d+)\s*<\/h5>/i)?.[1] || "", 10);
+      const row = match;
+      const place = Number.parseInt(
+        row.match(/<(?:h5|div) class="position(?:\s+[^"]*)?">(\d+)\s*<\/(?:h5|div)>/i)?.[1] || "",
+        10,
+      );
       const firstName = cleanFeedText(row.match(/<div class="name p-3">([\s\S]*?)<\/div>/i)?.[1] || "");
       const surname = cleanFeedText(row.match(/<div class="surname p-3 is-bold">([\s\S]*?)<\/div>/i)?.[1] || "");
       const alpha3Code = (row.match(/athletes-flags\/([a-z]{3})\.png/i)?.[1] || "").toUpperCase();
+      const gap = normalizeStandingGap(row.match(/<div class="distacco p-3 is-text-right">([\s\S]*?)<\/div>/i)?.[1] || "");
+      const time = normalizeStandingTime(row.match(/<div class="tempo p-3 is-text-right">([\s\S]*?)<\/div>/i)?.[1] || "");
       const rider = toTitleCaseWords([firstName, surname].filter(Boolean).join(" "));
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, alpha3Code) : null;
+      return Number.isInteger(place) && rider
+        ? buildStandingEntry(place, { rider, countryCode: alpha3Code, gap, time })
+        : null;
     })
     .filter(Boolean)
     .slice(0, MAX_RESULT_RIDERS);
@@ -2173,26 +2585,76 @@ function parseGiroDItaliaLivefeedStageStandings(jsonText) {
     return [];
   }
 
-  const topTenEntry = (payload?.cronaca_sintesi?.entries || []).find((entry) =>
-    /here'?s today'?s top 10/i.test(cleanFeedText(entry?.titolo || "")),
-  );
-  const abstract = decodeHtml(String(topTenEntry?.abstract || ""))
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ");
-  const lines = abstract
-    .split("\n")
-    .map((line) => cleanFeedText(line))
-    .filter(Boolean);
+  const entries = payload?.cronaca_sintesi?.entries || [];
+  let bestStandings = [];
+  let bestScore = -1;
 
-  return lines
-    .map((line) => {
-      const match = line.match(/^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+s\.t\.$|^(\d+)\.\s+(.+?)\s+\([^)]+\)\s+\d+h/i);
-      const place = Number.parseInt(match?.[1] || match?.[3] || "", 10);
-      const rider = cleanFeedText(match?.[2] || match?.[4] || "");
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, toTitleCaseWords(rider)) : null;
-    })
-    .filter(Boolean)
-    .slice(0, MAX_RESULT_RIDERS);
+  for (const entry of entries) {
+    const title = cleanFeedText(entry?.titolo || "");
+    const abstract = decodeHtml(String(entry?.abstract || ""))
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, " ");
+    const lines = abstract
+      .split("\n")
+      .map((line) => cleanFeedText(line))
+      .filter(Boolean);
+
+    const standings = lines
+      .map((line) => {
+        const match = line.match(/^(\d+)[\.\-]\s+(.+?)\s+\([^)]+\)\s+(.+)$/i);
+        const place = Number.parseInt(match?.[1] || "", 10);
+        const rider = cleanFeedText(match?.[2] || "");
+        const tail = cleanFeedText(match?.[3] || "");
+        const hasResultTime =
+          /s\.t\.|[+\-]?\d+h|[+\-]?\d+:\d+(?::\d+)?|[+\-]?\d+[’'](?:\d+[”"]?)?|[+\-]?\d+[”"]/i.test(tail);
+        return Number.isInteger(place) && rider && hasResultTime
+          ? buildStandingEntry(place, toTitleCaseWords(rider))
+          : null;
+      })
+      .filter(Boolean)
+      .slice(0, MAX_RESULT_RIDERS);
+
+    if (standings.length === 0) {
+      continue;
+    }
+
+    const score =
+      standings.length * 10 +
+      Number(/top\s*10|order of arrival|results|winner/i.test(title)) +
+      Number(entry?.sintesi === true);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestStandings = standings;
+    }
+  }
+
+  return bestStandings;
+}
+
+function extractGiroDItaliaFinishVideoUrl(jsonText) {
+  let payload;
+
+  try {
+    payload = JSON.parse(String(jsonText || ""));
+  } catch {
+    return "";
+  }
+
+  const finishVideoEntry = [...(payload?.cronaca_sintesi?.entries || [])]
+    .reverse()
+    .find((entry) => {
+      const title = cleanFeedText(entry?.titolo || "");
+      const url = cleanFeedText(entry?.url_media || "");
+      return (
+        entry?.categoria === "VIDEO" &&
+        /last[\s-]*(?:[^a-z0-9]{0,6}|\w+[\s-]+){0,4}(km|kilomet(?:re|er))/i.test(title) &&
+        /again|enjoy/i.test(title) &&
+        /^https:\/\/video\.giroditalia\.it\/video\/\d+/i.test(url)
+      );
+    });
+
+  return cleanFeedText(finishVideoEntry?.url_media || "");
 }
 
 function extractGiroDItaliaLatestCompletedStageNumber(html) {
@@ -2213,7 +2675,42 @@ function inferGiroDItaliaCurrentStageNumber(race, now = new Date()) {
   return Math.max(0, Math.min(inferStageCountFromDates(race) || elapsedDays, elapsedDays));
 }
 
-async function fetchGiroDItaliaOfficialSnapshot(race) {
+function resolveGiroDItaliaLivefeedStageNumber(linkedStageNumber, race, now = new Date()) {
+  return Number(linkedStageNumber || 0) || inferGiroDItaliaCurrentStageNumber(race, now);
+}
+
+function resolveGiroDItaliaCompletedStageNumber(linkedStageNumber, livefeedStageNumber, livefeedStageStandings) {
+  if (Number(linkedStageNumber || 0) > 0) {
+    return Number(linkedStageNumber);
+  }
+
+  if (Array.isArray(livefeedStageStandings) && livefeedStageStandings.length > 1) {
+    return Number(livefeedStageNumber || 0);
+  }
+
+  return Number(livefeedStageNumber || 0) || 1;
+}
+
+function extractGiroDItaliaWomenLatestCompletedStageNumber(html) {
+  return [...String(html || "").matchAll(/rankings\/di-tappa\/(\d+)\/?/gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite)
+    .reduce((max, value) => Math.max(max, value), 0);
+}
+
+function extractGiroDItaliaWomenEmbeddedStageNumber(html) {
+  const text = String(html || "");
+  const matches = [
+    text.match(/js-n-stage"[^>]*>\s*(\d+)\s*</i),
+    text.match(/<span class="is-pink">Stage(?:&nbsp;|\s)+(\d+)\s*<\/span>/i),
+  ].filter(Boolean);
+
+  return matches
+    .map((match) => Number.parseInt(match[1], 10))
+    .find(Number.isFinite) || 0;
+}
+
+async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
@@ -2230,15 +2727,25 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
     return null;
   }
 
-  const classificationsHtml = await fetchText(GIRO_D_ITALIA_CLASSIFICATIONS_URL);
+  const classificationsHtml = await fetchHtml(GIRO_D_ITALIA_CLASSIFICATIONS_URL);
   const linkedStageNumber = extractGiroDItaliaLatestCompletedStageNumber(classificationsHtml);
-  const livefeedStageNumber = inferGiroDItaliaCurrentStageNumber(race, today);
+  const livefeedStageNumber = resolveGiroDItaliaLivefeedStageNumber(linkedStageNumber, race, today);
   const livefeedJson = livefeedStageNumber
-    ? await fetchText(`${GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL}${livefeedStageNumber}/`)
+    ? await fetchHtml(`${GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL}${livefeedStageNumber}/`)
     : "";
   const livefeedStageStandings = parseGiroDItaliaLivefeedStageStandings(livefeedJson);
-  const stageNumber = livefeedStageStandings.length > 1 ? livefeedStageNumber : linkedStageNumber || 1;
-  const stageHtml = await fetchText(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
+  const finishVideoUrl = extractGiroDItaliaFinishVideoUrl(livefeedJson);
+  const stageNumber = resolveGiroDItaliaCompletedStageNumber(
+    linkedStageNumber,
+    livefeedStageNumber,
+    livefeedStageStandings,
+  );
+  const explicitStageVideoOverride = RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"]?.[stageNumber] || "";
+  if (finishVideoUrl && stageNumber > 0 && !explicitStageVideoOverride) {
+    RACE_FINISH_VIDEO_URLS["2026 Giro d'Italia"][stageNumber] = finishVideoUrl;
+  }
+  const resolvedFinishVideoUrl = explicitStageVideoOverride || finishVideoUrl;
+  const stageHtml = await fetchHtml(`${GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL}${stageNumber}/`);
   const officialStageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
   const stageStandings = officialStageStandings.length > 1 ? officialStageStandings : livefeedStageStandings;
   const gcStandings = parseGiroDItaliaGeneralClassificationStandings(classificationsHtml);
@@ -2256,6 +2763,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
             number: stageNumber,
             label: `Stage ${stageNumber}`,
             standings: stageStandings,
+            finishVideoUrl: resolvedFinishVideoUrl,
             ...getWinnerDetails(stageStandings),
           }
         : null,
@@ -2271,7 +2779,70 @@ async function fetchGiroDItaliaOfficialSnapshot(race) {
   };
 }
 
-async function fetchTourOfGreeceOfficialSnapshot(race) {
+async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+
+  if (
+    race?.pageTitle !== "2026 Giro d'Italia Women" ||
+    getRaceYear(race) !== 2026 ||
+    !startUtc ||
+    !endUtc ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const rankingsHtml = await fetchHtml(GIRO_D_ITALIA_WOMEN_RANKINGS_URL);
+  const linkedStageNumber = extractGiroDItaliaWomenLatestCompletedStageNumber(rankingsHtml);
+  const requestedStageNumber = linkedStageNumber || inferGiroDItaliaCurrentStageNumber(race, today);
+  const stageHtml = requestedStageNumber
+    ? await fetchHtml(`${GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL}${requestedStageNumber}/`)
+    : "";
+  const embeddedStageNumber = extractGiroDItaliaWomenEmbeddedStageNumber(stageHtml);
+  const stageNumber =
+    embeddedStageNumber > 0 && embeddedStageNumber <= requestedStageNumber
+      ? embeddedStageNumber
+      : linkedStageNumber;
+  const stageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
+  const gcStandings = parseGiroDItaliaGeneralClassificationStandings(rankingsHtml);
+  const trustworthyStageStandings =
+    requestedStageNumber > 0 && stageNumber > 0 && requestedStageNumber !== stageNumber
+      ? []
+      : stageStandings;
+
+  if (trustworthyStageStandings.length === 0 && gcStandings.length === 0) {
+    return null;
+  }
+
+  return {
+    totalStages: 9,
+    completedStages: Math.max(stageNumber, gcStandings.length > 0 ? linkedStageNumber : 0),
+    latestStage:
+      stageNumber > 0 && trustworthyStageStandings.length > 0
+        ? {
+            number: stageNumber,
+            label: `Stage ${stageNumber}`,
+            standings: trustworthyStageStandings,
+            ...getWinnerDetails(trustworthyStageStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber: linkedStageNumber || stageNumber || inferGiroDItaliaCurrentStageNumber(race, today),
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
+async function fetchTourOfGreeceOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
@@ -2282,40 +2853,42 @@ async function fetchTourOfGreeceOfficialSnapshot(race) {
     getRaceYear(race) !== 2026 ||
     !startUtc ||
     !endUtc ||
-    todayUtc.getTime() < startUtc.getTime() ||
-    todayUtc.getTime() > endUtc.getTime()
+    todayUtc.getTime() < startUtc.getTime()
   ) {
     return null;
   }
 
-  const html = await fetchText(TOUR_OF_GREECE_RESULTS_URL);
+  const html = await fetchHtml(TOUR_OF_GREECE_RESULTS_URL);
   const gcStandings = parseTourOfGreeceOfficialStandings(html, "General Classification");
-  const stageOneStandings = parseTourOfGreeceOfficialStandings(html, "Stage 1");
-  if (gcStandings.length === 0 && stageOneStandings.length === 0) {
+  const latestStageNumber = extractTourOfGreeceLatestStageNumber(html);
+  const latestStageStandings = latestStageNumber
+    ? parseTourOfGreeceOfficialStandings(html, `Stage ${latestStageNumber}`)
+    : [];
+  if (gcStandings.length === 0 && latestStageStandings.length === 0) {
     return null;
   }
 
   return {
     totalStages: inferStageCountFromDates(race) || 5,
-    completedStages: 1,
+    completedStages: latestStageNumber,
     latestStage:
-      stageOneStandings.length > 0
+      latestStageStandings.length > 0
         ? {
-            number: 1,
-            label: "Stage 1",
-            standings: stageOneStandings,
-            ...getWinnerDetails(stageOneStandings),
+            number: latestStageNumber,
+            label: `Stage ${latestStageNumber}`,
+            standings: latestStageStandings,
+            ...getWinnerDetails(latestStageStandings),
           }
         : null,
     generalClassification:
       gcStandings.length > 0
         ? {
-            stageNumber: 1,
+            stageNumber: latestStageNumber,
             standings: gcStandings,
             ...getLeaderDetails(gcStandings),
           }
         : null,
-    overallResult: [],
+    overallResult: gcStandings,
   };
 }
 
@@ -2350,6 +2923,16 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
     load: fetchGiroDItaliaOfficialSnapshot,
   },
+  {
+    id: "giro-ditalia-women-rankings",
+    matches: (race) => race?.pageTitle === "2026 Giro d'Italia Women",
+    load: fetchGiroDItaliaWomenOfficialSnapshot,
+  },
+  {
+    id: "vuelta-a-burgos-feminas-liveblog",
+    matches: (race) => isVueltaABurgosFeminasRace(race),
+    load: fetchVueltaABurgosFeminasOfficialSnapshot,
+  },
 ];
 
 const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
@@ -2371,7 +2954,12 @@ async function loadOfficialStageRaceSnapshot(race) {
   }
 
   const provider = findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, race);
-  return provider ? provider.load(race) : null;
+  if (!provider) {
+    return null;
+  }
+
+  const snapshot = await provider.load(race);
+  return annotateStageRaceSnapshotSource(snapshot, provider.id);
 }
 
 function parseEschbornFrankfurtOfficialStandings(html) {
@@ -2485,12 +3073,22 @@ async function enrichLocations(races, loadWikiRaw = fetchWikiRaw) {
   return races;
 }
 
+function enrichLocationsInBackground(races, loadWikiRaw = fetchWikiRaw) {
+  enrichLocations(races, loadWikiRaw).catch(() => {
+    // Keep the season-table fallback locations if background enrichment fails.
+  });
+}
+
 function isMultiDayRace(race) {
-  return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() !== race.endDate.getTime();
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  return Boolean(startUtc && endUtc && startUtc.getTime() !== endUtc.getTime());
 }
 
 function isOneDayRace(race) {
-  return race?.startDate instanceof Date && race?.endDate instanceof Date && race.startDate.getTime() === race.endDate.getTime();
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  return Boolean(startUtc && endUtc && startUtc.getTime() === endUtc.getTime());
 }
 
 function selectUpcomingRaces(races, predicate, limit = MAX_UPCOMING_RACES) {
@@ -2505,6 +3103,21 @@ function isFinalizedStageRace(race) {
   );
 }
 
+function isRaceWithinScheduledLiveWindow(race, todayUtc = new Date()) {
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const currentUtc = toUtcDateOnly(todayUtc);
+
+  return Boolean(
+    startUtc &&
+      endUtc &&
+      currentUtc &&
+      startUtc.getTime() !== endUtc.getTime() &&
+      startUtc.getTime() <= currentUtc.getTime() &&
+      endUtc.getTime() >= currentUtc.getTime(),
+  );
+}
+
 async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
   await Promise.all(
     races.map(async (race) => {
@@ -2515,7 +3128,10 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const raw = await loadWikiRaw(race.pageTitle);
-        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = annotateStageRaceSnapshotSource(
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          "wikipedia-raw",
+        );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
@@ -2551,7 +3167,10 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw) {
         }
 
         const raw = await loadWikiRaw(race.pageTitle);
-        const parsedSnapshot = applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw));
+        const parsedSnapshot = annotateStageRaceSnapshotSource(
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          "wikipedia-raw",
+        );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
 
         if (isStageRace && ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0)) {
@@ -2631,17 +3250,37 @@ function extractFirstXmlTag(block, tagNames) {
 function buildRaceArticleQueries(race) {
   const raceYear = getRaceYear(race);
   const variants = getRaceArticleVariants(race).slice(0, 8);
+  const stageNumber = getRaceCoverageStageNumber(race);
+  const latestStageWinner = cleanWikiText(race?.stageRace?.latestStage?.winner || "");
+  const queries = variants.flatMap((variant) => {
+    const variantQueries = [];
 
-  return variants.flatMap((variant) => {
     if (raceYear) {
-      return [
-        `"${variant}" ${raceYear} cycling`,
-        `"${variant}" ${raceYear} results cycling`,
-      ];
+      variantQueries.push(`"${variant}" ${raceYear} cycling`);
+      variantQueries.push(`"${variant}" ${raceYear} results cycling`);
+    } else {
+      variantQueries.push(`"${variant}" cycling`);
     }
 
-    return [`"${variant}" cycling`];
+    if (stageNumber > 0) {
+      variantQueries.push(`"${variant}" stage ${stageNumber} cycling`);
+      variantQueries.push(`"${variant}" stage ${stageNumber} results`);
+      variantQueries.push(`"${variant}" stage ${stageNumber} winner`);
+    }
+
+    if (stageNumber > 0 && raceYear) {
+      variantQueries.push(`"${variant}" ${raceYear} stage ${stageNumber}`);
+      variantQueries.push(`"${variant}" ${raceYear} stage ${stageNumber} results`);
+    }
+
+    if (stageNumber > 0 && latestStageWinner) {
+      variantQueries.push(`"${variant}" "${latestStageWinner}" stage ${stageNumber}`);
+    }
+
+    return variantQueries;
   });
+
+  return [...new Set(queries)].slice(0, 32);
 }
 
 function getPublisherScore(publisher) {
@@ -2766,14 +3405,102 @@ function scoreRaceArticle(article, race) {
   const descriptionMatches = raceTokens.filter((token) => description.includes(token)).length;
   const publishedAt = article.publishedAt ? new Date(article.publishedAt).getTime() : 0;
   const hoursOld = publishedAt ? Math.max(0, (Date.now() - publishedAt) / (1000 * 60 * 60)) : 9999;
+  const stageNumber = getRaceCoverageStageNumber(race);
+  const latestStageWinner = normalizeSearchText(race?.stageRace?.latestStage?.winner || "");
+  const combinedText = `${title} ${description}`;
 
   let score = getPublisherScore(article.publisher);
   score += titleMatches * 28;
   score += descriptionMatches * 12;
   score += /result|results|wins|won|victory|podium|preview|report|gallery|highlights/i.test(article.title) ? 18 : 0;
   score += Math.max(0, 48 - Math.min(hoursOld, 48));
+  if (stageNumber > 0 && combinedText.includes(`stage ${stageNumber}`)) {
+    score += 36;
+  }
+  if (latestStageWinner && title.includes(latestStageWinner)) {
+    score += 18;
+  }
 
   return score;
+}
+
+function isStageSpecificRaceArticle(article, race) {
+  const stageNumber = getRaceCoverageStageNumber(race);
+  if (stageNumber <= 0) {
+    return false;
+  }
+
+  const combinedText = normalizeSearchText([article?.title, article?.description].join(" "));
+  const latestStageWinner = normalizeSearchText(race?.stageRace?.latestStage?.winner || "");
+
+  if (combinedText.includes(`stage ${stageNumber}`)) {
+    return true;
+  }
+
+  return Boolean(latestStageWinner && combinedText.includes(latestStageWinner) && /\bwin|wins|won|victory|result|results|report\b/.test(combinedText));
+}
+
+function selectRaceArticles(articlePool, refreshToken, race = null) {
+  const rankedPool = [...articlePool]
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 32);
+
+  if (rankedPool.length <= MAX_RACE_ARTICLES) {
+    return rankedPool;
+  }
+
+  const hasLiveStageContext = Boolean(race && isMultiDayRace(race) && !isFinalizedStageRace(race) && getRaceCoverageStageNumber(race) > 0);
+  if (hasLiveStageContext) {
+    const stageSpecific = rankedPool.filter((article) => isStageSpecificRaceArticle(article, race));
+    const broaderContext = rankedPool.filter((article) => !isStageSpecificRaceArticle(article, race));
+    const selected = [];
+    const usedUrls = new Set();
+    const addArticles = (articles, limit) => {
+      for (const article of articles) {
+        if (selected.length >= limit) {
+          break;
+        }
+        if (usedUrls.has(article.url)) {
+          continue;
+        }
+        usedUrls.add(article.url);
+        selected.push(article);
+      }
+    };
+
+    addArticles(stageSpecific, Math.min(4, MAX_RACE_ARTICLES));
+    addArticles(broaderContext, Math.min(6, MAX_RACE_ARTICLES));
+
+    if (selected.length < MAX_RACE_ARTICLES) {
+      const fillerPool = [...rankedPool]
+        .filter((article) => !usedUrls.has(article.url))
+        .sort((left, right) => {
+          const leftValue = seededValue(refreshToken, `${left.url}|${left.title}`);
+          const rightValue = seededValue(refreshToken, `${right.url}|${right.title}`);
+          return leftValue - rightValue;
+        });
+      addArticles(fillerPool, MAX_RACE_ARTICLES);
+    }
+
+    return selected.slice(0, MAX_RACE_ARTICLES);
+  }
+  const orderedPool = [...rankedPool]
+    .sort((left, right) => {
+      const leftValue = seededValue(0, `${left.url}|${left.title}`);
+      const rightValue = seededValue(0, `${right.url}|${right.title}`);
+      return leftValue - rightValue;
+    })
+    .slice(0);
+  const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
+  const batchIndex = refreshToken % batchCount;
+  const startIndex = batchIndex * MAX_RACE_ARTICLES;
+  const batch = orderedPool.slice(startIndex, startIndex + MAX_RACE_ARTICLES);
+
+  if (batch.length === MAX_RACE_ARTICLES || startIndex === 0) {
+    return batch;
+  }
+
+  return [...batch, ...orderedPool.slice(0, MAX_RACE_ARTICLES - batch.length)];
 }
 
 function buildArticleItem(block, race) {
@@ -2895,51 +3622,47 @@ async function loadRaceArticlePool(race) {
   return promise;
 }
 
-function selectRaceArticles(articlePool, refreshToken) {
-  const rankedPool = [...articlePool]
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 32);
-
-  if (rankedPool.length <= MAX_RACE_ARTICLES) {
-    return rankedPool;
-  }
-
-  const orderedPool = [...rankedPool]
-    .sort((left, right) => {
-      const leftValue = seededValue(0, `${left.url}|${left.title}`);
-      const rightValue = seededValue(0, `${right.url}|${right.title}`);
-      return leftValue - rightValue;
-    })
-    .slice(0);
-  const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
-  const batchIndex = refreshToken % batchCount;
-  const startIndex = batchIndex * MAX_RACE_ARTICLES;
-  const batch = orderedPool.slice(startIndex, startIndex + MAX_RACE_ARTICLES);
-
-  if (batch.length === MAX_RACE_ARTICLES || startIndex === 0) {
-    return batch;
-  }
-
-  return [...batch, ...orderedPool.slice(0, MAX_RACE_ARTICLES - batch.length)];
+function cloneStandingEntry(entry) {
+  return entry ? { ...entry } : entry;
 }
 
-async function buildRaceData() {
-  const wikiRawLoader = createWikiRawLoader();
-  const seasonPages = await Promise.all(
-    SEASONS.map(async (season) => {
-      const yearMatch = season.pageTitle.match(/20\d{2}/);
-      const year = yearMatch ? Number(yearMatch[0]) : new Date().getUTCFullYear();
-      const rawText = await fetchWikiRaw(season.pageTitle);
-      return parseSeasonRows(rawText, season, year);
-    }),
-  );
+function cloneStageRaceField(field) {
+  if (!field) {
+    return null;
+  }
 
-  const allRaces = seasonPages
-    .flat()
-    .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
-  const today = new Date();
+  return {
+    ...field,
+    standings: Array.isArray(field.standings) ? field.standings.map(cloneStandingEntry) : [],
+  };
+}
+
+function cloneRace(race) {
+  return {
+    ...race,
+    startDate: race?.startDate instanceof Date ? new Date(race.startDate) : race?.startDate ? new Date(race.startDate) : null,
+    endDate: race?.endDate instanceof Date ? new Date(race.endDate) : race?.endDate ? new Date(race.endDate) : null,
+    resultStandings: Array.isArray(race?.resultStandings) ? race.resultStandings.map(cloneStandingEntry) : race?.resultStandings,
+    stageRace: race?.stageRace
+      ? {
+          ...race.stageRace,
+          latestStage: cloneStageRaceField(race.stageRace.latestStage),
+          generalClassification: cloneStageRaceField(race.stageRace.generalClassification),
+          overallResult: Array.isArray(race.stageRace.overallResult)
+            ? race.stageRace.overallResult.map(cloneStandingEntry)
+            : race.stageRace.overallResult,
+        }
+      : race?.stageRace,
+  };
+}
+
+function cloneRaces(races) {
+  return races.map(cloneRace);
+}
+
+function partitionRaceBuckets(allRaces, now = new Date()) {
   const todayUtc = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
 
   const recentOneDayResults = allRaces
@@ -2983,7 +3706,7 @@ async function buildRaceData() {
 
   const europeTourRaces = allRaces.filter((race) => race.series === "Men's Europe Tour");
   const europeTourRecentResults = europeTourRaces
-    .filter((race) => isMultiDayRace(race) && race.winner && race.endDate && race.endDate <= todayUtc)
+    .filter((race) => isMultiDayRace(race) && race.endDate && race.endDate <= todayUtc)
     .sort((left, right) => right.endDate - left.endDate)
     .slice(0, MAX_EUROPE_TOUR_RESULTS);
   const europeTourLiveStageRaces = europeTourRaces
@@ -3014,27 +3737,187 @@ async function buildRaceData() {
     ...selectUpcomingRaces(upcomingRaces, (race) => /ProSeries/.test(race.series)),
   ];
 
-  const displayRaces = [
-    ...recentOneDayResults,
-    ...finalizedStageCandidates,
-    ...liveStageCandidates,
-    ...upcomingDisplayRaces,
-    ...europeTourRecentResults,
-    ...europeTourLiveStageRaces,
-    ...europeTourUpcomingRaces,
-  ];
-  const stageRaceDisplays = [...liveStageCandidates, ...europeTourRecentResults, ...europeTourLiveStageRaces].filter(
-    isMultiDayRace,
+  return {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+    upcomingDisplayRaces,
+  };
+}
+
+function selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates) {
+  const worldTourSeries = ["Men's WorldTour", "Women's WorldTour"];
+
+  return worldTourSeries.flatMap((series) =>
+    [...recentOneDayResults, ...finalizedStageCandidates]
+      .filter((race) => race.series === series)
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, WORLDTOUR_RECENT_RESULTS),
   );
+}
 
-  await enrichLocations(displayRaces, wikiRawLoader);
-  await enrichRecentResultStandings(recentOneDayResults, wikiRawLoader);
-  await enrichRecentResultStandings(finalizedStageCandidates, wikiRawLoader);
+function selectHomepageRecentStandingsTargets(recentCandidates) {
+  return [...recentCandidates]
+    .sort((left, right) => right.endDate - left.endDate)
+    .slice(0, HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT);
+}
+
+function selectHomepageWorldTourUpcomingRaces(upcomingRaces) {
+  return [
+    ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Men's WorldTour"),
+    ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Women's WorldTour"),
+  ];
+}
+
+async function buildRaceMetadata(options = {}) {
+  const startedAt = Date.now();
+  const includeDeferred = options.includeDeferred === true;
+  const wikiRawLoader = createWikiRawLoader();
+  const seasons = includeDeferred ? SEASONS : SEASONS.filter((season) => /WorldTour/.test(season.label));
+  const seasonPagesStartedAt = Date.now();
+  const seasonPages = await Promise.all(
+    seasons.map(async (season) => {
+      const yearMatch = season.pageTitle.match(/20\d{2}/);
+      const year = yearMatch ? Number(yearMatch[0]) : new Date().getUTCFullYear();
+      const rawText = await fetchWikiRaw(season.pageTitle);
+      return parseSeasonRows(rawText, season, year);
+    }),
+  );
+  const seasonPagesMs = Date.now() - seasonPagesStartedAt;
+
+  const allRaces = seasonPages
+    .flat()
+    .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
+  allRaces.forEach((race) => {
+    race.id = getRaceId(race);
+  });
+
+  const {
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+    upcomingDisplayRaces,
+  } = partitionRaceBuckets(allRaces);
+
+  const homepageWorldTourRecentCandidates = includeDeferred
+    ? []
+    : selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates);
+  const homepageWorldTourUpcomingRaces = includeDeferred ? [] : selectHomepageWorldTourUpcomingRaces(upcomingRaces);
+
+  const displayRaces = [
+    ...(includeDeferred ? recentOneDayResults : homepageWorldTourRecentCandidates),
+    ...(includeDeferred ? finalizedStageCandidates : []),
+    ...liveStageCandidates.filter((race) => includeDeferred || /WorldTour/.test(race.series)),
+    ...(includeDeferred ? upcomingDisplayRaces : homepageWorldTourUpcomingRaces),
+    ...(includeDeferred ? europeTourRecentResults : []),
+    ...(includeDeferred ? europeTourLiveStageRaces : []),
+    ...(includeDeferred ? europeTourUpcomingRaces : []),
+  ];
+
+  if (includeDeferred) {
+    const locationEnrichmentStartedAt = Date.now();
+    await enrichLocations(displayRaces, wikiRawLoader);
+    var locationEnrichmentMs = Date.now() - locationEnrichmentStartedAt;
+  } else {
+    enrichLocationsInBackground(displayRaces, wikiRawLoader);
+  }
+
+  return {
+    allRaces,
+    fetchedAt: new Date().toISOString(),
+    buildTimings: {
+      totalMs: Date.now() - startedAt,
+      seasonPagesMs,
+      locationEnrichmentMs: includeDeferred ? locationEnrichmentMs : 0,
+      locationEnrichmentMode: includeDeferred ? "blocking" : "background",
+      seasonCount: seasons.length,
+      displayRaceCount: displayRaces.length,
+      allRaceCount: allRaces.length,
+    },
+  };
+}
+
+async function buildRaceData(metadata, options = {}) {
+  const startedAt = Date.now();
+  const allRaces = cloneRaces(metadata?.allRaces || []);
+  const {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
+    upcomingRaces,
+    europeTourRecentResults,
+    europeTourLiveStageRaces,
+    europeTourUpcomingRaces,
+  } = partitionRaceBuckets(allRaces);
+  const includeDeferred = options.includeDeferred !== false;
+  const isWorldTourRace = (race) => race.series === "Men's WorldTour" || race.series === "Women's WorldTour";
+  const homepageWorldTourRecentCandidates = selectHomepageWorldTourRecentCandidates(
+    recentOneDayResults,
+    finalizedStageCandidates,
+  );
+  const homepageRecentStandingsTargets = includeDeferred
+    ? []
+    : selectHomepageRecentStandingsTargets(homepageWorldTourRecentCandidates);
+  const selectedRecentOneDayResults = includeDeferred ? recentOneDayResults : [];
+  const selectedFinalizedStageCandidates = includeDeferred ? finalizedStageCandidates : [];
+  const selectedHomepageRecentCandidates = includeDeferred ? [] : homepageWorldTourRecentCandidates;
+  const selectedLiveStageCandidates = includeDeferred
+    ? liveStageCandidates
+    : liveStageCandidates.filter(isWorldTourRace);
+  const selectedUpcomingRaces = includeDeferred
+    ? upcomingRaces
+    : selectHomepageWorldTourUpcomingRaces(upcomingRaces);
+  const selectedEuropeTourRecentResults = includeDeferred ? europeTourRecentResults : [];
+  const selectedEuropeTourLiveStageRaces = includeDeferred ? europeTourLiveStageRaces : [];
+  const selectedEuropeTourUpcomingRaces = includeDeferred ? europeTourUpcomingRaces : [];
+
+  const stageRaceDisplays = [
+    ...selectedLiveStageCandidates,
+    ...selectedEuropeTourRecentResults,
+    ...selectedEuropeTourLiveStageRaces,
+  ].filter(isMultiDayRace);
+
+  const wikiRawLoader = createWikiRawLoader();
+  const recentStandingsStartedAt = Date.now();
+  await enrichRecentResultStandings(
+    includeDeferred ? selectedRecentOneDayResults : homepageRecentStandingsTargets,
+    wikiRawLoader,
+  );
+  let recentStandingsMs = Date.now() - recentStandingsStartedAt;
+  let finalizedStageStandingsMs = 0;
+  if (includeDeferred) {
+    const finalizedStageStandingsStartedAt = Date.now();
+    await enrichRecentResultStandings(selectedFinalizedStageCandidates, wikiRawLoader);
+    finalizedStageStandingsMs = Date.now() - finalizedStageStandingsStartedAt;
+  }
+  const stageSnapshotsStartedAt = Date.now();
   await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+  const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
 
-  const finalizedStageRaces = finalizedStageCandidates.filter(isFinalizedStageRace);
-  const liveStageRaces = liveStageCandidates.filter((race) => !isFinalizedStageRace(race));
-  const recentResults = [...recentOneDayResults, ...finalizedStageRaces].sort((left, right) => right.endDate - left.endDate);
+  const finalizedStageRaces = (
+    includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates
+  ).filter(isFinalizedStageRace);
+  const liveStageRaces = selectedLiveStageCandidates.filter(
+    (race) => !isFinalizedStageRace(race) || isRaceWithinScheduledLiveWindow(race, todayUtc),
+  );
+  const recentResults = (
+    includeDeferred
+      ? [...selectedRecentOneDayResults, ...finalizedStageRaces]
+      : [
+          ...selectedHomepageRecentCandidates.filter(isOneDayRace),
+          ...finalizedStageRaces,
+        ]
+  ).sort((left, right) => right.endDate - left.endDate);
 
   finalizedStageRaces.forEach((race) => {
     if (!race.resultStandings?.length) {
@@ -3042,7 +3925,7 @@ async function buildRaceData() {
     }
   });
 
-  europeTourRecentResults.forEach((race) => {
+  selectedEuropeTourRecentResults.forEach((race) => {
     if (!race.resultStandings?.length) {
       race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
     }
@@ -3051,102 +3934,471 @@ async function buildRaceData() {
   [
     ...recentResults,
     ...liveStageRaces,
-    ...upcomingRaces,
-    ...europeTourRecentResults,
-    ...europeTourLiveStageRaces,
-    ...europeTourUpcomingRaces,
+    ...selectedUpcomingRaces,
+    ...selectedEuropeTourRecentResults,
+    ...selectedEuropeTourLiveStageRaces,
+    ...selectedEuropeTourUpcomingRaces,
   ].forEach((race) => {
     race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
   });
 
-  recentOneDayResults.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  finalizedStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  liveStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  upcomingRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourRecentResults.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourLiveStageRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
-  europeTourUpcomingRaces.forEach((race) => {
-    race.id = getRaceId(race);
-  });
-
   return {
     fetchedAt: new Date().toISOString(),
+    metadataFetchedAt: metadata?.fetchedAt || "",
     recentResults,
     finalizedStageRaces,
     liveStageRaces,
+    upcomingRaces: selectedUpcomingRaces,
+    europeTourRecentResults: selectedEuropeTourRecentResults,
+    europeTourLiveStageRaces: selectedEuropeTourLiveStageRaces,
+    europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
+    buildTimings: {
+      totalMs: Date.now() - startedAt,
+      recentStandingsMs,
+      finalizedStageStandingsMs,
+      stageSnapshotsMs,
+      recentResultCount: includeDeferred ? selectedRecentOneDayResults.length : selectedHomepageRecentCandidates.length,
+      recentStandingsTargetCount: includeDeferred ? selectedRecentOneDayResults.length : homepageRecentStandingsTargets.length,
+      finalizedStageCandidateCount: selectedFinalizedStageCandidates.length,
+      liveStageCandidateCount: selectedLiveStageCandidates.length,
+      stageRaceDisplayCount: stageRaceDisplays.length,
+      upcomingRaceCount: selectedUpcomingRaces.length,
+      includeDeferred,
+      metadataBuildTimings: metadata?.buildTimings || null,
+    },
+  };
+}
+
+async function buildCompetitionGroupRaceData(metadata, groupId) {
+  const startedAt = Date.now();
+  const allRaces = cloneRaces(metadata?.allRaces || []);
+  const {
+    todayUtc,
+    recentOneDayResults,
+    finalizedStageCandidates,
+    liveStageCandidates,
     upcomingRaces,
     europeTourRecentResults,
     europeTourLiveStageRaces,
     europeTourUpcomingRaces,
-  };
-}
+  } = partitionRaceBuckets(allRaces);
+  const wikiRawLoader = createWikiRawLoader();
 
-function refreshRaceDataInBackground(resetOnFailure = false) {
-  if (cache.promise) {
-    return cache.promise;
+  if (groupId === "proseries") {
+    const selectedRecentCandidates = [...recentOneDayResults, ...finalizedStageCandidates]
+      .filter((race) => /ProSeries/.test(race.series))
+      .sort((left, right) => right.endDate - left.endDate)
+      .slice(0, PROSERIES_RECENT_RESULTS);
+    const selectedLiveStageCandidates = liveStageCandidates.filter((race) => /ProSeries/.test(race.series));
+    const selectedUpcomingRaces = upcomingRaces.filter((race) => /ProSeries/.test(race.series));
+    const stageRaceDisplays = [...selectedLiveStageCandidates, ...selectedRecentCandidates].filter(isMultiDayRace);
+
+    const recentStandingsStartedAt = Date.now();
+    await enrichRecentResultStandings(selectedRecentCandidates, wikiRawLoader);
+    const recentStandingsMs = Date.now() - recentStandingsStartedAt;
+
+    const stageSnapshotsStartedAt = Date.now();
+    await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+    const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
+
+    const finalizedStageRaces = selectedRecentCandidates.filter(isFinalizedStageRace);
+    const liveStageRaces = selectedLiveStageCandidates.filter((race) => !isFinalizedStageRace(race));
+    const recentResults = [
+      ...selectedRecentCandidates.filter(isOneDayRace),
+      ...finalizedStageRaces,
+    ].sort((left, right) => right.endDate - left.endDate);
+
+    finalizedStageRaces.forEach((race) => {
+      if (!race.resultStandings?.length) {
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
+      }
+    });
+
+    [...recentResults, ...liveStageRaces, ...selectedUpcomingRaces].forEach((race) => {
+      race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    });
+
+    return {
+      fetchedAt: new Date().toISOString(),
+      metadataFetchedAt: metadata?.fetchedAt || "",
+      recentResults,
+      finalizedStageRaces,
+      liveStageRaces,
+      upcomingRaces: selectedUpcomingRaces,
+      europeTourRecentResults: [],
+      europeTourLiveStageRaces: [],
+      europeTourUpcomingRaces: [],
+      buildTimings: {
+        totalMs: Date.now() - startedAt,
+        recentStandingsMs,
+        finalizedStageStandingsMs: 0,
+        stageSnapshotsMs,
+        recentResultCount: selectedRecentCandidates.length,
+        recentStandingsTargetCount: selectedRecentCandidates.length,
+        finalizedStageCandidateCount: finalizedStageRaces.length,
+        liveStageCandidateCount: selectedLiveStageCandidates.length,
+        stageRaceDisplayCount: stageRaceDisplays.length,
+        upcomingRaceCount: selectedUpcomingRaces.length,
+        includeDeferred: true,
+        targetGroupId: groupId,
+        metadataBuildTimings: metadata?.buildTimings || null,
+      },
+    };
   }
 
-  cache.promise = buildRaceData()
+  if (groupId === "europe-tour") {
+    const selectedRecentResults = cloneRaces(europeTourRecentResults);
+    const selectedLiveStageRaces = cloneRaces(europeTourLiveStageRaces);
+    const selectedUpcomingRaces = cloneRaces(europeTourUpcomingRaces);
+    const stageRaceDisplays = [...selectedRecentResults, ...selectedLiveStageRaces].filter(isMultiDayRace);
+
+    const stageSnapshotsStartedAt = Date.now();
+    await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
+    const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
+
+    selectedRecentResults.forEach((race) => {
+      if (!race.resultStandings?.length) {
+        race.resultStandings = selectStandings(race.stageRace?.generalClassification?.standings, race.stageRace?.overallResult);
+      }
+    });
+
+    [...selectedRecentResults, ...selectedLiveStageRaces, ...selectedUpcomingRaces].forEach((race) => {
+      race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    });
+
+    return {
+      fetchedAt: new Date().toISOString(),
+      metadataFetchedAt: metadata?.fetchedAt || "",
+      recentResults: [],
+      finalizedStageRaces: [],
+      liveStageRaces: [],
+      upcomingRaces: [],
+      europeTourRecentResults: selectedRecentResults,
+      europeTourLiveStageRaces: selectedLiveStageRaces,
+      europeTourUpcomingRaces: selectedUpcomingRaces,
+      buildTimings: {
+        totalMs: Date.now() - startedAt,
+        recentStandingsMs: 0,
+        finalizedStageStandingsMs: 0,
+        stageSnapshotsMs,
+        recentResultCount: selectedRecentResults.length,
+        recentStandingsTargetCount: 0,
+        finalizedStageCandidateCount: 0,
+        liveStageCandidateCount: selectedLiveStageRaces.length,
+        stageRaceDisplayCount: stageRaceDisplays.length,
+        upcomingRaceCount: selectedUpcomingRaces.length,
+        includeDeferred: true,
+        targetGroupId: groupId,
+        metadataBuildTimings: metadata?.buildTimings || null,
+      },
+    };
+  }
+
+  throw new Error(`Unsupported competition group: ${groupId}`);
+}
+
+function refreshRaceMetadataInBackground(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = includeDeferred ? deferredRaceMetadataCache : raceMetadataCache;
+  if (targetCache.promise) {
+    return targetCache.promise;
+  }
+
+  const buildPromise = buildRaceMetadata({ includeDeferred })
     .then((data) => {
-      cache = {
+      const nextCache = {
         updatedAt: Date.now(),
         data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceMetadataCache = nextCache;
+      } else {
+        raceMetadataCache = nextCache;
+      }
       return data;
     })
     .catch((error) => {
-      cache = {
-        updatedAt: resetOnFailure ? 0 : cache.updatedAt,
-        data: resetOnFailure ? null : cache.data,
+      const fallbackCache = {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
         promise: null,
       };
+      if (includeDeferred) {
+        deferredRaceMetadataCache = fallbackCache;
+      } else {
+        raceMetadataCache = fallbackCache;
+      }
       throw error;
     });
 
-  return cache.promise;
-}
-
-async function loadRaceData() {
-  const now = Date.now();
-  if (cache.data) {
-    if (now - cache.updatedAt < getRaceDataCacheTtlMs(cache.data)) {
-      return cache.data;
-    }
-
-    refreshRaceDataInBackground(false).catch(() => {});
-    return cache.data;
+  if (includeDeferred) {
+    deferredRaceMetadataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  } else {
+    raceMetadataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
   }
 
-  return refreshRaceDataInBackground(true);
+  return buildPromise;
 }
 
-function buildPodiumMarkup(entries) {
+async function loadRaceMetadata(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const targetCache = includeDeferred ? deferredRaceMetadataCache : raceMetadataCache;
+  const now = Date.now();
+  if (targetCache.data) {
+    if (now - targetCache.updatedAt < RACE_METADATA_CACHE_TTL_MS) {
+      return targetCache.data;
+    }
+
+    refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
+  }
+
+  return refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: true });
+}
+
+function refreshRaceDataInBackground(metadata, options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = includeDeferred ? deferredRaceDataCache : raceDataCache;
+  if (targetCache.promise) {
+    return targetCache.promise;
+  }
+
+  const buildPromise = buildRaceData(metadata, { includeDeferred })
+    .then((data) => {
+      const nextCache = {
+        updatedAt: Date.now(),
+        data,
+        promise: null,
+      };
+      if (includeDeferred) {
+        deferredRaceDataCache = nextCache;
+      } else {
+        raceDataCache = nextCache;
+      }
+      return data;
+    })
+    .catch((error) => {
+      const fallbackCache = {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
+        promise: null,
+      };
+      if (includeDeferred) {
+        deferredRaceDataCache = fallbackCache;
+      } else {
+        raceDataCache = fallbackCache;
+      }
+      throw error;
+    });
+
+  if (includeDeferred) {
+    deferredRaceDataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  } else {
+    raceDataCache = {
+      ...targetCache,
+      promise: buildPromise,
+    };
+  }
+
+  return buildPromise;
+}
+
+async function loadRaceData(options = {}) {
+  const includeDeferred = options.includeDeferred === true;
+  const metadata = await loadRaceMetadata({ includeDeferred });
+  const targetCache = includeDeferred ? deferredRaceDataCache : raceDataCache;
+  const now = Date.now();
+  if (targetCache.data) {
+    const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
+    const hasFreshData = hasFreshnessSensitiveRaceData(targetCache.data);
+    if (now - targetCache.updatedAt < ttlMs) {
+      return targetCache.data;
+    }
+
+    if (hasFreshData) {
+      return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false });
+    }
+
+    refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
+  }
+
+  return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: true });
+}
+
+function getDeferredGroupDataCache(groupId) {
+  if (!deferredGroupDataCaches.has(groupId)) {
+    deferredGroupDataCaches.set(groupId, {
+      updatedAt: 0,
+      data: null,
+      promise: null,
+    });
+  }
+
+  return deferredGroupDataCaches.get(groupId);
+}
+
+function refreshCompetitionGroupDataInBackground(metadata, groupId, options = {}) {
+  const resetOnFailure = options.resetOnFailure === true;
+  const targetCache = getDeferredGroupDataCache(groupId);
+  if (targetCache.promise) {
+    return targetCache.promise;
+  }
+
+  const buildPromise = buildCompetitionGroupRaceData(metadata, groupId)
+    .then((data) => {
+      deferredGroupDataCaches.set(groupId, {
+        updatedAt: Date.now(),
+        data,
+        promise: null,
+      });
+      return data;
+    })
+    .catch((error) => {
+      deferredGroupDataCaches.set(groupId, {
+        updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
+        data: resetOnFailure ? null : targetCache.data,
+        promise: null,
+      });
+      throw error;
+    });
+
+  deferredGroupDataCaches.set(groupId, {
+    ...targetCache,
+    promise: buildPromise,
+  });
+
+  return buildPromise;
+}
+
+async function loadCompetitionGroupData(groupId) {
+  if (!DEFERRED_COMPETITION_GROUP_IDS.has(groupId)) {
+    throw new Error(`Unsupported competition group: ${groupId}`);
+  }
+
+  const metadata = await loadRaceMetadata({ includeDeferred: true });
+  const targetCache = getDeferredGroupDataCache(groupId);
+  const now = Date.now();
+  if (targetCache.data) {
+    const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
+    const hasFreshData = hasFreshnessSensitiveRaceData(targetCache.data);
+    if (now - targetCache.updatedAt < ttlMs) {
+      return targetCache.data;
+    }
+
+    if (hasFreshData) {
+      return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false });
+    }
+
+    refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false }).catch(() => {});
+    return targetCache.data;
+  }
+
+  return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: true });
+}
+
+function warmRaceDataInBackground() {
+  if (raceDataCache.promise) {
+    return raceDataCache.promise;
+  }
+
+  return loadRaceMetadata({ includeDeferred: false })
+    .then((metadata) => refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: true }))
+    .catch((error) => {
+      throw error;
+    });
+}
+
+function shouldServeHomepageWarmup(now = Date.now()) {
+  if (!raceDataCache.data) {
+    return true;
+  }
+
+  const ttlMs = getRaceDataCacheTtlMs(raceDataCache.data);
+  const hasLiveRaces =
+    (raceDataCache.data.liveStageRaces?.length || raceDataCache.data.europeTourLiveStageRaces?.length || 0) > 0;
+  const isExpired = now - raceDataCache.updatedAt >= ttlMs;
+
+  return Boolean(raceDataCache.promise || (hasLiveRaces && isExpired));
+}
+
+function buildRaceDataDebugPayload(data) {
+  return {
+    ...data,
+    debug: {
+      raceDataCacheUpdatedAt: raceDataCache.updatedAt ? new Date(raceDataCache.updatedAt).toISOString() : "",
+      deferredRaceDataCacheUpdatedAt: deferredRaceDataCache.updatedAt
+        ? new Date(deferredRaceDataCache.updatedAt).toISOString()
+        : "",
+      raceMetadataCacheUpdatedAt: raceMetadataCache.updatedAt
+        ? new Date(raceMetadataCache.updatedAt).toISOString()
+        : "",
+      deferredRaceMetadataCacheUpdatedAt: deferredRaceMetadataCache.updatedAt
+        ? new Date(deferredRaceMetadataCache.updatedAt).toISOString()
+        : "",
+      raceDataCacheAgeMs: raceDataCache.updatedAt ? Math.max(0, Date.now() - raceDataCache.updatedAt) : null,
+      deferredRaceDataCacheAgeMs: deferredRaceDataCache.updatedAt
+        ? Math.max(0, Date.now() - deferredRaceDataCache.updatedAt)
+        : null,
+      raceMetadataCacheAgeMs: raceMetadataCache.updatedAt ? Math.max(0, Date.now() - raceMetadataCache.updatedAt) : null,
+      deferredRaceMetadataCacheAgeMs: deferredRaceMetadataCache.updatedAt
+        ? Math.max(0, Date.now() - deferredRaceMetadataCache.updatedAt)
+        : null,
+      liveRaceDataTtlMs: getRaceDataCacheTtlMs(data),
+      metadataTtlMs: RACE_METADATA_CACHE_TTL_MS,
+      liveRaceCount: Array.isArray(data?.liveStageRaces) ? data.liveStageRaces.length : 0,
+      buildTimings: data?.buildTimings || null,
+    },
+  };
+}
+
+function buildHomepageDataPayload(data) {
+  return {
+    fetchedAt: data.fetchedAt,
+    metadataFetchedAt: data.metadataFetchedAt,
+    recentResults: data.recentResults,
+    finalizedStageRaces: data.finalizedStageRaces,
+    liveStageRaces: data.liveStageRaces,
+    upcomingRaces: data.upcomingRaces,
+  };
+}
+
+function getStandingMetric(entry, context = "default") {
+  const time = normalizeStandingTime(entry?.time || "");
+  const gap = normalizeStandingGap(entry?.gap || "");
+
+  if (context === "stage") {
+    return time || gap;
+  }
+
+  if (context === "gc") {
+    return entry?.place === "1" ? time : gap || time;
+  }
+
+  return gap || time;
+}
+
+function buildPodiumMarkup(entries, options = {}) {
+  const metricContext = options.metricContext || "default";
   const podium = entries
     .filter((entry) => entry?.rider)
     .map(
       (entry) => `
         <li class="podium-item">
           <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
-          ${buildRiderMarkup(entry)}
+          ${buildRiderMarkup(entry, "podium-rider", { metricContext })}
         </li>`,
     )
     .join("");
@@ -3156,16 +4408,18 @@ function buildPodiumMarkup(entries) {
 
 function getRaceFinishVideoUrl(race) {
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
-  if (!mapped) {
-    return "";
-  }
-
-  if (typeof mapped === "string") {
-    return mapped;
-  }
-
   const stageNumber = Number(race?.stageRace?.completedStages || race?.stageRace?.latestStage?.number || 0);
-  return mapped[stageNumber] || "";
+  if (mapped) {
+    if (typeof mapped === "string") {
+      return mapped;
+    }
+
+    if (mapped[stageNumber]) {
+      return mapped[stageNumber];
+    }
+  }
+
+  return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || "");
 }
 
 function buildRaceFinishLink(race) {
@@ -3258,10 +4512,12 @@ function buildStageRaceCard(race, options = {}) {
           {
             rider: latestStage.winner,
             countryCode: latestStage.winnerCountryCode,
+            time: latestStage.standings?.[0]?.time || "",
           },
           "stage-winner-rider",
+          { metricContext: "stage" },
         )}</div>
-        ${buildPodiumMarkup(stageStandings)}
+        ${buildPodiumMarkup(stageStandings, { metricContext: "stage" })}
         ${buildRaceFinishLink(race)}
       </div>`
     : isFinalized
@@ -3275,7 +4531,7 @@ function buildStageRaceCard(race, options = {}) {
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(classificationLabel)}</div>
-        ${buildPodiumMarkup(gcStandings)}
+        ${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}
       </div>`
     : `
       <div class="card-subsection">
@@ -3344,7 +4600,7 @@ function getCountryFlagEmoji(countryCode) {
     .join("");
 }
 
-function buildRiderMarkup(entry, className = "podium-rider") {
+function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
   const rider = String(entry?.rider || "").trim();
   if (!rider) {
     return "";
@@ -3356,8 +4612,10 @@ function buildRiderMarkup(entry, className = "podium-rider") {
   const flagMarkup = flag
     ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
     : "";
+  const metric = getStandingMetric(entry, options.metricContext || "default");
+  const gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
 
-  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span>${escapeHtml(rider)}</span></span>`;
+  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span class="rider-text">${escapeHtml(rider)}</span>${gapMarkup}</span>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -3401,6 +4659,13 @@ function buildRaceArticleControls(groupId, articleRaces, selectedRaceId, refresh
     </form>`;
 }
 
+function buildLoadCoverageButton(groupId) {
+  return `
+    <button type="button" class="load-coverage-button" data-coverage-group-id="${escapeHtml(groupId)}">
+      Load Race Coverage
+    </button>`;
+}
+
 function getCompetitionGroups(data) {
   const definitions = [
     {
@@ -3432,6 +4697,7 @@ function getCompetitionGroups(data) {
       label: "UCI ProSeries",
       tag: "Expanded Calendar",
       description: "The ProSeries races added today, with live stage races, fresh results, and upcoming events.",
+      deferred: true,
       predicate: (race) => /ProSeries/.test(race.series),
       recentSource: "recentResults",
       recentBlockTitle: "Recent Results",
@@ -3443,6 +4709,7 @@ function getCompetitionGroups(data) {
       label: "Europe Tour Spotlight",
       tag: "Selected 2.1 Races",
       description: "Selected Europe Tour stage races that are worth tracking alongside the top-tier calendars.",
+      deferred: true,
       predicate: (race) => race.series === "Men's Europe Tour",
       liveSource: "europeTourLiveStageRaces",
       recentSource: "europeTourRecentResults",
@@ -3464,6 +4731,26 @@ function getCompetitionGroups(data) {
   }));
 }
 
+async function buildCoverageViewForGroup(group, url) {
+  const articleRaces = [...group.liveStageRaces, ...group.recentResults];
+  const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
+  const refreshToken = Math.max(
+    0,
+    Number.parseInt(url.searchParams.get(`${group.id}-refresh`) || "0", 10) || 0,
+  );
+  const selectedRace =
+    articleRaces.find((race) => race.id === selectedRaceId) || articleRaces[0] || null;
+  const articlePool = selectedRace ? await loadRaceArticlePool(selectedRace) : [];
+
+  return {
+    articleRaces,
+    selectedRaceId: selectedRace?.id || "",
+    selectedRaceTitle: selectedRace?.title || "the selected race",
+    refreshToken,
+    raceArticles: selectRaceArticles(articlePool, refreshToken, selectedRace),
+  };
+}
+
 function buildCompetitionBlock(title, description, markup, options = {}) {
   if (!markup) {
     return "";
@@ -3482,7 +4769,19 @@ function buildCompetitionBlock(title, description, markup, options = {}) {
 }
 
 function buildCoverageBlock(group, coverageView) {
-  if (!coverageView || coverageView.articleRaces.length === 0) {
+  if (!coverageView) {
+    return `
+      <div class="competition-block competition-coverage" id="${escapeHtml(group.id)}-coverage">
+        <div class="competition-block-head">
+          <h3>Race Coverage</h3>
+          <p>Load article coverage to explore the latest stories for the above races.</p>
+        </div>
+        ${buildLoadCoverageButton(group.id)}
+        <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content"></div>
+      </div>`;
+  }
+
+  if (coverageView.articleRaces.length === 0) {
     return "";
   }
 
@@ -3504,7 +4803,9 @@ function buildCoverageBlock(group, coverageView) {
         <p>Choose one live or recent race from this competition to view article coverage.</p>
       </div>
       ${controls}
-      <div class="article-grid">${articleCards}</div>
+      <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content">
+        <div class="article-grid">${articleCards}</div>
+      </div>
     </div>`;
 }
 
@@ -3543,9 +4844,52 @@ function buildCompetitionSection(group, coverageView) {
     </section>`;
 }
 
+function buildDeferredSectionButtons(groups) {
+  if (groups.length === 0) {
+    return "";
+  }
+
+  const buttons = groups
+    .map(
+      (group) => `
+        <button
+          type="button"
+          class="hero-menu-link deferred-load-button"
+          data-deferred-group-id="${escapeHtml(group.id)}"
+          data-scroll-on-load="true"
+        >
+          ${escapeHtml(group.label)}
+        </button>`,
+    )
+    .join("");
+
+  return `
+    <section class="section section-cta">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">More Race Coverage</div>
+          <h2>Load More Racing</h2>
+          <p>Open the expanded UCI ProSeries and Europe Tour Spotlight sections only when you want them.</p>
+        </div>
+      </div>
+      <div class="deferred-button-row">${buttons}</div>
+    </section>`;
+}
+
+function buildDeferredGroupClientPayload(groups) {
+  return JSON.stringify(
+    groups.map((group) => ({
+      id: group.id,
+      label: group.label,
+    })),
+  );
+}
+
 function buildHtmlPage(data, view) {
   const competitionGroups = getCompetitionGroups(data);
-  const competitionSections = competitionGroups
+  const eagerCompetitionGroups = competitionGroups.filter((group) => !group.deferred);
+  const deferredCompetitionGroups = competitionGroups.filter((group) => group.deferred);
+  const competitionSections = eagerCompetitionGroups
     .map((group) => buildCompetitionSection(group, view.coverageByGroup[group.id]))
     .filter(Boolean)
     .join("");
@@ -3558,7 +4902,31 @@ function buildHtmlPage(data, view) {
   const heroMenu = competitionGroups
     .map(
       (group) => `
-        <a class="hero-menu-link" href="#${escapeHtml(group.id)}">${escapeHtml(group.label)}</a>`,
+        ${
+          group.deferred
+            ? `<button
+                type="button"
+                class="hero-menu-link deferred-load-button"
+                data-deferred-group-id="${escapeHtml(group.id)}"
+                data-scroll-on-load="true"
+              >
+                ${escapeHtml(group.label)}
+              </button>`
+            : `<a class="hero-menu-link" href="#${escapeHtml(group.id)}">${escapeHtml(group.label)}</a>`
+        }`,
+    )
+    .join("");
+  const deferredSectionButtons = buildDeferredSectionButtons(deferredCompetitionGroups);
+  const deferredGroupClientPayload = buildDeferredGroupClientPayload(deferredCompetitionGroups);
+  const deferredSectionMounts = deferredCompetitionGroups
+    .map(
+      (group) => `
+        <div
+          id="${escapeHtml(group.id)}-mount"
+          class="deferred-section-mount"
+          data-group-id="${escapeHtml(group.id)}"
+          hidden
+        ></div>`,
     )
     .join("");
   return `<!doctype html>
@@ -3809,6 +5177,7 @@ function buildHtmlPage(data, view) {
       }
 
       .hero-menu-link {
+        appearance: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -3827,6 +5196,7 @@ function buildHtmlPage(data, view) {
         text-decoration: none;
         text-transform: uppercase;
         transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        cursor: pointer;
       }
 
       .hero-menu-link:hover {
@@ -3897,6 +5267,36 @@ function buildHtmlPage(data, view) {
 
       .competition-section::before {
         background: linear-gradient(180deg, var(--uci-yellow), var(--uci-blue-bright));
+      }
+
+      .section-cta::before {
+        background: linear-gradient(180deg, var(--uci-red), var(--uci-yellow));
+      }
+
+      .deferred-button-row {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .section-cta .deferred-load-button {
+        color: var(--uci-blue-deep);
+        border-color: rgba(0, 51, 160, 0.14);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.12), rgba(0, 51, 160, 0.05));
+      }
+
+      .section-cta .deferred-load-button:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.18), rgba(0, 51, 160, 0.1));
+        border-color: rgba(0, 51, 160, 0.22);
+      }
+
+      .deferred-load-button.is-loading {
+        opacity: 0.78;
+        pointer-events: none;
+      }
+
+      .deferred-section-mount[hidden] {
+        display: none !important;
       }
 
       .competition-stack {
@@ -4037,12 +5437,27 @@ function buildHtmlPage(data, view) {
         align-items: center;
         gap: 0.45rem;
         min-width: 0;
+        flex-wrap: wrap;
+      }
+
+      .rider-text {
+        min-width: 0;
       }
 
       .country-flag {
         flex: 0 0 auto;
         font-size: 0.95em;
         line-height: 1;
+      }
+
+      .standing-gap {
+        flex: 0 0 auto;
+        margin-left: 0.1rem;
+        font-size: 0.92em;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        color: var(--muted);
       }
 
       .race-finish-link {
@@ -4181,6 +5596,34 @@ function buildHtmlPage(data, view) {
         box-shadow: 0 16px 30px rgba(0, 74, 184, 0.24);
       }
 
+      .load-coverage-button {
+        min-height: 3.2rem;
+        padding: 0.9rem 1.25rem;
+        border-radius: 16px;
+        border: 1px solid var(--line-strong);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.04));
+        color: var(--uci-blue-deep);
+        cursor: pointer;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .load-coverage-button:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.08));
+      }
+
+      .load-coverage-button.is-loading {
+        opacity: 0.78;
+        pointer-events: none;
+      }
+
+      .coverage-content {
+        margin-top: 1rem;
+      }
+
       .article-card {
         padding: 1rem 1rem 1.1rem;
       }
@@ -4301,32 +5744,234 @@ function buildHtmlPage(data, view) {
       </section>
 
       ${competitionSections}
+      ${deferredSectionButtons}
+      ${deferredSectionMounts}
 
       <p class="footer-note">Data refreshes automatically from live season pages when the server cache expires. Race coverage links update from current news feeds.</p>
     </main>
     <script>
-      document.querySelectorAll(".article-select").forEach((raceSelect) => {
-        raceSelect.addEventListener("change", () => {
-          const groupId = raceSelect.dataset.groupId;
-          const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-          if (refreshTokenInput) {
-            refreshTokenInput.value = "0";
+      const deferredSectionState = new Map();
+      const deferredGroups = ${deferredGroupClientPayload};
+
+      function buildDeferredButtonMarkup(group, scrollOnLoad) {
+        return '<button type="button" class="hero-menu-link deferred-load-button" data-deferred-group-id="' +
+          group.id +
+          '" data-scroll-on-load="' +
+          (scrollOnLoad ? "true" : "false") +
+          '">' +
+          group.label +
+          '</button>';
+      }
+
+      function buildDeferredContinuationMarkup(groups) {
+        if (!groups.length) {
+          return "";
+        }
+
+        return '<section class="section section-cta deferred-followup-cta">' +
+          '<div class="section-head"><div><div class="section-tag">More Race Coverage</div><h2>Load More Racing</h2><p>Open the next deferred race section only when you want it.</p></div></div>' +
+          '<div class="deferred-button-row">' +
+          groups.map((group) => buildDeferredButtonMarkup(group, true)).join("") +
+          '</div></section>';
+      }
+
+      function buildDeferredLoadingMarkup(group) {
+        return '<section class="section competition-section" id="' +
+          group.id +
+          '-loading">' +
+          '<div class="section-head"><div><div class="section-tag">Loading</div><h2>' +
+          group.label +
+          '</h2><p>Fetching this section now. Race results and coverage will appear here shortly.</p></div></div>' +
+          '</section>';
+      }
+
+      function updateDeferredContinuationSections() {
+        deferredGroups.forEach((group, index) => {
+          const mount = document.getElementById(group.id + "-mount");
+          if (!mount || mount.hidden || !deferredSectionState.has(group.id)) {
+            return;
           }
-          raceSelect.form?.requestSubmit();
+
+          const existingContinuation = mount.querySelector(".deferred-followup-cta");
+          if (existingContinuation) {
+            existingContinuation.remove();
+          }
+
+          const remainingGroups = deferredGroups.filter(
+            (candidate, candidateIndex) => candidateIndex > index && !deferredSectionState.has(candidate.id),
+          );
+          if (!remainingGroups.length) {
+            return;
+          }
+
+          mount.insertAdjacentHTML("beforeend", buildDeferredContinuationMarkup(remainingGroups));
         });
+      }
+
+      async function loadCoverage(groupId, options = {}) {
+        const coverageBlock = document.getElementById(groupId + "-coverage");
+        const coverageContent = document.getElementById(groupId + "-coverage-content");
+        if (!coverageBlock || !coverageContent) {
+          return;
+        }
+
+        const trigger = coverageBlock.querySelector('[data-coverage-group-id="' + groupId + '"]');
+        if (trigger) {
+          trigger.classList.add("is-loading");
+        }
+
+        try {
+          const params = new URLSearchParams({ group: groupId });
+          if (options.selectedRaceId) {
+            params.set(groupId + "-race", options.selectedRaceId);
+          }
+          if (Number.isFinite(options.refreshToken)) {
+            params.set(groupId + "-refresh", String(options.refreshToken));
+          }
+
+          const response = await fetch("/api/competition-coverage?" + params.toString(), { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Unable to load coverage");
+          }
+
+          const payload = await response.json();
+          coverageBlock.outerHTML = payload.html || "";
+          bindArticleControls(document);
+        } catch (error) {
+          coverageContent.innerHTML = '<p class="meta">Unable to load race coverage right now. Please try again in a moment.</p>';
+        } finally {
+          if (trigger) {
+            trigger.classList.remove("is-loading");
+          }
+        }
+      }
+
+      function bindArticleControls(root = document) {
+        root.querySelectorAll(".article-select").forEach((raceSelect) => {
+          if (raceSelect.dataset.bound === "true") {
+            return;
+          }
+
+          raceSelect.dataset.bound = "true";
+          raceSelect.addEventListener("change", () => {
+            const groupId = raceSelect.dataset.groupId;
+            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
+            if (refreshTokenInput) {
+              refreshTokenInput.value = "0";
+            }
+            loadCoverage(groupId, {
+              selectedRaceId: raceSelect.value,
+              refreshToken: 0,
+            });
+          });
+        });
+
+        root.querySelectorAll(".refresh-button").forEach((refreshButton) => {
+          if (refreshButton.dataset.bound === "true") {
+            return;
+          }
+
+          refreshButton.dataset.bound = "true";
+          refreshButton.addEventListener("click", () => {
+            const groupId = refreshButton.dataset.groupId;
+            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
+            const currentValue = Number.parseInt(refreshTokenInput?.value || "0", 10) || 0;
+            const nextValue = currentValue + 1;
+            if (refreshTokenInput) {
+              refreshTokenInput.value = String(nextValue);
+            }
+            const raceSelect = document.getElementById(groupId + "-race-select");
+            loadCoverage(groupId, {
+              selectedRaceId: raceSelect?.value || "",
+              refreshToken: nextValue,
+            });
+          });
+        });
+
+        root.querySelectorAll(".load-coverage-button").forEach((coverageButton) => {
+          if (coverageButton.dataset.bound === "true") {
+            return;
+          }
+
+          coverageButton.dataset.bound = "true";
+          coverageButton.addEventListener("click", () => {
+            loadCoverage(coverageButton.dataset.coverageGroupId, { refreshToken: 0 });
+          });
+        });
+      }
+
+      async function loadDeferredSection(groupId, options = {}) {
+        const mount = document.getElementById(groupId + "-mount");
+        if (!mount) {
+          return;
+        }
+        const group = deferredGroups.find((entry) => entry.id === groupId);
+        if (!group) {
+          return;
+        }
+
+        const buttons = document.querySelectorAll('[data-deferred-group-id="' + groupId + '"]');
+        buttons.forEach((button) => button.classList.add("is-loading"));
+
+        mount.hidden = false;
+        mount.innerHTML = buildDeferredLoadingMarkup(group);
+        if (options.scrollOnLoad) {
+          mount.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        try {
+          const params = new URLSearchParams({ group: groupId });
+          if (options.selectedRaceId) {
+            params.set(groupId + "-race", options.selectedRaceId);
+          }
+          if (Number.isFinite(options.refreshToken)) {
+            params.set(groupId + "-refresh", String(options.refreshToken));
+          }
+
+          const response = await fetch("/api/competition-section?" + params.toString(), { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("Unable to load section");
+          }
+
+          const payload = await response.json();
+          mount.innerHTML = payload.html || "";
+          mount.hidden = false;
+          deferredSectionState.set(groupId, true);
+          bindArticleControls(mount);
+          updateDeferredContinuationSections();
+
+          if (options.scrollOnLoad && options.scrollAfterLoad !== false) {
+            const section = mount.querySelector("#" + groupId);
+            section?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        } catch (error) {
+          mount.hidden = false;
+          mount.innerHTML = '<section class="section competition-section"><div class="section-head"><div><div class="section-tag">Load failed</div><h2>Unable to load this section</h2><p>Please try again in a moment.</p></div></div></section>';
+        } finally {
+          buttons.forEach((button) => button.classList.remove("is-loading"));
+        }
+      }
+
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest(".deferred-load-button");
+        if (!button) {
+          return;
+        }
+
+        const groupId = button.dataset.deferredGroupId;
+        const scrollOnLoad = button.dataset.scrollOnLoad === "true";
+
+        if (deferredSectionState.has(groupId)) {
+          if (scrollOnLoad) {
+            document.getElementById(groupId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+          return;
+        }
+
+        loadDeferredSection(groupId, { scrollOnLoad });
       });
 
-      document.querySelectorAll(".refresh-button").forEach((refreshButton) => {
-        refreshButton.addEventListener("click", () => {
-          const groupId = refreshButton.dataset.groupId;
-          const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-          const currentValue = Number.parseInt(refreshTokenInput?.value || "0", 10) || 0;
-          if (refreshTokenInput) {
-            refreshTokenInput.value = String(currentValue + 1);
-          }
-          refreshButton.form?.requestSubmit();
-        });
-      });
+      bindArticleControls();
     </script>
   </body>
 </html>`;
@@ -4463,7 +6108,7 @@ function buildWarmupPage() {
 
       async function pollRaceData() {
         try {
-          const response = await fetch("/api/races", { cache: "no-store" });
+          const response = await fetch("/api/homepage-data", { cache: "no-store" });
           if (response.ok) {
             window.location.reload();
             return;
@@ -4546,6 +6191,7 @@ async function sendStaticFile(response, pathname) {
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${request.headers.host}`);
+    const shouldWarmHomepage = shouldServeHomepageWarmup();
 
     if (url.pathname.startsWith("/assets/")) {
       const handled = await sendStaticFile(response, url.pathname);
@@ -4554,10 +6200,10 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
-    if (!cache.data) {
-      refreshRaceDataInBackground(true).catch(() => {});
+    if (shouldWarmHomepage) {
+      warmRaceDataInBackground().catch(() => {});
 
-      if (url.pathname === "/api/races") {
+      if (url.pathname === "/api/homepage-data") {
         sendJson(response, 202, {
           status: "warming",
           message: "Live race data is still loading.",
@@ -4571,11 +6217,57 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
-    const data = await loadRaceData();
-
     if (url.pathname !== "/") {
+      if (url.pathname === "/api/homepage-data") {
+        const data = await loadRaceData({ includeDeferred: false });
+        const debugRequested = url.searchParams.get("debug") === "1";
+        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : buildHomepageDataPayload(data));
+        return;
+      }
+
+      if (url.pathname === "/api/competition-section") {
+        const groupId = url.searchParams.get("group") || "";
+        if (!DEFERRED_COMPETITION_GROUP_IDS.has(groupId)) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+        const data = await loadCompetitionGroupData(groupId);
+        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
+        if (!group) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+
+        sendJson(response, 200, {
+          groupId,
+          html: buildCompetitionSection(group, null),
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/competition-coverage") {
+        const groupId = url.searchParams.get("group") || "";
+        const data = DEFERRED_COMPETITION_GROUP_IDS.has(groupId)
+          ? await loadCompetitionGroupData(groupId)
+          : await loadRaceData({ includeDeferred: false });
+        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
+        if (!group) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+
+        const coverageView = await buildCoverageViewForGroup(group, url);
+        sendJson(response, 200, {
+          groupId,
+          html: buildCoverageBlock(group, coverageView),
+        });
+        return;
+      }
+
       if (url.pathname === "/api/races") {
-        sendJson(response, 200, data);
+        const data = await loadRaceData({ includeDeferred: true });
+        const debugRequested = url.searchParams.get("debug") === "1";
+        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : data);
         return;
       }
 
@@ -4587,32 +6279,10 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const competitionGroups = getCompetitionGroups(data);
-    const coverageEntries = await Promise.all(
-      competitionGroups.map(async (group) => {
-        const articleRaces = [...group.liveStageRaces, ...group.recentResults];
-        const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
-        const refreshToken = Math.max(
-          0,
-          Number.parseInt(url.searchParams.get(`${group.id}-refresh`) || "0", 10) || 0,
-        );
-        const selectedRace =
-          articleRaces.find((race) => race.id === selectedRaceId) || articleRaces[0] || null;
-        const articlePool = selectedRace ? await loadRaceArticlePool(selectedRace) : [];
+    const data = await loadRaceData({ includeDeferred: false });
 
-        return [
-          group.id,
-          {
-            articleRaces,
-            selectedRaceId: selectedRace?.id || "",
-            selectedRaceTitle: selectedRace?.title || "the selected race",
-            refreshToken,
-            raceArticles: selectRaceArticles(articlePool, refreshToken),
-          },
-        ];
-      }),
-    );
-    const coverageByGroup = Object.fromEntries(coverageEntries);
+    const competitionGroups = getCompetitionGroups(data);
+    const coverageByGroup = Object.fromEntries(competitionGroups.map((group) => [group.id, null]));
 
     sendHtml(
       response,
