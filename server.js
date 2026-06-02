@@ -2454,6 +2454,8 @@ const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-202
 const GIRO_D_ITALIA_CLASSIFICATIONS_URL = "https://www.giroditalia.it/en/classifiche/";
 const GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL = "https://www.giroditalia.it/en/classifiche/di-tappa/";
 const GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL = "https://www.giroditalia.it/en/livefeed/tappa/";
+const GIRO_D_ITALIA_WOMEN_RANKINGS_URL = "https://www.giroditaliawomen.it/en/rankings/";
+const GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL = "https://www.giroditaliawomen.it/en/rankings/di-tappa/";
 
 function extractTourOfGreeceResultsSection(html) {
   const text = String(html || "");
@@ -2516,7 +2518,7 @@ function parseGiroDItaliaClassificationStandings(html, category) {
   const normalized = String(html || "").replace(/</g, "\n<");
   const blockMatch = normalized.match(
     new RegExp(
-      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-[^"]+">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|$)`,
+      `data-category="${category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[\\s\\S]*?<div class="table type-[^"]+">([\\s\\S]*?)(?:<div class="single-tab js-tab-classifica-|<div class="single-tab js-tab-|$)`,
       "i",
     ),
   );
@@ -2532,7 +2534,7 @@ function parseGiroDItaliaClassificationStandings(html, category) {
     .map((match) => {
       const row = match;
       const place = Number.parseInt(
-        row.match(/<h5 class="position(?:\s+[^"]*)?">(\d+)\s*<\/h5>/i)?.[1] || "",
+        row.match(/<(?:h5|div) class="position(?:\s+[^"]*)?">(\d+)\s*<\/(?:h5|div)>/i)?.[1] || "",
         10,
       );
       const firstName = cleanFeedText(row.match(/<div class="name p-3">([\s\S]*?)<\/div>/i)?.[1] || "");
@@ -2669,6 +2671,13 @@ function resolveGiroDItaliaCompletedStageNumber(linkedStageNumber, livefeedStage
   return Number(livefeedStageNumber || 0) || 1;
 }
 
+function extractGiroDItaliaWomenLatestCompletedStageNumber(html) {
+  return [...String(html || "").matchAll(/rankings\/di-tappa\/(\d+)\/?/gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite)
+    .reduce((max, value) => Math.max(max, value), 0);
+}
+
 async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -2730,6 +2739,59 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
       gcStandings.length > 0
         ? {
             stageNumber,
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
+async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+
+  if (
+    race?.pageTitle !== "2026 Giro d'Italia Women" ||
+    getRaceYear(race) !== 2026 ||
+    !startUtc ||
+    !endUtc ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const rankingsHtml = await fetchHtml(GIRO_D_ITALIA_WOMEN_RANKINGS_URL);
+  const stageNumber = extractGiroDItaliaWomenLatestCompletedStageNumber(rankingsHtml);
+  const stageHtml = stageNumber
+    ? await fetchHtml(`${GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL}${stageNumber}/`)
+    : "";
+  const stageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
+  const gcStandings = parseGiroDItaliaGeneralClassificationStandings(rankingsHtml);
+
+  if (stageStandings.length === 0 && gcStandings.length === 0) {
+    return null;
+  }
+
+  return {
+    totalStages: 9,
+    completedStages: stageNumber,
+    latestStage:
+      stageNumber > 0 && stageStandings.length > 0
+        ? {
+            number: stageNumber,
+            label: `Stage ${stageNumber}`,
+            standings: stageStandings,
+            ...getWinnerDetails(stageStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber: stageNumber || inferGiroDItaliaCurrentStageNumber(race, today),
             standings: gcStandings,
             ...getLeaderDetails(gcStandings),
           }
@@ -2818,6 +2880,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "giro-ditalia-stage-one",
     matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
     load: fetchGiroDItaliaOfficialSnapshot,
+  },
+  {
+    id: "giro-ditalia-women-rankings",
+    matches: (race) => race?.pageTitle === "2026 Giro d'Italia Women",
+    load: fetchGiroDItaliaWomenOfficialSnapshot,
   },
   {
     id: "vuelta-a-burgos-feminas-liveblog",
