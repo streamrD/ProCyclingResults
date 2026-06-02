@@ -94,3 +94,4 @@ Task: <your task here>
 
 Most bugs here come from upstream content drift rather than complex internal state. When race data looks wrong, inspect the relevant parser/provider path before considering broader refactors.
 During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, deferred-section warmup behavior, and upstream rate limiting before assuming the parser is wrong.
+Giro d'Italia and Giro d'Italia Women now use separate official standings sources, so check the correct provider path before changing shared Giro parsing heuristics.

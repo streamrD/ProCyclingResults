@@ -32,6 +32,7 @@ function loadParserExports() {
       fetchGiroDItaliaWomenOfficialSnapshot,
       extractGiroDItaliaFinishVideoUrl,
       extractGiroDItaliaLatestCompletedStageNumber,
+      extractGiroDItaliaWomenEmbeddedStageNumber,
       extractGiroDItaliaWomenLatestCompletedStageNumber,
       resolveGiroDItaliaCompletedStageNumber,
       resolveGiroDItaliaLivefeedStageNumber,
@@ -685,6 +686,72 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
       { place: "3", rider: "Demi Vollering", countryCode: "NED", gap: "+01:10" },
       { place: "4", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+01:26" },
       { place: "5", rider: "Monica Trinca Colonel", countryCode: "ITA", gap: "+01:31" },
+    ],
+    leader: "Anna Van Der Breggen",
+    leaderCountryCode: "NED",
+  });
+});
+
+test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content served under a newer stage URL", async () => {
+  const {
+    fetchGiroDItaliaWomenOfficialSnapshot,
+    extractGiroDItaliaWomenEmbeddedStageNumber,
+  } = loadParserExports();
+  const rankingsHtml = `
+    <a class="single-tab-controller label-4 is-uppercase" href="https://www.giroditaliawomen.it/en/rankings/di-tappa/5" data-tab="classifiche-di-tappa">stage</a>
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-1">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">2</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/sui.png"></div><div class="atleta-info"><div class="name p-3">Marlen</div><div class="surname p-3 is-bold">REUSSER</div></div></div>
+          <div class="distacco p-3 is-text-right">01:04</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const staleStageHtml = `
+    <div class="label-3">Stage <span class="label-3 js-n-stage">4</span></div>
+    <h4 class="is-pink is-uppercase mb-2 js-nometappa">Belluno - Nevegal Tudor ITT</h4>
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="title-leaderboard"><h4 class="is-uppercase mb-0"><span class="is-pink">Stage&nbsp;4</span> Order <br/> of Arrival</h4></div>
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">2</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/sui.png"></div><div class="atleta-info"><div class="name p-3">Marlen</div><div class="surname p-3 is-bold">REUSSER</div></div></div>
+          <div class="distacco p-3 is-text-right">01:04</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  assert.equal(extractGiroDItaliaWomenEmbeddedStageNumber(staleStageHtml), 4);
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaWomenOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia Women",
+          startDate: new Date("2026-05-27T00:00:00Z"),
+          endDate: new Date("2026-06-04T00:00:00Z"),
+        },
+        async (url) => (url.includes("/di-tappa/") ? staleStageHtml : rankingsHtml),
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 5);
+  assert.equal(snapshot.latestStage, null);
+  assert.deepEqual(snapshot.generalClassification, {
+    stageNumber: 5,
+    standings: [
+      { place: "1", rider: "Anna Van Der Breggen", countryCode: "NED" },
+      { place: "2", rider: "Marlen Reusser", countryCode: "SUI", gap: "+01:04" },
     ],
     leader: "Anna Van Der Breggen",
     leaderCountryCode: "NED",

@@ -183,9 +183,13 @@ Current special cases:
 - Tour of Greece
   Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
 - Giro d'Italia
-  Uses the official livefeed plus the official classifications page for stage / GC coverage when Wikipedia is still sparse. Giro finish-video links are sourced first from official livefeed `Last Km` video entries, with a small explicit fallback map retained for resilience.
+  Uses the official livefeed plus the official classifications page for stage / GC coverage when Wikipedia is still sparse. Giro finish-video links are sourced first from official livefeed `Last Km` video entries, with a small explicit fallback map retained for resilience. The shared Giro standings parser now accepts both the older `h5.position` row markup and the newer `div.position` variant used by current official pages.
+- Giro d'Italia Women
+  Pulls the official rankings page plus the current stage rankings page from `giroditaliawomen.it` to recover live GC and stage standings when Wikipedia is sparse or only partially updated.
 - Vuelta Asturias
   Pulls posts from the official WordPress JSON API and extracts stage / GC information from Spanish-language text
+- Vuelta a Burgos Feminas
+  Pulls the official WordPress post feed plus the linked liveblog JSON endpoint to recover current stage results and a bounded GC fallback when upstream race pages are thin
 - Eschborn-Frankfurt
   Pulls the official rankings page to recover top-five one-day results when the current-edition Wikipedia race page is missing
 - Selected 2026 Europe Tour stage races
@@ -604,7 +608,7 @@ Current API is simple because the UI and API share the same aggregated payload. 
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, and static snapshot coverage for Grande Prémio Anicolor.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, and static snapshot coverage for Grande Prémio Anicolor.
 
 Run it with:
 

@@ -2678,6 +2678,18 @@ function extractGiroDItaliaWomenLatestCompletedStageNumber(html) {
     .reduce((max, value) => Math.max(max, value), 0);
 }
 
+function extractGiroDItaliaWomenEmbeddedStageNumber(html) {
+  const text = String(html || "");
+  const matches = [
+    text.match(/js-n-stage"[^>]*>\s*(\d+)\s*</i),
+    text.match(/<span class="is-pink">Stage(?:&nbsp;|\s)+(\d+)\s*<\/span>/i),
+  ].filter(Boolean);
+
+  return matches
+    .map((match) => Number.parseInt(match[1], 10))
+    .find(Number.isFinite) || 0;
+}
+
 async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -2765,33 +2777,43 @@ async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText
   }
 
   const rankingsHtml = await fetchHtml(GIRO_D_ITALIA_WOMEN_RANKINGS_URL);
-  const stageNumber = extractGiroDItaliaWomenLatestCompletedStageNumber(rankingsHtml);
-  const stageHtml = stageNumber
-    ? await fetchHtml(`${GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL}${stageNumber}/`)
+  const linkedStageNumber = extractGiroDItaliaWomenLatestCompletedStageNumber(rankingsHtml);
+  const requestedStageNumber = linkedStageNumber || inferGiroDItaliaCurrentStageNumber(race, today);
+  const stageHtml = requestedStageNumber
+    ? await fetchHtml(`${GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL}${requestedStageNumber}/`)
     : "";
+  const embeddedStageNumber = extractGiroDItaliaWomenEmbeddedStageNumber(stageHtml);
+  const stageNumber =
+    embeddedStageNumber > 0 && embeddedStageNumber <= requestedStageNumber
+      ? embeddedStageNumber
+      : linkedStageNumber;
   const stageStandings = parseGiroDItaliaStageClassificationStandings(stageHtml);
   const gcStandings = parseGiroDItaliaGeneralClassificationStandings(rankingsHtml);
+  const trustworthyStageStandings =
+    requestedStageNumber > 0 && stageNumber > 0 && requestedStageNumber !== stageNumber
+      ? []
+      : stageStandings;
 
-  if (stageStandings.length === 0 && gcStandings.length === 0) {
+  if (trustworthyStageStandings.length === 0 && gcStandings.length === 0) {
     return null;
   }
 
   return {
     totalStages: 9,
-    completedStages: stageNumber,
+    completedStages: Math.max(stageNumber, gcStandings.length > 0 ? linkedStageNumber : 0),
     latestStage:
-      stageNumber > 0 && stageStandings.length > 0
+      stageNumber > 0 && trustworthyStageStandings.length > 0
         ? {
             number: stageNumber,
             label: `Stage ${stageNumber}`,
-            standings: stageStandings,
-            ...getWinnerDetails(stageStandings),
+            standings: trustworthyStageStandings,
+            ...getWinnerDetails(trustworthyStageStandings),
           }
         : null,
     generalClassification:
       gcStandings.length > 0
         ? {
-            stageNumber: stageNumber || inferGiroDItaliaCurrentStageNumber(race, today),
+            stageNumber: linkedStageNumber || stageNumber || inferGiroDItaliaCurrentStageNumber(race, today),
             standings: gcStandings,
             ...getLeaderDetails(gcStandings),
           }
