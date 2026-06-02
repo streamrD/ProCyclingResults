@@ -1983,18 +1983,34 @@ function normalizeStandingGap(value) {
   return match ? `+${match[1]}` : "";
 }
 
-function buildStandingEntry(place, rider, countryCode = "", gap = "") {
+function normalizeStandingTime(value) {
+  const cleaned = cleanFeedText(String(value || ""))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned === "-" || cleaned === "0:00") {
+    return "";
+  }
+
+  const match = cleaned.match(/\b(\d+(?::\d{2}){1,2})\b/);
+  return match ? match[1] : "";
+}
+
+function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "") {
   const details =
     rider && typeof rider === "object"
       ? {
           rider: String(rider.rider || "").trim(),
           countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
           gap: normalizeStandingGap(rider.gap || ""),
+          time: normalizeStandingTime(rider.time || ""),
         }
       : {
           rider: String(rider || "").trim(),
           countryCode: normalizeCountryCode(countryCode || getRiderCountryCode(rider)),
           gap: normalizeStandingGap(gap),
+          time: normalizeStandingTime(time),
         };
 
   return details.rider
@@ -2003,6 +2019,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "") {
         rider: details.rider,
         ...(details.countryCode ? { countryCode: details.countryCode } : {}),
         ...(details.gap ? { gap: details.gap } : {}),
+        ...(details.time ? { time: details.time } : {}),
       }
     : null;
 }
@@ -2541,8 +2558,11 @@ function parseGiroDItaliaClassificationStandings(html, category) {
       const surname = cleanFeedText(row.match(/<div class="surname p-3 is-bold">([\s\S]*?)<\/div>/i)?.[1] || "");
       const alpha3Code = (row.match(/athletes-flags\/([a-z]{3})\.png/i)?.[1] || "").toUpperCase();
       const gap = normalizeStandingGap(row.match(/<div class="distacco p-3 is-text-right">([\s\S]*?)<\/div>/i)?.[1] || "");
+      const time = normalizeStandingTime(row.match(/<div class="tempo p-3 is-text-right">([\s\S]*?)<\/div>/i)?.[1] || "");
       const rider = toTitleCaseWords([firstName, surname].filter(Boolean).join(" "));
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, { rider, countryCode: alpha3Code, gap }) : null;
+      return Number.isInteger(place) && rider
+        ? buildStandingEntry(place, { rider, countryCode: alpha3Code, gap, time })
+        : null;
     })
     .filter(Boolean)
     .slice(0, MAX_RESULT_RIDERS);
@@ -4355,14 +4375,30 @@ function buildHomepageDataPayload(data) {
   };
 }
 
-function buildPodiumMarkup(entries) {
+function getStandingMetric(entry, context = "default") {
+  const time = normalizeStandingTime(entry?.time || "");
+  const gap = normalizeStandingGap(entry?.gap || "");
+
+  if (context === "stage") {
+    return entry?.place === "1" ? time || gap : gap || time;
+  }
+
+  if (context === "gc") {
+    return entry?.place === "1" ? time : gap || time;
+  }
+
+  return gap || time;
+}
+
+function buildPodiumMarkup(entries, options = {}) {
+  const metricContext = options.metricContext || "default";
   const podium = entries
     .filter((entry) => entry?.rider)
     .map(
       (entry) => `
         <li class="podium-item">
           <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
-          ${buildRiderMarkup(entry)}
+          ${buildRiderMarkup(entry, "podium-rider", { metricContext })}
         </li>`,
     )
     .join("");
@@ -4476,10 +4512,12 @@ function buildStageRaceCard(race, options = {}) {
           {
             rider: latestStage.winner,
             countryCode: latestStage.winnerCountryCode,
+            time: latestStage.standings?.[0]?.time || "",
           },
           "stage-winner-rider",
+          { metricContext: "stage" },
         )}</div>
-        ${buildPodiumMarkup(stageStandings)}
+        ${buildPodiumMarkup(stageStandings, { metricContext: "stage" })}
         ${buildRaceFinishLink(race)}
       </div>`
     : isFinalized
@@ -4493,7 +4531,7 @@ function buildStageRaceCard(race, options = {}) {
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(classificationLabel)}</div>
-        ${buildPodiumMarkup(gcStandings)}
+        ${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}
       </div>`
     : `
       <div class="card-subsection">
@@ -4562,7 +4600,7 @@ function getCountryFlagEmoji(countryCode) {
     .join("");
 }
 
-function buildRiderMarkup(entry, className = "podium-rider") {
+function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
   const rider = String(entry?.rider || "").trim();
   if (!rider) {
     return "";
@@ -4574,8 +4612,8 @@ function buildRiderMarkup(entry, className = "podium-rider") {
   const flagMarkup = flag
     ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
     : "";
-  const gap = normalizeStandingGap(entry?.gap || "");
-  const gapMarkup = gap ? `<span class="standing-gap">${escapeHtml(gap)}</span>` : "";
+  const metric = getStandingMetric(entry, options.metricContext || "default");
+  const gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
 
   return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span class="rider-text">${escapeHtml(rider)}</span>${gapMarkup}</span>`;
 }

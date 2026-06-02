@@ -549,11 +549,11 @@ test("parseGiroDItaliaGeneralClassificationStandings parses the official Maglia 
   const standings = JSON.parse(JSON.stringify(parseGiroDItaliaGeneralClassificationStandings(html)));
 
   assert.deepEqual(standings, [
-    { place: "1", rider: "Paul Magnier", countryCode: "FRA" },
-    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN", gap: "+0:04" },
-    { place: "3", rider: "Manuele Tarozzi", countryCode: "ITA", gap: "+0:04" },
-    { place: "4", rider: "Ethan Vernon", countryCode: "GBR", gap: "+0:06" },
-    { place: "5", rider: "Diego Pablo Sevilla", countryCode: "ESP", gap: "+0:06" },
+    { place: "1", rider: "Paul Magnier", countryCode: "FRA", time: "3:20:58" },
+    { place: "2", rider: "Tobias Lund Andresen", countryCode: "DEN", gap: "+0:04", time: "3:21:02" },
+    { place: "3", rider: "Manuele Tarozzi", countryCode: "ITA", gap: "+0:04", time: "3:21:02" },
+    { place: "4", rider: "Ethan Vernon", countryCode: "GBR", gap: "+0:06", time: "3:21:04" },
+    { place: "5", rider: "Diego Pablo Sevilla", countryCode: "ESP", gap: "+0:06", time: "3:21:04" },
   ]);
 });
 
@@ -584,9 +584,9 @@ test("parseGiroDItaliaGeneralClassificationStandings accepts mixed position clas
   const standings = JSON.parse(JSON.stringify(parseGiroDItaliaGeneralClassificationStandings(html)));
 
   assert.deepEqual(standings, [
-    { place: "1", rider: "Jonas Vingegaard", countryCode: "DEN" },
-    { place: "2", rider: "Afonso Eulalio", countryCode: "POR", gap: "+2:26" },
-    { place: "3", rider: "Felix Gall", countryCode: "AUT", gap: "+2:50" },
+    { place: "1", rider: "Jonas Vingegaard", countryCode: "DEN", time: "59:12:56" },
+    { place: "2", rider: "Afonso Eulalio", countryCode: "POR", gap: "+2:26", time: "59:15:22" },
+    { place: "3", rider: "Felix Gall", countryCode: "AUT", gap: "+2:50", time: "59:15:46" },
   ]);
 });
 
@@ -1668,6 +1668,44 @@ test("buildStageRaceCard prefers richer finalized standings over sparse GC data"
 
   assert.match(html, /Rider Five/);
   assert.doesNotMatch(html, /No completed stage result is available yet\./);
+});
+
+test("buildStageRaceCard shows stage time separately from cumulative GC timing when available", () => {
+  const { buildStageRaceCard } = loadParserExports();
+  const html = buildStageRaceCard({
+    title: "Giro d'Italia Women",
+    series: "Women's WorldTour",
+    date: "Jun 2",
+    location: "Italy",
+    stageRace: {
+      totalStages: 9,
+      completedStages: 4,
+      latestStage: {
+        number: 4,
+        label: "Stage 4",
+        winner: "Anna Van Der Breggen",
+        winnerCountryCode: "NED",
+        standings: [
+          { place: "1", rider: "Anna Van Der Breggen", countryCode: "NED", time: "31:38" },
+          { place: "2", rider: "Marlen Reusser", countryCode: "SUI", gap: "+01:04", time: "32:42" },
+          { place: "3", rider: "Demi Vollering", countryCode: "NED", gap: "+01:10", time: "32:48" },
+        ],
+      },
+      generalClassification: {
+        stageNumber: 4,
+        standings: [
+          { place: "1", rider: "Anna Van Der Breggen", countryCode: "NED", time: "11:31:32" },
+          { place: "2", rider: "Marlen Reusser", countryCode: "SUI", gap: "+01:04", time: "11:32:36" },
+          { place: "3", rider: "Demi Vollering", countryCode: "NED", gap: "+01:10", time: "11:32:42" },
+        ],
+      },
+      overallResult: [],
+    },
+  });
+
+  assert.match(html, /stage-winner-rider[^>]*>.*31:38/s);
+  assert.match(html, /Overall after stage 4/);
+  assert.match(html, /11:31:32/);
 });
 
 test("buildRaceCard does not render one-day races as stage races", () => {
