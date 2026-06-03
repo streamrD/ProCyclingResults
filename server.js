@@ -5,6 +5,10 @@ const { URL } = require("url");
 const STATIC_STAGE_RACE_SNAPSHOT_DATA = require(path.join(process.cwd(), "data", "static-stage-race-snapshots.json"));
 
 const PORT = process.env.PORT || 3000;
+const BUILD_INFO = {
+  marker: "2026-06-02-giro-post-race-fix",
+  commit: "fefa813",
+};
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";
 const UMAMI_ANALYTICS_SCRIPT =
@@ -4337,6 +4341,7 @@ function buildRaceDataDebugPayload(data) {
   return {
     ...data,
     debug: {
+      build: BUILD_INFO,
       raceDataCacheUpdatedAt: raceDataCache.updatedAt ? new Date(raceDataCache.updatedAt).toISOString() : "",
       deferredRaceDataCacheUpdatedAt: deferredRaceDataCache.updatedAt
         ? new Date(deferredRaceDataCache.updatedAt).toISOString()
@@ -6217,6 +6222,11 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (url.pathname !== "/") {
+      if (url.pathname === "/api/build-info") {
+        sendJson(response, 200, BUILD_INFO);
+        return;
+      }
+
       if (url.pathname === "/api/homepage-data") {
         const data = await loadRaceData({ includeDeferred: false });
         const debugRequested = url.searchParams.get("debug") === "1";
