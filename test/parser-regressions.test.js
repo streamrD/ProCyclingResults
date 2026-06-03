@@ -1511,6 +1511,73 @@ test("selectPreferredStageRaceSnapshot prefers a rich current Giro snapshot over
   assert.equal(preferred.generalClassification.stageNumber, 8);
 });
 
+test("fetchGiroDItaliaOfficialSnapshot still uses the official Giro source after the race end date", async () => {
+  const { fetchGiroDItaliaOfficialSnapshot } = loadParserExports();
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia",
+          startDate: new Date("2026-05-08T00:00:00Z"),
+          endDate: new Date("2026-05-31T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/classifiche/di-tappa/21/")) {
+            return `
+              <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+                <div class="table type-4">
+                  <div class="line-table">
+                    <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Jonathan</div><div class="surname p-3 is-bold">MILAN</div></div></div>
+                  </div>
+                  <div class="line-table">
+                    <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Giovanni</div><div class="surname p-3 is-bold">LONARDI</div></div></div>
+                  </div>
+                </div>
+              </div>`;
+          }
+
+          if (url.includes("/livefeed/tappa/21/")) {
+            return JSON.stringify({ cronaca_sintesi: { entries: [] } });
+          }
+
+          if (url.includes("/classifiche/")) {
+            return `
+                <a href="/en/classifiche/di-tappa/21/">Stage 21</a>
+                <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+                  <div class="table type-4">
+                    <div class="line-table">
+                      <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/den.png"></div><div class="atleta-info"><div class="name p-3">Jonas</div><div class="surname p-3 is-bold">VINGEGAARD</div></div></div>
+                      <div class="tempo p-3 is-text-right">83:22:51</div>
+                      <div class="distacco p-3 is-text-right">0:00</div>
+                    </div>
+                    <div class="line-table">
+                      <div class="corridore p-3"><h5 class="position">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/aut.png"></div><div class="atleta-info"><div class="name p-3">Felix</div><div class="surname p-3 is-bold">GALL</div></div></div>
+                      <div class="tempo p-3 is-text-right">83:28:13</div>
+                      <div class="distacco p-3 is-text-right">5:22</div>
+                    </div>
+                  </div>
+                </div>`;
+          }
+
+          throw new Error(`Unexpected URL: ${url}`);
+        },
+        new Date("2026-06-02T12:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 21);
+  assert.equal(snapshot.latestStage.number, 21);
+  assert.deepEqual(snapshot.latestStage.standings, [
+    { place: "1", rider: "Jonathan Milan", countryCode: "ITA" },
+    { place: "2", rider: "Giovanni Lonardi", countryCode: "ITA" },
+  ]);
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Jonas Vingegaard", countryCode: "DEN", time: "83:22:51" },
+    { place: "2", rider: "Felix Gall", countryCode: "AUT", time: "83:28:13", gap: "+5:22" },
+  ]);
+});
+
 test("isRaceWithinScheduledLiveWindow keeps a scheduled live stage race visible", () => {
   const { isRaceWithinScheduledLiveWindow } = loadParserExports();
   const race = {

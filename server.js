@@ -2710,8 +2710,8 @@ function extractGiroDItaliaWomenEmbeddedStageNumber(html) {
     .find(Number.isFinite) || 0;
 }
 
-async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
-  const today = new Date();
+async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText, now = new Date()) {
+  const today = now instanceof Date ? now : new Date(now);
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
   const endUtc = toUtcDateOnly(race?.endDate);
@@ -2721,8 +2721,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText) {
     getRaceYear(race) !== 2026 ||
     !startUtc ||
     !endUtc ||
-    todayUtc.getTime() < startUtc.getTime() ||
-    todayUtc.getTime() > endUtc.getTime()
+    todayUtc.getTime() < startUtc.getTime()
   ) {
     return null;
   }
