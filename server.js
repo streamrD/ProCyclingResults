@@ -2477,6 +2477,7 @@ const GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL = "https://www.giroditalia.it/en/cla
 const GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL = "https://www.giroditalia.it/en/livefeed/tappa/";
 const GIRO_D_ITALIA_WOMEN_RANKINGS_URL = "https://www.giroditaliawomen.it/en/rankings/";
 const GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL = "https://www.giroditaliawomen.it/en/rankings/di-tappa/";
+const GIRO_D_ITALIA_WOMEN_VIDEO_URL = "https://www.giroditaliawomen.it/en/video/";
 
 function extractTourOfGreeceResultsSection(html) {
   const text = String(html || "");
@@ -2661,6 +2662,48 @@ function extractGiroDItaliaFinishVideoUrl(jsonText) {
   return cleanFeedText(finishVideoEntry?.url_media || "");
 }
 
+function extractGiroDItaliaWomenFinishVideoUrl(html, stageNumber) {
+  const resolvedStageNumber = Number(stageNumber || 0);
+  if (!resolvedStageNumber) {
+    return "";
+  }
+
+  const entries = [...String(html || "").matchAll(
+    /data-media="(https:\/\/video\.giroditaliawomen\.it\/video\/\d+)[^"]*"[\s\S]*?<span class="[^"]*(?:videoHighlights__info|sliderType__info)[^"]*">\s*Stage\s+(\d+)\s*<\/span>[\s\S]*?<p class="[^"]*(?:videoHighlights__txt|sliderType__txt)[^"]*">\s*([^<]+?)\s*<\/p>/gi,
+  )]
+    .map((match) => ({
+      url: cleanFeedText(match[1] || ""),
+      stageNumber: Number.parseInt(match[2] || "", 10),
+      title: decodeHtml(cleanFeedText(match[3] || "")),
+    }))
+    .filter((entry) => entry.url && entry.stageNumber === resolvedStageNumber);
+
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const scoreEntry = (entry) => {
+    const title = entry.title.toLowerCase();
+    if (/last\s*km/.test(title)) {
+      return 3;
+    }
+
+    if (/highlights/.test(title)) {
+      return 2;
+    }
+
+    if (/race against the clock|time trial|itt/.test(title)) {
+      return 1;
+    }
+
+    return 0;
+  };
+
+  return entries
+    .sort((left, right) => scoreEntry(right) - scoreEntry(left))[0]
+    ?.url || "";
+}
+
 function extractGiroDItaliaLatestCompletedStageNumber(html) {
   return [...String(html || "").matchAll(/classifiche\/di-tappa\/(\d+)\/?/gi)]
     .map((match) => Number.parseInt(match[1], 10))
@@ -2816,6 +2859,8 @@ async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText
     requestedStageNumber > 0 && stageNumber > 0 && requestedStageNumber !== stageNumber
       ? []
       : stageStandings;
+  const videoHubHtml = stageNumber > 0 ? await fetchHtml(GIRO_D_ITALIA_WOMEN_VIDEO_URL) : "";
+  const finishVideoUrl = extractGiroDItaliaWomenFinishVideoUrl(videoHubHtml, stageNumber);
 
   if (trustworthyStageStandings.length === 0 && gcStandings.length === 0) {
     return null;
@@ -2830,6 +2875,7 @@ async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText
             number: stageNumber,
             label: `Stage ${stageNumber}`,
             standings: trustworthyStageStandings,
+            finishVideoUrl,
             ...getWinnerDetails(trustworthyStageStandings),
           }
         : null,

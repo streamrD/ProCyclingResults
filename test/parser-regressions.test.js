@@ -675,6 +675,7 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
       { place: "4", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+01:26" },
       { place: "5", rider: "Monica Trinca Colonel", countryCode: "ITA", gap: "+01:31" },
     ],
+    finishVideoUrl: "",
     winner: "Anna Van Der Breggen",
     winnerCountryCode: "NED",
   });
@@ -690,6 +691,73 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
     leader: "Anna Van Der Breggen",
     leaderCountryCode: "NED",
   });
+});
+
+test("fetchGiroDItaliaWomenOfficialSnapshot prefers the current stage Last KM video", async () => {
+  const { fetchGiroDItaliaWomenOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <a class="single-tab-controller label-4 is-uppercase" href="https://www.giroditaliawomen.it/en/rankings/di-tappa/4" data-tab="classifiche-di-tappa">stage</a>
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-1">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const stageHtml = `
+    <div class="label-3">Stage <span class="label-3 js-n-stage">4</span></div>
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const videoHubHtml = `
+    <div class="single-slide">
+      <div class="videoHighlights__item">
+        <div class="videoHighlights__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/127978989"></div>
+        <span class="videoHighlights__info is-pink outline-pink">Stage 4</span>
+        <div class="videoHighlights__bottom">
+          <p class="videoHighlights__txt">Giro d'Italia Women 2026 | Stage 4 | Highlights</p>
+        </div>
+      </div>
+    </div>
+    <div class="single-slide sliderType__slide">
+      <div class="sliderType__item">
+        <div class="sliderType__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/127976169"></div>
+        <span class="sliderType__info is-pink outline-pink">Stage 4</span>
+        <div class="sliderType__bottom">
+          <p class="sliderType__txt">Giro d'Italia Women 2026 | Stage 4 | Last KM</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaWomenOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia Women",
+          startDate: new Date("2026-05-27T00:00:00Z"),
+          endDate: new Date("2026-06-04T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/en/video/")) {
+            return videoHubHtml;
+          }
+
+          return url.includes("/di-tappa/") ? stageHtml : rankingsHtml;
+        },
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.latestStage.finishVideoUrl, "https://video.giroditaliawomen.it/video/127976169");
 });
 
 test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content served under a newer stage URL", async () => {
