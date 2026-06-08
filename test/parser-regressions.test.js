@@ -826,6 +826,87 @@ test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content ser
   });
 });
 
+test("fetchGiroDItaliaWomenOfficialSnapshot still uses the official source after the race end date", async () => {
+  const { fetchGiroDItaliaWomenOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <a class="single-tab-controller label-4 is-uppercase" href="https://www.giroditaliawomen.it/en/rankings/di-tappa/9" data-tab="classifiche-di-tappa">stage</a>
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Demi</div><div class="surname p-3 is-bold">VOLLERING</div></div></div>
+          <div class="tempo p-3 is-text-right">24:18:11</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ger.png"></div><div class="atleta-info"><div class="name p-3">Antonia</div><div class="surname p-3 is-bold">NIEDERMAIER</div></div></div>
+          <div class="tempo p-3 is-text-right">24:18:49</div>
+          <div class="distacco p-3 is-text-right">0:38</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const stageHtml = `
+    <div class="label-3">Stage <span class="label-3 js-n-stage">9</span></div>
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Elisa</div><div class="surname p-3 is-bold">LONGO BORGHINI</div></div></div>
+          <div class="tempo p-3 is-text-right">3:47:12</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Demi</div><div class="surname p-3 is-bold">VOLLERING</div></div></div>
+          <div class="tempo p-3 is-text-right">3:47:12</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const videoHubHtml = `
+    <div class="single-slide sliderType__slide">
+      <div class="sliderType__item">
+        <div class="sliderType__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/128999999"></div>
+        <span class="sliderType__info is-pink outline-pink">Stage 9</span>
+        <div class="sliderType__bottom">
+          <p class="sliderType__txt">Giro d'Italia Women 2026 | Stage 9 | Last KM</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaWomenOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia Women",
+          startDate: new Date("2026-05-30T00:00:00Z"),
+          endDate: new Date("2026-06-07T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/en/video/")) {
+            return videoHubHtml;
+          }
+
+          return url.includes("/di-tappa/") ? stageHtml : rankingsHtml;
+        },
+        new Date("2026-06-08T12:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 9);
+  assert.equal(snapshot.latestStage.number, 9);
+  assert.equal(snapshot.latestStage.finishVideoUrl, "https://video.giroditaliawomen.it/video/128999999");
+  assert.deepEqual(snapshot.latestStage.standings, [
+    { place: "1", rider: "Elisa Longo Borghini", countryCode: "ITA", time: "3:47:12" },
+    { place: "2", rider: "Demi Vollering", countryCode: "NED", time: "3:47:12" },
+  ]);
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Demi Vollering", countryCode: "NED", time: "24:18:11" },
+    { place: "2", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+0:38", time: "24:18:49" },
+  ]);
+});
+
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {
   const {
     extractGiroDItaliaLatestCompletedStageNumber,
