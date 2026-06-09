@@ -46,6 +46,7 @@ function loadParserExports() {
       extractVueltaABurgosFeminasLatestMetaUpdateText,
       getKnownVueltaABurgosFeminasGcStandings,
       fetchVueltaABurgosFeminasOfficialSnapshot,
+      fetchTourAuvergneRhoneAlpesOfficialSnapshot,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -904,6 +905,80 @@ test("fetchGiroDItaliaWomenOfficialSnapshot still uses the official source after
   assert.deepEqual(snapshot.generalClassification.standings, [
     { place: "1", rider: "Demi Vollering", countryCode: "NED", time: "24:18:11" },
     { place: "2", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+0:38", time: "24:18:49" },
+  ]);
+});
+
+test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time trial stage without individual stage standings", async () => {
+  const { fetchTourAuvergneRhoneAlpesOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <title>Official classifications of Tour Auvergne-Rhône-Alpes - Stage 3</title>
+    <span class="stage-select__option__stage">Stage 1</span>
+    <span class="stage-select__option__stage">Stage 2</span>
+    <span class="stage-select__option__stage">Stage 3</span>
+    <button data-ajax-stack = {&quot;itg&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/itg\\/hash-gc\\/none&quot;}></button>
+    <button data-ajax-stack = {&quot;ite&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/ite\\/hash-stage\\/none&quot;}></button>
+  `;
+  const generalHtml = `
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="is-alignCenter">1</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--fra"></span><a href="/en/rider/72">ALEX BAUDIN</a></td>
+          <td class="is-alignCenter">72</td>
+          <td class="break-line team"><a href="/en/team/EFE">EF EDUCATION - EASYPOST</a></td>
+          <td class="is-alignCenter time">10h 01' 01''</td>
+          <td class="is-alignCenter time">-</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">2</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--fra"></span><a href="/en/rider/36">KÉVIN VAUQUELIN</a></td>
+          <td class="is-alignCenter">36</td>
+          <td class="break-line team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">10h 01' 13''</td>
+          <td class="is-alignCenter time">+ 00h 00' 12''</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">3</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--gbr"></span><a href="/en/rider/31">OSCAR ONLEY</a></td>
+          <td class="is-alignCenter">31</td>
+          <td class="break-line team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">10h 01' 13''</td>
+          <td class="is-alignCenter time">+ 00h 00' 12''</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  const stageHtml = `<p class="noRanking la">No edition of individual classification during a Team Time Trial</p>`;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchTourAuvergneRhoneAlpesOfficialSnapshot(
+        {
+          pageTitle: "2026 Tour Auvergne-Rhône-Alpes",
+          startDate: new Date("2026-06-07T00:00:00Z"),
+          endDate: new Date("2026-06-14T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/itg/")) {
+            return generalHtml;
+          }
+
+          if (url.includes("/ite/")) {
+            return stageHtml;
+          }
+
+          return rankingsHtml;
+        },
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 3);
+  assert.equal(snapshot.latestStage, null);
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Alex Baudin", countryCode: "FRA", time: "10:01:01" },
+    { place: "2", rider: "Kévin Vauquelin", countryCode: "FRA", gap: "+00:12", time: "10:01:13" },
+    { place: "3", rider: "Oscar Onley", countryCode: "GBR", gap: "+00:12", time: "10:01:13" },
   ]);
 });
 

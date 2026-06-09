@@ -1647,6 +1647,139 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
   return buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race);
 }
 
+const TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL = "https://www.tour-auvergne-rhone-alpes.fr/en/rankings";
+
+function extractTourAuvergneRhoneAlpesOfficialStageInfo(html, race) {
+  const text = String(html || "");
+  const titleStageNumber = Number.parseInt(
+    text.match(/Official classifications of Tour Auvergne-Rh[oô]ne-Alpes\s*-\s*Stage\s*(\d+)/i)?.[1] || "",
+    10,
+  );
+  const listedStages = [...text.matchAll(/stage-select__option__stage">\s*Stage\s*(\d+)\s*</gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite);
+  const totalStages = Math.max(...listedStages, inferStageCountFromDates(race) || 0);
+  const stageNumber =
+    titleStageNumber ||
+    listedStages.reduce((max, value) => Math.max(max, value), 0) ||
+    Number.parseInt(text.match(/2026 Rankings\s*-\s*Stage\s*(\d+)/i)?.[1] || "", 10) ||
+    0;
+
+  return {
+    stageNumber,
+    totalStages,
+  };
+}
+
+function extractTourAuvergneRhoneAlpesGeneralAjaxUrl(html) {
+  const decoded = decodeHtml(String(html || ""));
+  const path =
+    decoded.match(/data-tabs-ajax="([^"]+\/itg\/[^"]+\/subtab)"/)?.[1] ||
+    decoded.match(/"itg":"([^"]+)"/)?.[1] ||
+    "";
+
+  if (!path) {
+    return "";
+  }
+
+  return new URL(path.replace(/\\\//g, "/"), TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL).toString();
+}
+
+function extractTourAuvergneRhoneAlpesStageAjaxUrl(html) {
+  const decoded = decodeHtml(String(html || ""));
+  const path = decoded.match(/"ite":"([^"]+)"/)?.[1] || "";
+
+  if (!path) {
+    return "";
+  }
+
+  return new URL(path.replace(/\\\//g, "/"), TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL).toString();
+}
+
+function parseTourAuvergneRhoneAlpesOfficialStandings(html) {
+  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) {
+    return [];
+  }
+
+  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const row = match[1];
+      const place = Number.parseInt(row.match(/<td class="is-alignCenter">(\d+)<\/td>/i)?.[1] || "", 10);
+      const rider = toTitleCaseWords(
+        cleanFeedText(row.match(/<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i)?.[1] || ""),
+      );
+      const countryCode = normalizeCountryCode((row.match(/data-class="flag--([a-z]{2,3})"/i)?.[1] || "").toUpperCase());
+      const timeCells = [...row.matchAll(/<td class="is-alignCenter time">\s*([\s\S]*?)\s*<\/td>/gi)]
+        .map((cell) => decodeHtml(cleanFeedText(cell[1] || "")));
+      const time = normalizeStandingTime(timeCells[0] || "");
+      const gap = normalizeStandingGap(timeCells[1] || "");
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode, gap, time) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+function buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race) {
+  const { stageNumber, totalStages } = extractTourAuvergneRhoneAlpesOfficialStageInfo(rankingsHtml, race);
+  const stageStandings = /No edition of individual classification during a Team Time Trial/i.test(stageHtml || "")
+    ? []
+    : parseTourAuvergneRhoneAlpesOfficialStandings(stageHtml);
+  const gcStandings = parseTourAuvergneRhoneAlpesOfficialStandings(generalHtml);
+
+  if (stageNumber <= 0 || (stageStandings.length === 0 && gcStandings.length === 0)) {
+    return null;
+  }
+
+  return {
+    totalStages: totalStages || inferStageCountFromDates(race) || 8,
+    completedStages: stageNumber,
+    latestStage:
+      stageStandings.length > 0
+        ? {
+            number: stageNumber,
+            label: `Stage ${stageNumber}`,
+            standings: stageStandings,
+            ...getWinnerDetails(stageStandings),
+          }
+        : null,
+    generalClassification:
+      gcStandings.length > 0
+        ? {
+            stageNumber,
+            standings: gcStandings,
+            ...getLeaderDetails(gcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
+async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fetchText) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+
+  if (
+    race?.pageTitle !== "2026 Tour Auvergne-Rhône-Alpes" ||
+    getRaceYear(race) !== 2026 ||
+    !startUtc ||
+    !endUtc ||
+    todayUtc.getTime() < startUtc.getTime() ||
+    todayUtc.getTime() > endUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const rankingsHtml = await fetchHtml(TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL);
+  const stageUrl = extractTourAuvergneRhoneAlpesStageAjaxUrl(rankingsHtml);
+  const generalUrl = extractTourAuvergneRhoneAlpesGeneralAjaxUrl(rankingsHtml);
+  const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
+  const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
+  return buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race);
+}
+
 function getStageRaceSnapshotQuality(snapshot) {
   if (!snapshot) {
     return [-1, -1, -1, -1];
@@ -1983,6 +2116,23 @@ function normalizeStandingGap(value) {
     return "";
   }
 
+  const asoMatch = cleaned.match(/\+?\s*(?:(\d+)h\s*)?(\d{1,2})'\s*(\d{2})''/i);
+  if (asoMatch) {
+    const hours = Number.parseInt(asoMatch[1] || "0", 10);
+    const minutes = Number.parseInt(asoMatch[2] || "0", 10);
+    const seconds = Number.parseInt(asoMatch[3] || "0", 10);
+
+    if (hours === 0 && minutes === 0 && seconds === 0) {
+      return "";
+    }
+
+    if (hours > 0) {
+      return `+${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    return `+${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
   const match = cleaned.match(/\+?\s*(\d+(?::\d{2}){1,2})/);
   return match ? `+${match[1]}` : "";
 }
@@ -1995,6 +2145,19 @@ function normalizeStandingTime(value) {
 
   if (!cleaned || cleaned === "-" || cleaned === "0:00") {
     return "";
+  }
+
+  const asoMatch = cleaned.match(/(?:(\d+)h\s*)?(\d{1,2})'\s*(\d{2})''/i);
+  if (asoMatch) {
+    const hours = Number.parseInt(asoMatch[1] || "0", 10);
+    const minutes = Number.parseInt(asoMatch[2] || "0", 10);
+    const seconds = Number.parseInt(asoMatch[3] || "0", 10);
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
   }
 
   const match = cleaned.match(/\b(\d+(?::\d{2}){1,2})\b/);
@@ -2965,6 +3128,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "tour-of-greece-results",
     matches: (race) => race?.pageTitle === "Tour of Greece",
     load: fetchTourOfGreeceOfficialSnapshot,
+  },
+  {
+    id: "tour-auvergne-rhone-alpes-rankings",
+    matches: (race) => race?.pageTitle === "2026 Tour Auvergne-Rhône-Alpes",
+    load: fetchTourAuvergneRhoneAlpesOfficialSnapshot,
   },
   {
     id: "giro-ditalia-stage-one",
