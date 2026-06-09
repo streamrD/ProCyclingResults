@@ -917,6 +917,7 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
     <span class="stage-select__option__stage">Stage 3</span>
     <button data-ajax-stack = {&quot;itg&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/itg\\/hash-gc\\/none&quot;}></button>
     <button data-ajax-stack = {&quot;ite&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/ite\\/hash-stage\\/none&quot;}></button>
+    <button data-ajax-stack = {&quot;ete&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/ete\\/hash-team-stage\\/none&quot;}></button>
   `;
   const generalHtml = `
     <table class="rankingTable">
@@ -949,6 +950,30 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
     </table>
   `;
   const stageHtml = `<p class="noRanking la">No edition of individual classification during a Team Time Trial</p>`;
+  const teamStageHtml = `
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="is-alignCenter">1</td>
+          <td class="break-line is-sticky team"><a href="/en/team/TVL">TEAM VISMA | LEASE A BIKE</a></td>
+          <td class="is-alignCenter time">00h 32' 52''</td>
+          <td class="is-alignCenter time">-</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">2</td>
+          <td class="break-line is-sticky team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">00h 33' 01''</td>
+          <td class="is-alignCenter time">+ 00h 00' 09''</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">3</td>
+          <td class="break-line is-sticky team"><a href="/en/team/EFE">EF EDUCATION - EASYPOST</a></td>
+          <td class="is-alignCenter time">00h 33' 21''</td>
+          <td class="is-alignCenter time">+ 00h 00' 29''</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
 
   const snapshot = JSON.parse(
     JSON.stringify(
@@ -967,6 +992,10 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
             return stageHtml;
           }
 
+          if (url.includes("/ete/")) {
+            return teamStageHtml;
+          }
+
           return rankingsHtml;
         },
       ),
@@ -974,7 +1003,16 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
   );
 
   assert.equal(snapshot.completedStages, 3);
-  assert.equal(snapshot.latestStage, null);
+  assert.deepEqual(snapshot.latestStage, {
+    number: 3,
+    label: "Stage 3",
+    standings: [
+      { place: "1", rider: "Team Visma | Lease A Bike", time: "32:52" },
+      { place: "2", rider: "Netcompany Ineos Cycling Team", gap: "+00:09", time: "33:01" },
+      { place: "3", rider: "Ef Education - Easypost", gap: "+00:29", time: "33:21" },
+    ],
+    winner: "Team Visma | Lease A Bike",
+  });
   assert.deepEqual(snapshot.generalClassification.standings, [
     { place: "1", rider: "Alex Baudin", countryCode: "FRA", time: "10:01:01" },
     { place: "2", rider: "Kévin Vauquelin", countryCode: "FRA", gap: "+00:12", time: "10:01:13" },

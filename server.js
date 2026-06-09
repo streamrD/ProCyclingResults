@@ -1525,6 +1525,59 @@ async function fetchTourDeRomandieOfficialSnapshot(race) {
 }
 
 const LA_VUELTA_FEMENINA_RANKINGS_URL = "https://www.lavueltafemenina.es/en/rankings";
+const TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL = "https://www.tour-auvergne-rhone-alpes.fr/en/rankings";
+
+function extractAsoRankingsAjaxUrl(html, baseUrl, type) {
+  const decoded = decodeHtml(String(html || ""));
+  const path =
+    decoded.match(new RegExp(`data-tabs-ajax="([^"]+\\/${type}\\/[^"]+\\/subtab)"`))?.[1] ||
+    decoded.match(new RegExp(`"${type}":"([^"]+)"`))?.[1] ||
+    "";
+
+  if (!path) {
+    return "";
+  }
+
+  return new URL(path.replace(/\\\//g, "/"), baseUrl).toString();
+}
+
+function parseAsoOfficialStandings(html, options = {}) {
+  const riderCellPattern = options.riderCellPattern || /<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i;
+  const includeCountry = options.includeCountry !== false;
+  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) {
+    return [];
+  }
+
+  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const row = match[1];
+      const place = Number.parseInt(row.match(/<td class="is-alignCenter">(\d+)<\/td>/i)?.[1] || "", 10);
+      const label = toTitleCaseWords(cleanFeedText(row.match(riderCellPattern)?.[1] || ""));
+      const countryCode = includeCountry
+        ? normalizeCountryCode((row.match(/data-class="flag--([a-z]{2,3})"/i)?.[1] || "").toUpperCase())
+        : "";
+      const timeCells = [...row.matchAll(/<td class="is-alignCenter time">\s*([\s\S]*?)\s*<\/td>/gi)]
+        .map((cell) => decodeHtml(cleanFeedText(cell[1] || "")));
+      const time = normalizeStandingTime(timeCells[0] || "");
+      const gap = normalizeStandingGap(timeCells[1] || "");
+      return Number.isInteger(place) && label ? buildStandingEntry(place, label, countryCode, gap, time) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+function resolveAsoStageStandings(stageHtml, teamStageHtml = "", options = {}) {
+  const tttFallbackPattern = options.tttFallbackPattern || /No edition of individual classification during a Team Time Trial/i;
+  if (tttFallbackPattern.test(stageHtml || "")) {
+    return parseAsoOfficialStandings(teamStageHtml, {
+      riderCellPattern: /<td class="break-line is-sticky team[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i,
+      includeCountry: false,
+    });
+  }
+
+  return parseAsoOfficialStandings(stageHtml);
+}
 
 function extractLaVueltaFemeninaOfficialStageInfo(html, race) {
   const text = String(html || "");
@@ -1549,46 +1602,15 @@ function extractLaVueltaFemeninaOfficialStageInfo(html, race) {
 }
 
 function extractLaVueltaFemeninaGeneralAjaxUrl(html) {
-  const decoded = decodeHtml(String(html || ""));
-  const path =
-    decoded.match(/data-tabs-ajax="([^"]+\/itg\/[^"]+\/subtab)"/)?.[1] ||
-    decoded.match(/"itg":"([^"]+)"/)?.[1] ||
-    "";
-
-  if (!path) {
-    return "";
-  }
-
-  return new URL(path.replace(/\\\//g, "/"), LA_VUELTA_FEMENINA_RANKINGS_URL).toString();
+  return extractAsoRankingsAjaxUrl(html, LA_VUELTA_FEMENINA_RANKINGS_URL, "itg");
 }
 
 function extractLaVueltaFemeninaStageAjaxUrl(html) {
-  const decoded = decodeHtml(String(html || ""));
-  const path = decoded.match(/"ite":"([^"]+)"/)?.[1] || "";
-
-  if (!path) {
-    return "";
-  }
-
-  return new URL(path.replace(/\\\//g, "/"), LA_VUELTA_FEMENINA_RANKINGS_URL).toString();
+  return extractAsoRankingsAjaxUrl(html, LA_VUELTA_FEMENINA_RANKINGS_URL, "ite");
 }
 
 function parseLaVueltaFemeninaOfficialStandings(html) {
-  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) {
-    return [];
-  }
-
-  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .map((match) => {
-      const row = match[1];
-      const place = Number.parseInt(row.match(/<td class="is-alignCenter">(\d+)<\/td>/i)?.[1] || "", 10);
-      const rider = toTitleCaseWords(cleanFeedText(row.match(/<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i)?.[1] || ""));
-      const countryCode = normalizeCountryCode((row.match(/data-class="flag--([a-z]{2,3})"/i)?.[1] || "").toUpperCase());
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
-    })
-    .filter(Boolean)
-    .slice(0, MAX_RESULT_RIDERS);
+  return parseAsoOfficialStandings(html);
 }
 
 function buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race) {
@@ -1647,8 +1669,6 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
   return buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race);
 }
 
-const TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL = "https://www.tour-auvergne-rhone-alpes.fr/en/rankings";
-
 function extractTourAuvergneRhoneAlpesOfficialStageInfo(html, race) {
   const text = String(html || "");
   const titleStageNumber = Number.parseInt(
@@ -1672,59 +1692,24 @@ function extractTourAuvergneRhoneAlpesOfficialStageInfo(html, race) {
 }
 
 function extractTourAuvergneRhoneAlpesGeneralAjaxUrl(html) {
-  const decoded = decodeHtml(String(html || ""));
-  const path =
-    decoded.match(/data-tabs-ajax="([^"]+\/itg\/[^"]+\/subtab)"/)?.[1] ||
-    decoded.match(/"itg":"([^"]+)"/)?.[1] ||
-    "";
-
-  if (!path) {
-    return "";
-  }
-
-  return new URL(path.replace(/\\\//g, "/"), TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL).toString();
+  return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "itg");
 }
 
 function extractTourAuvergneRhoneAlpesStageAjaxUrl(html) {
-  const decoded = decodeHtml(String(html || ""));
-  const path = decoded.match(/"ite":"([^"]+)"/)?.[1] || "";
+  return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "ite");
+}
 
-  if (!path) {
-    return "";
-  }
-
-  return new URL(path.replace(/\\\//g, "/"), TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL).toString();
+function extractTourAuvergneRhoneAlpesTeamStageAjaxUrl(html) {
+  return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "ete");
 }
 
 function parseTourAuvergneRhoneAlpesOfficialStandings(html) {
-  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
-  if (!tbodyMatch) {
-    return [];
-  }
-
-  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .map((match) => {
-      const row = match[1];
-      const place = Number.parseInt(row.match(/<td class="is-alignCenter">(\d+)<\/td>/i)?.[1] || "", 10);
-      const rider = toTitleCaseWords(
-        cleanFeedText(row.match(/<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i)?.[1] || ""),
-      );
-      const countryCode = normalizeCountryCode((row.match(/data-class="flag--([a-z]{2,3})"/i)?.[1] || "").toUpperCase());
-      const timeCells = [...row.matchAll(/<td class="is-alignCenter time">\s*([\s\S]*?)\s*<\/td>/gi)]
-        .map((cell) => decodeHtml(cleanFeedText(cell[1] || "")));
-      const time = normalizeStandingTime(timeCells[0] || "");
-      const gap = normalizeStandingGap(timeCells[1] || "");
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode, gap, time) : null;
-    })
-    .filter(Boolean)
-    .slice(0, MAX_RESULT_RIDERS);
+  return parseAsoOfficialStandings(html);
 }
 
-function buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race) {
+function buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race) {
   const { stageNumber, totalStages } = extractTourAuvergneRhoneAlpesOfficialStageInfo(rankingsHtml, race);
-  const stageStandings = /No edition of individual classification during a Team Time Trial/i.test(stageHtml || "")
-    ? []
-    : parseTourAuvergneRhoneAlpesOfficialStandings(stageHtml);
+  const stageStandings = resolveAsoStageStandings(stageHtml, teamStageHtml);
   const gcStandings = parseTourAuvergneRhoneAlpesOfficialStandings(generalHtml);
 
   if (stageNumber <= 0 || (stageStandings.length === 0 && gcStandings.length === 0)) {
@@ -1774,10 +1759,12 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
 
   const rankingsHtml = await fetchHtml(TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL);
   const stageUrl = extractTourAuvergneRhoneAlpesStageAjaxUrl(rankingsHtml);
+  const teamStageUrl = extractTourAuvergneRhoneAlpesTeamStageAjaxUrl(rankingsHtml);
   const generalUrl = extractTourAuvergneRhoneAlpesGeneralAjaxUrl(rankingsHtml);
   const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
+  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
   const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
-  return buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race);
+  return buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race);
 }
 
 function getStageRaceSnapshotQuality(snapshot) {
