@@ -249,6 +249,9 @@ const RACE_FINISH_VIDEO_URLS = {
     13: "https://www.youtube.com/watch?v=RUOs9YzSato",
     19: "https://www.youtube.com/watch?v=CyQsfq_O6S4",
   },
+  "2026 Tour Auvergne-Rhône-Alpes": {
+    5: "https://www.youtube.com/watch?v=4VSnvDeUO4E",
+  },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
   "2026 Presidential Cycling Tour of Turkiye": "https://www.youtube.com/watch?v=yOl95xG1yUo",

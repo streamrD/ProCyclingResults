@@ -1946,6 +1946,16 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
     }),
     "https://www.youtube.com/watch?v=RUOs9YzSato",
   );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Tour Auvergne-Rhône-Alpes",
+      stageRace: {
+        completedStages: 5,
+      },
+    }),
+    "https://www.youtube.com/watch?v=4VSnvDeUO4E",
+  );
 });
 
 test("getRaceDataCacheTtlMs shortens cache TTL while live or just-finished races are active", () => {
