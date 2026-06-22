@@ -46,6 +46,7 @@ function loadParserExports() {
       extractVueltaABurgosFeminasLatestMetaUpdateText,
       getKnownVueltaABurgosFeminasGcStandings,
       fetchVueltaABurgosFeminasOfficialSnapshot,
+      fetchTourAuvergneRhoneAlpesOfficialSnapshot,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -678,6 +679,7 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
       { place: "4", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+01:26" },
       { place: "5", rider: "Monica Trinca Colonel", countryCode: "ITA", gap: "+01:31" },
     ],
+    finishVideoUrl: "",
     winner: "Anna Van Der Breggen",
     winnerCountryCode: "NED",
   });
@@ -693,6 +695,73 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
     leader: "Anna Van Der Breggen",
     leaderCountryCode: "NED",
   });
+});
+
+test("fetchGiroDItaliaWomenOfficialSnapshot prefers the current stage Last KM video", async () => {
+  const { fetchGiroDItaliaWomenOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <a class="single-tab-controller label-4 is-uppercase" href="https://www.giroditaliawomen.it/en/rankings/di-tappa/4" data-tab="classifiche-di-tappa">stage</a>
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-1">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const stageHtml = `
+    <div class="label-3">Stage <span class="label-3 js-n-stage">4</span></div>
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><div class="position is-pink">1</div><div class="flag"><img src="https://components2.rcsobjects.it/rcs_sport_classiche2021-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Anna</div><div class="surname p-3 is-bold">VAN DER BREGGEN</div></div></div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const videoHubHtml = `
+    <div class="single-slide">
+      <div class="videoHighlights__item">
+        <div class="videoHighlights__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/127978989"></div>
+        <span class="videoHighlights__info is-pink outline-pink">Stage 4</span>
+        <div class="videoHighlights__bottom">
+          <p class="videoHighlights__txt">Giro d'Italia Women 2026 | Stage 4 | Highlights</p>
+        </div>
+      </div>
+    </div>
+    <div class="single-slide sliderType__slide">
+      <div class="sliderType__item">
+        <div class="sliderType__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/127976169"></div>
+        <span class="sliderType__info is-pink outline-pink">Stage 4</span>
+        <div class="sliderType__bottom">
+          <p class="sliderType__txt">Giro d'Italia Women 2026 | Stage 4 | Last KM</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaWomenOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia Women",
+          startDate: new Date("2026-05-27T00:00:00Z"),
+          endDate: new Date("2026-06-04T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/en/video/")) {
+            return videoHubHtml;
+          }
+
+          return url.includes("/di-tappa/") ? stageHtml : rankingsHtml;
+        },
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.latestStage.finishVideoUrl, "https://video.giroditaliawomen.it/video/127976169");
 });
 
 test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content served under a newer stage URL", async () => {
@@ -759,6 +828,199 @@ test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content ser
     leader: "Anna Van Der Breggen",
     leaderCountryCode: "NED",
   });
+});
+
+test("fetchGiroDItaliaWomenOfficialSnapshot still uses the official source after the race end date", async () => {
+  const { fetchGiroDItaliaWomenOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <a class="single-tab-controller label-4 is-uppercase" href="https://www.giroditaliawomen.it/en/rankings/di-tappa/9" data-tab="classifiche-di-tappa">stage</a>
+    <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Demi</div><div class="surname p-3 is-bold">VOLLERING</div></div></div>
+          <div class="tempo p-3 is-text-right">24:18:11</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ger.png"></div><div class="atleta-info"><div class="name p-3">Antonia</div><div class="surname p-3 is-bold">NIEDERMAIER</div></div></div>
+          <div class="tempo p-3 is-text-right">24:18:49</div>
+          <div class="distacco p-3 is-text-right">0:38</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const stageHtml = `
+    <div class="label-3">Stage <span class="label-3 js-n-stage">9</span></div>
+    <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+      <div class="table type-4">
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Elisa</div><div class="surname p-3 is-bold">LONGO BORGHINI</div></div></div>
+          <div class="tempo p-3 is-text-right">3:47:12</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+        <div class="line-table">
+          <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ned.png"></div><div class="atleta-info"><div class="name p-3">Demi</div><div class="surname p-3 is-bold">VOLLERING</div></div></div>
+          <div class="tempo p-3 is-text-right">3:47:12</div>
+          <div class="distacco p-3 is-text-right">0:00</div>
+        </div>
+      </div>
+    </div>
+  `;
+  const videoHubHtml = `
+    <div class="single-slide sliderType__slide">
+      <div class="sliderType__item">
+        <div class="sliderType__btn btnVideo js-btn-modal-media" data-media="https://video.giroditaliawomen.it/video/128999999"></div>
+        <span class="sliderType__info is-pink outline-pink">Stage 9</span>
+        <div class="sliderType__bottom">
+          <p class="sliderType__txt">Giro d'Italia Women 2026 | Stage 9 | Last KM</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaWomenOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia Women",
+          startDate: new Date("2026-05-30T00:00:00Z"),
+          endDate: new Date("2026-06-07T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/en/video/")) {
+            return videoHubHtml;
+          }
+
+          return url.includes("/di-tappa/") ? stageHtml : rankingsHtml;
+        },
+        new Date("2026-06-08T12:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 9);
+  assert.equal(snapshot.latestStage.number, 9);
+  assert.equal(snapshot.latestStage.finishVideoUrl, "https://video.giroditaliawomen.it/video/128999999");
+  assert.deepEqual(snapshot.latestStage.standings, [
+    { place: "1", rider: "Elisa Longo Borghini", countryCode: "ITA", time: "3:47:12" },
+    { place: "2", rider: "Demi Vollering", countryCode: "NED", time: "3:47:12" },
+  ]);
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Demi Vollering", countryCode: "NED", time: "24:18:11" },
+    { place: "2", rider: "Antonia Niedermaier", countryCode: "GER", gap: "+0:38", time: "24:18:49" },
+  ]);
+});
+
+test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time trial stage without individual stage standings", async () => {
+  const { fetchTourAuvergneRhoneAlpesOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <title>Official classifications of Tour Auvergne-Rhône-Alpes - Stage 3</title>
+    <span class="stage-select__option__stage">Stage 1</span>
+    <span class="stage-select__option__stage">Stage 2</span>
+    <span class="stage-select__option__stage">Stage 3</span>
+    <button data-ajax-stack = {&quot;itg&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/itg\\/hash-gc\\/none&quot;}></button>
+    <button data-ajax-stack = {&quot;ite&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/ite\\/hash-stage\\/none&quot;}></button>
+    <button data-ajax-stack = {&quot;ete&quot;:&quot;\\/en\\/ajax\\/ranking\\/3\\/ete\\/hash-team-stage\\/none&quot;}></button>
+  `;
+  const generalHtml = `
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="is-alignCenter">1</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--fra"></span><a href="/en/rider/72">ALEX BAUDIN</a></td>
+          <td class="is-alignCenter">72</td>
+          <td class="break-line team"><a href="/en/team/EFE">EF EDUCATION - EASYPOST</a></td>
+          <td class="is-alignCenter time">10h 01' 01''</td>
+          <td class="is-alignCenter time">-</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">2</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--fra"></span><a href="/en/rider/36">KÉVIN VAUQUELIN</a></td>
+          <td class="is-alignCenter">36</td>
+          <td class="break-line team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">10h 01' 13''</td>
+          <td class="is-alignCenter time">+ 00h 00' 12''</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">3</td>
+          <td class="runner is-sticky"><span class="flag js-display-lazy" data-class="flag--gbr"></span><a href="/en/rider/31">OSCAR ONLEY</a></td>
+          <td class="is-alignCenter">31</td>
+          <td class="break-line team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">10h 01' 13''</td>
+          <td class="is-alignCenter time">+ 00h 00' 12''</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+  const stageHtml = `<p class="noRanking la">No edition of individual classification during a Team Time Trial</p>`;
+  const teamStageHtml = `
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="is-alignCenter">1</td>
+          <td class="break-line is-sticky team"><a href="/en/team/TVL">TEAM VISMA | LEASE A BIKE</a></td>
+          <td class="is-alignCenter time">00h 32' 52''</td>
+          <td class="is-alignCenter time">-</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">2</td>
+          <td class="break-line is-sticky team"><a href="/en/team/NCI">NETCOMPANY INEOS CYCLING TEAM</a></td>
+          <td class="is-alignCenter time">00h 33' 01''</td>
+          <td class="is-alignCenter time">+ 00h 00' 09''</td>
+        </tr>
+        <tr>
+          <td class="is-alignCenter">3</td>
+          <td class="break-line is-sticky team"><a href="/en/team/EFE">EF EDUCATION - EASYPOST</a></td>
+          <td class="is-alignCenter time">00h 33' 21''</td>
+          <td class="is-alignCenter time">+ 00h 00' 29''</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchTourAuvergneRhoneAlpesOfficialSnapshot(
+        {
+          pageTitle: "2026 Tour Auvergne-Rhône-Alpes",
+          startDate: new Date("2026-06-07T00:00:00Z"),
+          endDate: new Date("2026-06-14T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/itg/")) {
+            return generalHtml;
+          }
+
+          if (url.includes("/ite/")) {
+            return stageHtml;
+          }
+
+          if (url.includes("/ete/")) {
+            return teamStageHtml;
+          }
+
+          return rankingsHtml;
+        },
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 3);
+  assert.deepEqual(snapshot.latestStage, {
+    number: 3,
+    label: "Stage 3",
+    standings: [
+      { place: "1", rider: "Team Visma | Lease A Bike", time: "32:52" },
+      { place: "2", rider: "Netcompany Ineos Cycling Team", gap: "+00:09", time: "33:01" },
+      { place: "3", rider: "Ef Education - Easypost", gap: "+00:29", time: "33:21" },
+    ],
+    winner: "Team Visma | Lease A Bike",
+  });
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Alex Baudin", countryCode: "FRA", time: "10:01:01" },
+    { place: "2", rider: "Kévin Vauquelin", countryCode: "FRA", gap: "+00:12", time: "10:01:13" },
+    { place: "3", rider: "Oscar Onley", countryCode: "GBR", gap: "+00:12", time: "10:01:13" },
+  ]);
 });
 
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {
@@ -1634,6 +1896,73 @@ test("selectPreferredStageRaceSnapshot prefers a rich current Giro snapshot over
   assert.equal(preferred.generalClassification.stageNumber, 8);
 });
 
+test("fetchGiroDItaliaOfficialSnapshot still uses the official Giro source after the race end date", async () => {
+  const { fetchGiroDItaliaOfficialSnapshot } = loadParserExports();
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      await fetchGiroDItaliaOfficialSnapshot(
+        {
+          pageTitle: "2026 Giro d'Italia",
+          startDate: new Date("2026-05-08T00:00:00Z"),
+          endDate: new Date("2026-05-31T00:00:00Z"),
+        },
+        async (url) => {
+          if (url.includes("/classifiche/di-tappa/21/")) {
+            return `
+              <div class="single-tab js-tab-classifica-ORARR is-active" data-category="tab-classifica-ORARR">
+                <div class="table type-4">
+                  <div class="line-table">
+                    <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Jonathan</div><div class="surname p-3 is-bold">MILAN</div></div></div>
+                  </div>
+                  <div class="line-table">
+                    <div class="corridore p-3"><h5 class="position is-pink">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/ita.png"></div><div class="atleta-info"><div class="name p-3">Giovanni</div><div class="surname p-3 is-bold">LONARDI</div></div></div>
+                  </div>
+                </div>
+              </div>`;
+          }
+
+          if (url.includes("/livefeed/tappa/21/")) {
+            return JSON.stringify({ cronaca_sintesi: { entries: [] } });
+          }
+
+          if (url.includes("/classifiche/")) {
+            return `
+                <a href="/en/classifiche/di-tappa/21/">Stage 21</a>
+                <div class="single-tab js-tab-classifica-CLGEN is-active" data-category="tab-classifica-CLGEN">
+                  <div class="table type-4">
+                    <div class="line-table">
+                      <div class="corridore p-3"><h5 class="position is-pink">1</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/den.png"></div><div class="atleta-info"><div class="name p-3">Jonas</div><div class="surname p-3 is-bold">VINGEGAARD</div></div></div>
+                      <div class="tempo p-3 is-text-right">83:22:51</div>
+                      <div class="distacco p-3 is-text-right">0:00</div>
+                    </div>
+                    <div class="line-table">
+                      <div class="corridore p-3"><h5 class="position">2</h5><div class="flag"><img data-src="https://components2.rcsobjects.it/rcs_sport_giro2020-layout/v0/assets/img/ext/athletes-flags/aut.png"></div><div class="atleta-info"><div class="name p-3">Felix</div><div class="surname p-3 is-bold">GALL</div></div></div>
+                      <div class="tempo p-3 is-text-right">83:28:13</div>
+                      <div class="distacco p-3 is-text-right">5:22</div>
+                    </div>
+                  </div>
+                </div>`;
+          }
+
+          throw new Error(`Unexpected URL: ${url}`);
+        },
+        new Date("2026-06-02T12:00:00Z"),
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 21);
+  assert.equal(snapshot.latestStage.number, 21);
+  assert.deepEqual(snapshot.latestStage.standings, [
+    { place: "1", rider: "Jonathan Milan", countryCode: "ITA" },
+    { place: "2", rider: "Giovanni Lonardi", countryCode: "ITA" },
+  ]);
+  assert.deepEqual(snapshot.generalClassification.standings, [
+    { place: "1", rider: "Jonas Vingegaard", countryCode: "DEN", time: "83:22:51" },
+    { place: "2", rider: "Felix Gall", countryCode: "AUT", time: "83:28:13", gap: "+5:22" },
+  ]);
+});
+
 test("isRaceWithinScheduledLiveWindow keeps a scheduled live stage race visible", () => {
   const { isRaceWithinScheduledLiveWindow } = loadParserExports();
   const race = {
@@ -1739,6 +2068,16 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
       },
     }),
     "https://www.youtube.com/watch?v=RUOs9YzSato",
+  );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Tour Auvergne-Rhône-Alpes",
+      stageRace: {
+        completedStages: 5,
+      },
+    }),
+    "https://www.youtube.com/watch?v=4VSnvDeUO4E",
   );
 });
 
