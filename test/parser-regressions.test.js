@@ -47,6 +47,12 @@ function loadParserExports() {
       getKnownVueltaABurgosFeminasGcStandings,
       fetchVueltaABurgosFeminasOfficialSnapshot,
       fetchTourAuvergneRhoneAlpesOfficialSnapshot,
+      parseLetourOfficialStandings,
+      extractTourDeFranceOfficialStageInfo,
+      extractTourDeFranceStageAjaxUrl,
+      extractTourDeFranceGeneralAjaxUrl,
+      buildTourDeFranceOfficialSnapshot,
+      fetchTourDeFranceOfficialSnapshot,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -1021,6 +1027,87 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
     { place: "2", rider: "Kévin Vauquelin", countryCode: "FRA", gap: "+00:12", time: "10:01:13" },
     { place: "3", rider: "Oscar Onley", countryCode: "GBR", gap: "+00:12", time: "10:01:13" },
   ]);
+});
+
+test("parseLetourOfficialStandings reads the full Tour de France top five with names from rider links", () => {
+  const { parseLetourOfficialStandings } = loadParserExports();
+  const stageHtml = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-stage21-ite.html"),
+    "utf8",
+  );
+
+  const standings = parseLetourOfficialStandings(stageHtml);
+
+  assert.equal(standings.length, 5);
+  assert.deepEqual(
+    [...standings].map((entry) => `${entry.place}:${entry.rider}`),
+    ["1:Wout Van Aert", "2:Davide Ballerini", "3:Matej Mohoric", "4:Tadej Pogacar", "5:Matteo Jorgenson"],
+  );
+  // Country and stage time are carried through for the winner.
+  assert.equal(standings[0].countryCode, "BEL");
+  assert.equal(standings[0].time, "3:07:30");
+});
+
+test("extractTourDeFranceOfficialStageInfo uses the stage menu, not rest-day calendar inference", () => {
+  const { extractTourDeFranceOfficialStageInfo } = loadParserExports();
+  const rankingsHtml = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-rankings-stage21.html"),
+    "utf8",
+  );
+
+  const info = extractTourDeFranceOfficialStageInfo(rankingsHtml, {
+    startDate: new Date("2026-07-04T00:00:00Z"),
+    endDate: new Date("2026-07-26T00:00:00Z"),
+  });
+
+  assert.equal(info.stageNumber, 21);
+  assert.equal(info.totalStages, 21);
+});
+
+test("buildTourDeFranceOfficialSnapshot builds a full stage + GC snapshot from letour.fr", () => {
+  const { buildTourDeFranceOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-rankings-stage21.html"),
+    "utf8",
+  );
+  const stageHtml = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-stage21-ite.html"),
+    "utf8",
+  );
+
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, "", rankingsHtml, {
+        pageTitle: "2026 Tour de France",
+        startDate: new Date("2026-07-04T00:00:00Z"),
+        endDate: new Date("2026-07-26T00:00:00Z"),
+      }),
+    ),
+  );
+
+  assert.equal(snapshot.totalStages, 21);
+  assert.equal(snapshot.completedStages, 21);
+  assert.equal(snapshot.latestStage.winner, "Wout Van Aert");
+  assert.equal(snapshot.latestStage.standings.length, 5);
+  assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
+  assert.equal(snapshot.generalClassification.standings.length, 5);
+});
+
+test("fetchTourDeFranceOfficialSnapshot is gated to the current edition before the race starts", async () => {
+  const { fetchTourDeFranceOfficialSnapshot } = loadParserExports();
+
+  const snapshot = await fetchTourDeFranceOfficialSnapshot(
+    {
+      pageTitle: "2026 Tour de France",
+      startDate: new Date("2099-07-04T00:00:00Z"),
+      endDate: new Date("2099-07-26T00:00:00Z"),
+    },
+    async () => {
+      throw new Error("should not fetch before the race window");
+    },
+  );
+
+  assert.equal(snapshot, null);
 });
 
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {

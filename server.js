@@ -29,6 +29,10 @@ const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
+// Per-attempt request timeout. A hung upstream would otherwise stall a synchronous
+// live-race rebuild indefinitely; a timed-out attempt is retried like any other
+// transient failure and ultimately degrades to partial data in enrichment paths.
+const FETCH_TIMEOUT_MS = 10 * 1000;
 const NATIONAL_CHAMPIONSHIPS_SOURCE_URL =
   "https://www.cyclingnews.com/pro-cycling/racing/2026-road-national-champions-index/";
 const NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL = "Cyclingnews 2026 Road National Champions index";
@@ -1064,10 +1068,11 @@ async function fetchText(url) {
         headers: {
           "user-agent": "Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://wikipedia.org)",
         },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
 
       if (response.ok) {
-        return response.text();
+        return await response.text();
       }
 
       if ((response.status === 429 || response.status >= 500) && attempt < FETCH_RETRY_DELAYS_MS.length) {
@@ -2129,6 +2134,154 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
   const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
   const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
   return buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race);
+}
+
+const TOUR_DE_FRANCE_RANKINGS_URL = "https://www.letour.fr/en/rankings";
+
+// letour.fr runs the same ASO rankings platform as the Tour Auvergne / La Vuelta
+// Femenina providers, but the current markup keeps the rank inside a <span> and
+// the rider name only in the picture `alt` attribute (no anchor), so it needs a
+// dedicated row parser rather than the shared parseAsoOfficialStandings helper.
+function parseLetourOfficialStandings(html) {
+  const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) {
+    return [];
+  }
+
+  return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => {
+      const row = match[1];
+      const place = Number.parseInt(
+        row.match(/<td class="rankingTables__row__position[^"]*"[^>]*>\s*(?:<span[^>]*>)?\s*(\d+)/i)?.[1] || "",
+        10,
+      );
+      // Every rider links to /en/rider/{id}/{team}/{first-last}, whose final slug
+      // carries the full name even for riders without a jersey photo `alt` (the
+      // visible cell text is otherwise abbreviated to "T. Pogacar").
+      const slugName = (row.match(/\/en\/rider\/\d+\/[^/]+\/([a-z0-9-]+)/i)?.[1] || "").replace(/-/g, " ").trim();
+      const altName = cleanFeedText(row.match(/<img[^>]*\balt="([^"]+)"/i)?.[1] || "");
+      const profileText = cleanFeedText(row.match(/<td class="[^"]*\brunner\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
+      const rider = toTitleCaseWords(slugName || altName || profileText);
+      const countryCode = normalizeCountryCode((row.match(/flag--([a-z]{2,3})\b/i)?.[1] || "").toUpperCase());
+      const timeCells = [...row.matchAll(/<td class="is-alignCenter time">\s*([\s\S]*?)\s*<\/td>/gi)].map((cell) =>
+        decodeHtml(cleanFeedText(cell[1] || "")),
+      );
+      const time = normalizeStandingTime(timeCells[0] || "");
+      const gap = normalizeStandingGap(timeCells[1] || "");
+      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode, gap, time) : null;
+    })
+    .filter(Boolean)
+    .slice(0, MAX_RESULT_RIDERS);
+}
+
+function extractTourDeFranceOfficialStageInfo(html, race) {
+  const text = String(html || "");
+  const titleStageNumber = Number.parseInt(
+    text.match(/Official classifications of Tour de France\s*\d*\s*-\s*Stage\s*(\d+)/i)?.[1] || "",
+    10,
+  );
+  const listedStages = [...text.matchAll(/stage-select__option__stage">\s*Stage\s*(\d+)\s*</gi)]
+    .map((match) => Number.parseInt(match[1], 10))
+    .filter(Number.isFinite);
+  // The stage menu is authoritative for a Grand Tour; calendar-day inference would
+  // over-count because of rest days, so only use it when the menu is unavailable.
+  const totalStages =
+    listedStages.length > 0 ? Math.max(...listedStages) : inferStageCountFromDates(race) || 21;
+  const stageNumber =
+    titleStageNumber ||
+    listedStages.reduce((max, value) => Math.max(max, value), 0) ||
+    Number.parseInt(text.match(/(?:20\d\d) Rankings\s*-\s*Stage\s*(\d+)/i)?.[1] || "", 10) ||
+    0;
+
+  return {
+    stageNumber,
+    totalStages,
+  };
+}
+
+function extractTourDeFranceGeneralAjaxUrl(html) {
+  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "itg");
+}
+
+function extractTourDeFranceStageAjaxUrl(html) {
+  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "ite");
+}
+
+function extractTourDeFranceTeamStageAjaxUrl(html) {
+  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "ete");
+}
+
+function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
+  if (/No edition of individual classification during a Team Time Trial/i.test(stageHtml || "")) {
+    const teamStandings = parseLetourOfficialStandings(teamStageHtml);
+    if (teamStandings.length > 0) {
+      return teamStandings;
+    }
+  }
+
+  return parseLetourOfficialStandings(stageHtml);
+}
+
+function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race) {
+  const { stageNumber, totalStages } = extractTourDeFranceOfficialStageInfo(rankingsHtml, race);
+  // The main rankings page renders the general classification table inline, so it
+  // is a reliable GC source even before the AJAX general tab is fetched.
+  const stageStandings = resolveLetourStageStandings(stageHtml, teamStageHtml);
+  const gcStandings = parseLetourOfficialStandings(generalHtml) || [];
+  const inlineGcStandings = gcStandings.length > 0 ? gcStandings : parseLetourOfficialStandings(rankingsHtml);
+
+  if (stageNumber <= 0 || (stageStandings.length === 0 && inlineGcStandings.length === 0)) {
+    return null;
+  }
+
+  return {
+    totalStages: totalStages || inferStageCountFromDates(race) || 21,
+    completedStages: stageNumber,
+    latestStage:
+      stageStandings.length > 0
+        ? {
+            number: stageNumber,
+            label: `Stage ${stageNumber}`,
+            standings: stageStandings,
+            ...getWinnerDetails(stageStandings),
+          }
+        : null,
+    generalClassification:
+      inlineGcStandings.length > 0
+        ? {
+            stageNumber,
+            standings: inlineGcStandings,
+            ...getLeaderDetails(inlineGcStandings),
+          }
+        : null,
+    overallResult: [],
+  };
+}
+
+async function fetchTourDeFranceOfficialSnapshot(race, fetchHtml = fetchText) {
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const startUtc = toUtcDateOnly(race?.startDate);
+  const endUtc = toUtcDateOnly(race?.endDate);
+
+  if (
+    race?.pageTitle !== "2026 Tour de France" ||
+    getRaceYear(race) !== 2026 ||
+    !startUtc ||
+    !endUtc ||
+    todayUtc.getTime() < startUtc.getTime()
+  ) {
+    return null;
+  }
+
+  const rankingsHtml = await fetchHtml(TOUR_DE_FRANCE_RANKINGS_URL);
+  const stageUrl = extractTourDeFranceStageAjaxUrl(rankingsHtml);
+  const teamStageUrl = extractTourDeFranceTeamStageAjaxUrl(rankingsHtml);
+  const generalUrl = extractTourDeFranceGeneralAjaxUrl(rankingsHtml);
+  const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
+  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
+  const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
+  return buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race);
 }
 
 function getStageRaceSnapshotQuality(snapshot) {
@@ -3489,6 +3642,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "giro-ditalia-stage-one",
     matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
     load: fetchGiroDItaliaOfficialSnapshot,
+  },
+  {
+    id: "tour-de-france-rankings",
+    matches: (race) => race?.pageTitle === "2026 Tour de France",
+    load: fetchTourDeFranceOfficialSnapshot,
   },
   {
     id: "giro-ditalia-women-rankings",

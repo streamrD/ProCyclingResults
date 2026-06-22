@@ -12,6 +12,10 @@ The codebase is intentionally minimal:
 
 This README is written as a technical handoff for a future engineer or LLM agent that needs enough context to extend or debug the project without relying on prior chat history.
 
+## Companion Handoff File
+
+Use `handoff.md` alongside this README when transferring the project to another AI or engineer. This README is the durable architecture and runbook reference; `handoff.md` is the current cross-reference map with local audit notes, code landmarks, known sharp edges, and suggested first checks for a new agent.
+
 ## Product Purpose
 
 The app is a live race desk for selected 2026 UCI calendars. It surfaces:
@@ -66,6 +70,7 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 │   └── proseries-europe-tour-sections.js
 ├── data/
 │   └── static-stage-race-snapshots.json
+├── handoff.md
 ├── package.json
 ├── README.md
 ├── scripts/
@@ -114,6 +119,8 @@ There is currently:
   Returns the active homepage payload used by `/`. This contains WorldTour race data plus national championships.
 - `/api/races`
   Returns the active aggregated race payload as JSON. It currently mirrors the WorldTour plus national championship product scope.
+- `/api/build-info`
+  Returns a small manually maintained deployment-debug payload from `BUILD_INFO` in `server.js`. It is useful as a release marker, but it is not automatically synchronized with the current Git commit unless someone updates it.
 - `/api/competition-section?group=<id>`
   Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
 - `/api/competition-coverage?group=<id>`
@@ -191,6 +198,8 @@ Current special cases:
   Pulls the official rankings page plus its GC AJAX partial to recover current stage and GC standings
 - Tour of Greece
   Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
+- Tour de France
+  Pulls the official letour.fr rankings page (same ASO platform as the Tour Auvergne / La Vuelta Femenina providers) to recover the full stage top five and general classification within minutes of a stage finish, well ahead of Wikipedia. letour.fr's current markup keeps the rank inside a `<span>` and the rider's full name only in the profile-link slug, so it uses a dedicated `parseLetourOfficialStandings` rather than the shared ASO parser. Gated to the 2026 edition from its start date onward.
 - Giro d'Italia
   Uses the official livefeed plus the official classifications page for stage / GC coverage when Wikipedia is still sparse. Giro finish-video links are sourced first from official livefeed `Last Km` video entries, with a small explicit fallback map retained for resilience. The shared Giro standings parser now accepts both the older `h5.position` row markup and the newer `div.position` variant used by current official pages.
 - Giro d'Italia Women
@@ -220,6 +229,7 @@ At a high level it does the following:
 6. Enrich recent or live races with standings and stage-race snapshots.
    Official and Wikipedia-derived stage-race data are merged field-by-field rather than treated as all-or-nothing snapshots.
    Wikipedia fetches are rate-limited and retried because fresh live-race refreshes can otherwise hit upstream `429` responses during busy race windows.
+   Every `fetchText` request also carries a per-attempt timeout (`FETCH_TIMEOUT_MS`), so a hung upstream is aborted and retried rather than stalling a synchronous live-race rebuild indefinitely.
    Cold-cache latency is therefore mostly an upstream-fetch problem rather than a rendering problem: live race rebuilds can touch multiple Wikipedia and official race pages, and the Wikipedia throttling guard intentionally trades speed for safer refresh behavior.
 7. Fetch and parse the national championship index, then expand rows into event-level records.
 8. Mark races that finished today.
