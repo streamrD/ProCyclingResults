@@ -162,6 +162,7 @@ Major areas:
 - Metadata and data cache loaders: `server.js:4673-4897`
 - API/debug payload builders: `server.js:4910-4941`
 - Race cards, standings, and finish-video rendering: `server.js:4953-5396`
+- Recent-results row reveal (`buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script): shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (9); revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync.
 - National Championships rendering: `server.js:5397-5549`
 - Competition group definitions: `server.js:5244-5283`
 - Full HTML page, inline CSS, and inline browser JS: `server.js:5590-6955`

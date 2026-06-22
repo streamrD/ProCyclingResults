@@ -77,6 +77,7 @@ function loadParserExports() {
       buildNationalChampionshipEventCard,
       buildNationalChampionshipsSection,
       getCompetitionGroups,
+      buildRecentResultsBlock,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -1735,6 +1736,43 @@ test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out 
     "womens-worldtour",
   ]);
   assert.equal(groups.some((group) => group.deferred), false);
+});
+
+test("buildRecentResultsBlock reveals the first three races and hides the rest behind a button", () => {
+  const { buildRecentResultsBlock } = loadParserExports();
+  const makeRace = (n) => ({
+    id: `race-${n}`,
+    series: "Men's WorldTour",
+    title: `Race ${n}`,
+    date: `June ${n}, 2026`,
+    location: "Somewhere",
+    winner: `Winner ${n}`,
+  });
+  const markup = buildRecentResultsBlock({
+    id: "mens-worldtour",
+    recentResults: [1, 2, 3, 4, 5].map(makeRace),
+    recentGridClass: "competition-grid-three",
+  });
+
+  const slots = [...markup.matchAll(/<div\s+class="recent-race-slot"[\s\S]*?data-recent-race-id="([^"]+)"([\s\S]*?)>/g)];
+  assert.equal(slots.length, 5);
+  // First three visible, last two hidden.
+  assert.equal(slots.filter((slot) => /\bhidden\b/.test(slot[2])).length, 2);
+  assert.match(slots[0][2], /^(?!.*\bhidden\b)/);
+  assert.match(slots[2][2], /^(?!.*\bhidden\b)/);
+  assert.match(slots[3][2], /\bhidden\b/);
+  // Reveal button present, carrying the race metadata for the dropdown sync.
+  assert.match(markup, /data-load-more-races="mens-worldtour"/);
+  assert.match(markup, /data-recent-race-title="Race 4"/);
+  assert.match(markup, /data-recent-race-date="June 4, 2026"/);
+});
+
+test("buildRecentResultsBlock omits the load-more button when there is only one row", () => {
+  const { buildRecentResultsBlock } = loadParserExports();
+  const makeRace = (n) => ({ id: `r${n}`, series: "Men's WorldTour", title: `Race ${n}`, date: "June 2026", location: "X", winner: "W" });
+  const markup = buildRecentResultsBlock({ id: "mens-worldtour", recentResults: [1, 2, 3].map(makeRace) });
+  assert.doesNotMatch(markup, /data-load-more-races/);
+  assert.equal([...markup.matchAll(/data-recent-slot/g)].length, 3);
 });
 
 test("selectPreferredStageRaceSnapshot prefers richer fallback when stage progress is tied", () => {

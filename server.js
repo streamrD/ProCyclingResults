@@ -20,7 +20,10 @@ const MAX_UPCOMING_RACES = 8;
 const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
-const WORLDTOUR_RECENT_RESULTS = 6;
+const WORLDTOUR_RECENT_RESULTS = 9;
+// Recent results reveal in rows: WORLDTOUR_RECENT_RESULTS_STEP shown by default,
+// with a "Load more races" button adding another row up to WORLDTOUR_RECENT_RESULTS.
+const WORLDTOUR_RECENT_RESULTS_STEP = 3;
 const PROSERIES_RECENT_RESULTS = 10;
 const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
 // YouTube finish-video lookups: found URLs are stable so they cache for hours,
@@ -5798,7 +5801,14 @@ function getCompetitionGroups(data) {
 }
 
 async function buildCoverageViewForGroup(group, url) {
-  const articleRaces = [...group.liveStageRaces, ...group.recentResults];
+  // The recent-results grid reveals races in rows; the coverage dropdown only
+  // lists races the user has actually revealed (defaults to the first row).
+  const requestedShown = Number.parseInt(url.searchParams.get(`${group.id}-shown`) || "", 10);
+  const shownRecent = Math.min(
+    group.recentResults.length,
+    Number.isFinite(requestedShown) && requestedShown > 0 ? requestedShown : WORLDTOUR_RECENT_RESULTS_STEP,
+  );
+  const articleRaces = [...group.liveStageRaces, ...group.recentResults.slice(0, shownRecent)];
   const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
   const refreshToken = Math.max(
     0,
@@ -5875,18 +5885,49 @@ function buildCoverageBlock(group, coverageView) {
     </div>`;
 }
 
+function buildRecentResultsBlock(group) {
+  const races = group.recentResults || [];
+  if (races.length === 0) {
+    return "";
+  }
+
+  const step = WORLDTOUR_RECENT_RESULTS_STEP;
+  const gridClass = group.recentGridClass ? `grid competition-grid ${group.recentGridClass}` : "grid competition-grid";
+  const slots = races
+    .map(
+      (race, index) => `
+        <div
+          class="recent-race-slot"
+          data-recent-slot
+          data-recent-race-id="${escapeHtml(race.id)}"
+          data-recent-race-title="${escapeHtml(race.title)}"
+          data-recent-race-date="${escapeHtml(race.date)}"
+          ${index >= step ? "hidden" : ""}
+        >${buildRaceCard(race)}</div>`,
+    )
+    .join("");
+  const loadMoreButton =
+    races.length > step
+      ? `<button type="button" class="load-more-races" data-load-more-races="${escapeHtml(group.id)}">Load more races</button>`
+      : "";
+
+  return `
+    <div class="competition-block" data-recent-block="${escapeHtml(group.id)}" data-recent-step="${step}">
+      <div class="competition-block-head">
+        <h3>${escapeHtml(group.recentBlockTitle || "Recent Results")}</h3>
+        <p>${escapeHtml(group.recentBlockDescription || "Most recent finalized races and classifications.")}</p>
+      </div>
+      <div class="${gridClass}">${slots}</div>
+      ${loadMoreButton}
+    </div>`;
+}
+
 function buildCompetitionSection(group, coverageView) {
   const liveMarkup = group.liveStageRaces.map(buildLiveStageRaceCard).join("");
-  const recentMarkup = group.recentResults.map(buildRaceCard).join("");
   const upcomingMarkup = group.upcomingRaces.map(buildUpcomingCard).join("");
   const blocks = [
     buildCompetitionBlock("Live Multi-Stage", "Current stage races and overall standings.", liveMarkup),
-    buildCompetitionBlock(
-      group.recentBlockTitle || "Recent Results",
-      group.recentBlockDescription || "Most recent finalized races and classifications.",
-      recentMarkup,
-      { gridClass: group.recentGridClass || "" },
-    ),
+    buildRecentResultsBlock(group),
     buildCompetitionBlock("Upcoming", "Next races on the calendar.", upcomingMarkup),
     buildCoverageBlock(group, coverageView),
   ]
@@ -6559,6 +6600,38 @@ function buildHtmlPage(data, view) {
 
       .competition-grid-three {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      /* Slots let recent-result cards carry reveal state and dropdown metadata
+         without becoming the grid item themselves (display: contents), so the
+         card layout is unchanged; a hidden slot removes its card from the row. */
+      .recent-race-slot {
+        display: contents;
+      }
+
+      .recent-race-slot[hidden] {
+        display: none;
+      }
+
+      .load-more-races {
+        display: block;
+        margin: 1.1rem auto 0;
+        min-height: 3rem;
+        padding: 0.8rem 1.6rem;
+        border-radius: 16px;
+        border: 1px solid var(--line-strong);
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.04));
+        color: var(--uci-blue-deep);
+        cursor: pointer;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .load-more-races:hover {
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.08));
       }
 
       .competition-coverage .article-grid {
@@ -7299,6 +7372,10 @@ function buildHtmlPage(data, view) {
           if (Number.isFinite(options.refreshToken)) {
             params.set(groupId + "-refresh", String(options.refreshToken));
           }
+          const shownRecent = countShownRecentRaces(groupId);
+          if (shownRecent > 0) {
+            params.set(groupId + "-shown", String(shownRecent));
+          }
 
           const response = await fetch("/api/competition-coverage?" + params.toString(), { cache: "no-store" });
           if (!response.ok) {
@@ -7308,6 +7385,7 @@ function buildHtmlPage(data, view) {
           const payload = await response.json();
           coverageBlock.outerHTML = payload.html || "";
           bindArticleControls(document);
+          syncCoverageRaceOptions(groupId);
         } catch (error) {
           coverageContent.innerHTML = '<p class="meta">Unable to load race coverage right now. Please try again in a moment.</p>';
         } finally {
@@ -7351,6 +7429,77 @@ function buildHtmlPage(data, view) {
         countrySelect.addEventListener("change", applyFilters);
         eventSelect.addEventListener("change", applyFilters);
         applyFilters();
+      }
+
+      function getRecentBlock(groupId) {
+        return document.querySelector('[data-recent-block="' + groupId + '"]');
+      }
+
+      function getRecentSlots(groupId) {
+        const block = getRecentBlock(groupId);
+        return block ? Array.prototype.slice.call(block.querySelectorAll("[data-recent-slot]")) : [];
+      }
+
+      function countShownRecentRaces(groupId) {
+        return getRecentSlots(groupId).filter((slot) => !slot.hidden).length;
+      }
+
+      // Keep the coverage dropdown in sync with the races the user has revealed,
+      // appending newly shown races without disturbing the current selection.
+      function syncCoverageRaceOptions(groupId) {
+        const select = document.getElementById(groupId + "-race-select");
+        if (!select) {
+          return;
+        }
+
+        const existingValues = new Set(Array.prototype.map.call(select.options, (option) => option.value));
+        getRecentSlots(groupId).forEach((slot) => {
+          if (slot.hidden) {
+            return;
+          }
+          const raceId = slot.dataset.recentRaceId;
+          if (!raceId || existingValues.has(raceId)) {
+            return;
+          }
+          const option = document.createElement("option");
+          option.value = raceId;
+          option.textContent = slot.dataset.recentRaceTitle + " • " + slot.dataset.recentRaceDate;
+          select.appendChild(option);
+          existingValues.add(raceId);
+        });
+      }
+
+      function revealMoreRecentRaces(groupId) {
+        const block = getRecentBlock(groupId);
+        if (!block) {
+          return;
+        }
+        const step = Number.parseInt(block.dataset.recentStep || "3", 10) || 3;
+        const slots = getRecentSlots(groupId);
+        const shown = slots.filter((slot) => !slot.hidden).length;
+        const nextShown = Math.min(slots.length, shown + step);
+        for (let index = shown; index < nextShown; index += 1) {
+          slots[index].hidden = false;
+        }
+
+        const button = block.querySelector("[data-load-more-races]");
+        if (button && nextShown >= slots.length) {
+          button.hidden = true;
+        }
+
+        syncCoverageRaceOptions(groupId);
+      }
+
+      function bindLoadMoreRaces(root = document) {
+        root.querySelectorAll("[data-load-more-races]").forEach((button) => {
+          if (button.dataset.bound === "true") {
+            return;
+          }
+          button.dataset.bound = "true";
+          button.addEventListener("click", () => {
+            revealMoreRecentRaces(button.dataset.loadMoreRaces);
+          });
+        });
       }
 
       function bindArticleControls(root = document) {
@@ -7479,6 +7628,7 @@ function buildHtmlPage(data, view) {
       });
 
       bindArticleControls();
+      bindLoadMoreRaces();
       bindNationalChampionshipFilters();
     </script>
   </body>
