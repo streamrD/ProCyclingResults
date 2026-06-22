@@ -41,23 +41,15 @@ Observed remote:
 origin https://github.com/streamrD/ProCyclingResults.git
 ```
 
-Observed refs during this audit:
+Git state:
 
-- Current worktree branch: `codex/live-data-architecture`
-- Current HEAD: `54e27ea`
-- `origin/main`: `54e27ea`
-- `origin/codex/live-data-architecture`: `54e27ea`
-- Local `main` ref: `2953c3a`
+- Active development happens directly on `main`, which is what deploys.
+- Local `main` tracks `origin/main` and was last left in sync after pushing.
+- SHAs intentionally omitted here because they move every commit; run `git log --oneline -1` for the current HEAD.
 
-Important local Git note: `git worktree list --porcelain` reported a second worktree at `ProCyclingResults-main`, but the path was missing on disk and Git marked it prunable. Because of that stale worktree record, the local `main` ref was behind `origin/main` even though `origin/main` had the deployed HEAD. Prefer `origin/main` or the current HEAD as the source of truth until a human intentionally cleans or repairs the worktree metadata.
+The previously noted stale `ProCyclingResults-main` worktree record and the stray `assets/.DS_Store` were cleaned up; `git worktree list` should now show a single worktree.
 
-Ignored local clutter observed:
-
-- `assets/.DS_Store` exists locally
-- It is ignored by `.gitignore`
-- It is not tracked
-
-No `node_modules`, package lockfile, database, build output, or hidden frontend app was observed in the project folder.
+No `node_modules`, package lockfile, database, build output, or hidden frontend app exists in the project folder.
 
 ## Repository Map
 
@@ -146,28 +138,29 @@ Line numbers are approximate and can drift. Prefer searching function names with
 rg -n "function loadRaceData|function buildHtmlPage|NATIONAL_CHAMPIONSHIP|OFFICIAL_STAGE_RACE|http.createServer" server.js
 ```
 
-Major areas:
+Major areas (anchored to symbols rather than line numbers, which drift on every change — `rg -n "<symbol>" server.js`):
 
-- Top-level constants and product config: `server.js:7-154`
-- Country, rider, and video lookup tables: `server.js:156-509`
-- HTML escaping, wiki cleaning, and athlete parsing helpers: `server.js:582-1000`
-- Season table parsing and upstream fetch helpers: `server.js:997-1098`
-- National Championships parser and event expansion: `server.js:1103-1347`
-- Wiki stage-race extraction: `server.js:1373-1808`
-- Freshness and cache TTL helpers: `server.js:1817-1845`
-- Official race providers and parsers: `server.js:1858-3560`
-- Static snapshot hydration: `server.js:2563-2605`
-- Location enrichment: `server.js:3560-3647`
-- Race bucketing and aggregation pipeline: `server.js:4230-4545`
-- Metadata and data cache loaders: `server.js:4673-4897`
-- API/debug payload builders: `server.js:4910-4941`
-- Race cards, standings, and finish-video rendering: `server.js:4953-5396`
-- Recent-results row reveal (`buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script): shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (9); revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync.
-- National Championships rendering: `server.js:5397-5549`
-- Competition group definitions: `server.js:5244-5283`
-- Full HTML page, inline CSS, and inline browser JS: `server.js:5590-6955`
-- Warmup page: `server.js:6956-7110`
-- Response helpers, static file serving, and routes: `server.js:7111-7305`
+- Top-level constants and product config: `PORT`, `BUILD_INFO`, the cache-TTL constants, `SEASONS`
+- Country, rider, and video lookup tables: `COUNTRY_NAMES`, `COUNTRY_FLAG_CODES`, `COUNTRY_NAME_ALPHA2`, `RACE_FINISH_VIDEO_URLS`
+- HTML escaping, wiki cleaning, and athlete parsing helpers: `escapeHtml`, `cleanWikiText`, `decodeHtml`, `parseAthleteDetails`
+- Season table parsing and upstream fetch helpers: `parseSeasonRows`, `fetchText`, `fetchWikiRaw`
+- National Championships parser and event expansion: `parseNationalChampionshipsIndex`, `buildNationalChampionshipEventRecords`
+- Wiki stage-race extraction: `extractStageRaceSnapshot`
+- Freshness and cache TTL helpers: `hasFreshnessSensitiveRaceData`, `getRaceDataCacheTtlMs`
+- Official race providers and parsers: `OFFICIAL_STAGE_RACE_PROVIDERS`, `parseAsoOfficialStandings`, `parseLetourOfficialStandings`, `fetchTourDeFranceOfficialSnapshot`
+- Static snapshot hydration: `getStaticStageRaceSnapshot`
+- Location enrichment: `enrichLocations`, `extractLeadLocation`
+- Race bucketing and aggregation pipeline: `partitionRaceBuckets`, `buildRaceData`
+- Metadata and data cache loaders: `loadRaceMetadata`, `loadRaceData`, `refreshRaceDataInBackground`
+- API/debug payload builders: `buildRaceDataDebugPayload`, `buildHomepageDataPayload`
+- Race cards, standings, and rendering: `buildRaceCard`, `buildStageRaceCard`
+- Finish-video resolution and YouTube search: `getRaceFinishVideoUrl`, `enrichFinishVideos`, `parseYouTubeSearchVideos`, `selectFinishVideo`
+- Recent-results row reveal: `buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script — shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (12); revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync. Finished stage races are enriched even when not in the most-recent few and are never dropped for lacking a snapshot, so Grand Tours like the Giro stay in the grid
+- National Championships rendering and header flags: `buildNationalChampionshipsSection`, `getCountryFlagEmojiByName`
+- Competition group definitions: `getCompetitionGroups`
+- Full HTML page, inline CSS, and inline browser JS: `buildHtmlPage`
+- Warmup page: `buildWarmupPage`
+- Response helpers, static file serving, and routes: `http.createServer`
 
 ## Data Source Cross-Reference
 
@@ -294,7 +287,10 @@ test/fixtures/
 ├── la-vuelta-femenina-rankings-stage4.html
 ├── la-vuelta-femenina-stage1.wikitext
 ├── la-vuelta-femenina-stage4.html
-└── tour-of-greece-results-2026-stage1.html
+├── tour-de-france-rankings-stage21.html
+├── tour-de-france-stage21-ite.html
+├── tour-of-greece-results-2026-stage1.html
+└── youtube-search-tdf-stage21.html
 ```
 
 Recommended validation for code changes:
@@ -323,7 +319,7 @@ Avoid leaving stale local servers running. If using a manual local process, stop
 - Article scoring is heuristic and division-sensitive; changes can improve one race and hurt another.
 - `BUILD_INFO` is manual and can be stale. Do not treat `/api/build-info` as a guaranteed current Git SHA unless the code was deliberately updated.
 - Retired section support still exists as hooks and archived config, but there are no active deferred groups.
-- The local `main` branch may be stale because of the prunable worktree record noted above.
+- YouTube finish-video search and official providers (e.g. letour.fr) depend on third-party page structure; expect occasional parser drift there too.
 - There is no schema validation for upstream payloads.
 - There is no CI config, lint script, formatter config, lockfile, or explicit Node engine declaration.
 
