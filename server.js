@@ -20,7 +20,7 @@ const MAX_UPCOMING_RACES = 8;
 const MAX_LIVE_STAGE_RACES = 6;
 const MAX_EUROPE_TOUR_RESULTS = 6;
 const MAX_EUROPE_TOUR_UPCOMING = 4;
-const WORLDTOUR_RECENT_RESULTS = 9;
+const WORLDTOUR_RECENT_RESULTS = 12;
 // Recent results reveal in rows: WORLDTOUR_RECENT_RESULTS_STEP shown by default,
 // with a "Load more races" button adding another row up to WORLDTOUR_RECENT_RESULTS.
 const WORLDTOUR_RECENT_RESULTS_STEP = 3;
@@ -4526,6 +4526,18 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
   };
 }
 
+function dedupeRacesByPageTitle(races) {
+  const seen = new Set();
+  return (races || []).filter((race) => {
+    const key = race?.pageTitle || race?.id || "";
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates) {
   const worldTourSeries = ["Men's WorldTour", "Women's WorldTour"];
 
@@ -4667,10 +4679,17 @@ async function buildRaceData(metadata, options = {}) {
 
   const wikiRawLoader = createWikiRawLoader();
   const recentStandingsStartedAt = Date.now();
-  await enrichRecentResultStandings(
-    includeDeferred ? selectedRecentOneDayResults : homepageRecentStandingsTargets,
-    wikiRawLoader,
-  );
+  // Finalized stage races only render (and survive isFinalizedStageRace) once they
+  // have a stage-race snapshot, so every displayed multi-day recent race must be
+  // enriched — not just the most-recent few. Otherwise an older Grand Tour like the
+  // Giro silently disappears from the recent grid.
+  const homepageRecentEnrichTargets = includeDeferred
+    ? selectedRecentOneDayResults
+    : dedupeRacesByPageTitle([
+        ...homepageRecentStandingsTargets,
+        ...homepageWorldTourRecentCandidates.filter(isMultiDayRace),
+      ]);
+  await enrichRecentResultStandings(homepageRecentEnrichTargets, wikiRawLoader);
   let recentStandingsMs = Date.now() - recentStandingsStartedAt;
   let finalizedStageStandingsMs = 0;
   if (includeDeferred) {
@@ -4690,13 +4709,14 @@ async function buildRaceData(metadata, options = {}) {
   const liveStageRaces = selectedLiveStageCandidates.filter(
     (race) => !isFinalizedStageRace(race) || isRaceWithinScheduledLiveWindow(race, todayUtc),
   );
+  // On the homepage, show every finished recent WorldTour race in date order:
+  // one-day results plus finalized stage races. A finished stage race that could
+  // not be enriched into a snapshot still appears (rendered from its season-table
+  // winner/podium) rather than being dropped from the grid entirely.
   const recentResults = (
     includeDeferred
       ? [...selectedRecentOneDayResults, ...finalizedStageRaces]
-      : [
-          ...selectedHomepageRecentCandidates.filter(isOneDayRace),
-          ...finalizedStageRaces,
-        ]
+      : [...selectedHomepageRecentCandidates]
   ).sort((left, right) => right.endDate - left.endDate);
 
   finalizedStageRaces.forEach((race) => {

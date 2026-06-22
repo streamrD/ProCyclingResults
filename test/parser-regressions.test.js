@@ -2467,3 +2467,29 @@ test("buildRaceCard does not render one-day races as stage races", () => {
   assert.doesNotMatch(html, /Final general classification/);
   assert.doesNotMatch(html, /All 1 stages are complete\./);
 });
+
+test("buildRaceCard renders a finished stage race that lacks a snapshot from its season podium", () => {
+  // A finished multi-day race whose stage-race snapshot could not be enriched
+  // must still render (from winner/second/third) rather than be dropped, which is
+  // what kept Grand Tours like the Giro out of the recent grid.
+  const { buildRaceCard, isMultiDayRace } = loadParserExports();
+  const race = {
+    series: "Men's WorldTour",
+    title: "Giro d'Italia",
+    date: "8–31 May 2026",
+    location: "Italy",
+    startDate: new Date("2026-05-08T00:00:00Z"),
+    endDate: new Date("2026-05-31T00:00:00Z"),
+    winner: "Jonas Vingegaard",
+    second: "Primož Roglič",
+    third: "Juan Ayuso",
+  };
+
+  assert.equal(isMultiDayRace(race), true);
+
+  const html = buildRaceCard(race);
+  assert.match(html, /Giro d&#39;Italia/); // apostrophe is HTML-escaped
+  assert.match(html, /Jonas Vingegaard/);
+  assert.match(html, /Primož Roglič/);
+  assert.match(html, /Juan Ayuso/);
+});
