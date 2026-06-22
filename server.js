@@ -6654,6 +6654,12 @@ function buildHtmlPage(data, view) {
         background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.08));
       }
 
+      /* display: block above overrides the UA [hidden] rule, so the button needs
+         an explicit hidden state for revealMoreRecentRaces to remove it at the max. */
+      .load-more-races[hidden] {
+        display: none;
+      }
+
       .competition-coverage .article-grid {
         margin-top: 1rem;
       }

@@ -500,7 +500,7 @@ Client-side JS is still intentionally small, but it now does more than simple fo
 - Polls `/api/homepage-data` while the homepage is warming
 - Filters National Championships cards by country and category; the default view shows completed events first, while country-specific selections can reveal scheduled or TBD events.
 - Keeps deferred-section loading utilities available for future sections, though none are active right now
-- Reveals recent results a row at a time: each WorldTour section shows the first `WORLDTOUR_RECENT_RESULTS_STEP` (3) races, and a "Load more races" button reveals the next row up to `WORLDTOUR_RECENT_RESULTS` (12). Revealing more races also adds them to that section's coverage race selector.
+- Reveals recent results a row at a time: each WorldTour section shows the first `WORLDTOUR_RECENT_RESULTS_STEP` (3) races, and a "Load more races" button reveals the next row up to `WORLDTOUR_RECENT_RESULTS` (12), after which the button removes itself. Revealing more races also adds them to that section's coverage race selector.
 - Loads race coverage on demand for each active competition group
 - Changing a race selector submits the coverage request
 - Clicking refresh increments a hidden refresh token and reloads the coverage block
