@@ -16,7 +16,7 @@ Do not assume prior chat history is available or needed. Treat `README.md` as th
 
 - Minimal Node.js app with no third-party dependencies
 - Main runtime entrypoint: `server.js`
-- Server-rendered HTML plus `/api/homepage-data`, `/api/races`, deferred section endpoints, and coverage endpoints
+- Server-rendered HTML plus `/api/homepage-data`, `/api/races`, national championships, and coverage endpoints
 - Parser-heavy logic with live upstream dependencies
 - Tests live under `test/`
 
@@ -52,8 +52,10 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - Prefer adding contained race-specific provider logic over weakening shared parsing heuristics when a single race is wrong.
 - Preserve current cache behavior unless the task clearly requires changing it. Live stage races intentionally use a shorter cache TTL than the default background race-data refresh.
 - Remember that cold-start load delay is mainly an upstream-fetch issue amplified by Wikipedia rate limiting, not usually a page-rendering problem.
-- Remember that the homepage and full API are now intentionally split. `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` can still be slower because it includes deferred sections.
-- Deferred `proseries` and `europe-tour` sections have their own on-demand loading paths and should not be recoupled accidentally.
+- Remember that the active product scope is Men's WorldTour, Women's WorldTour, and National Championships.
+- UCI ProSeries and Europe Tour sections were implemented previously, retired on 2026-06-22, and archived in `archive/proseries-europe-tour-sections.js`. Do not reactivate them unless the user asks for that explicitly.
+- National Championships should prioritize completed event records in the UI. Use `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` only for narrow, source-backed date/location/podium/video overrides.
+- `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
 - Giro finish-video links now prefer official livefeed-derived URLs before falling back to the static map.
 
 ## Validation
@@ -62,13 +64,13 @@ For code changes, usually do the following:
 
 1. Run `npm test`.
 2. Manually check `/`, `/api/homepage-data`, and `/api/races` if the change affects rendering, aggregation, or live-data behavior.
-3. If parsing changed, verify against the relevant fixture or upstream source pattern.
+3. If parsing changed, verify against the relevant fixture or upstream source pattern, including the national championships table when applicable.
 
 When performance behavior changes, also consider:
 
 1. `npm run benchmark:homepage-ready`
 2. `npm run benchmark:ready`
-3. `npm run benchmark:load -- --runs=5 --include-deferred --include-coverage`
+3. `npm run benchmark:load -- --runs=5 --include-coverage`
 
 ## Token Efficiency Guidance
 
@@ -93,5 +95,5 @@ Task: <your task here>
 ## Notes For Future Agents
 
 Most bugs here come from upstream content drift rather than complex internal state. When race data looks wrong, inspect the relevant parser/provider path before considering broader refactors.
-During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, deferred-section warmup behavior, and upstream rate limiting before assuming the parser is wrong.
+During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, national championship source drift, and upstream rate limiting before assuming the parser is wrong.
 Giro d'Italia and Giro d'Italia Women now use separate official standings sources, so check the correct provider path before changing shared Giro parsing heuristics.

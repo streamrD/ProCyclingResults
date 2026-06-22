@@ -19,11 +19,97 @@ const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
 const PROSERIES_RECENT_RESULTS = 10;
 const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
-const DEFERRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
+const DEFERRED_COMPETITION_GROUP_IDS = new Set();
+const RETIRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
+const NATIONAL_CHAMPIONSHIPS_SOURCE_URL =
+  "https://www.cyclingnews.com/pro-cycling/racing/2026-road-national-champions-index/";
+const NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL = "Cyclingnews 2026 Road National Champions index";
+const NATIONAL_CHAMPIONSHIP_EVENT_KEYS = ["meItt", "meRoadRace", "weItt", "weRoadRace"];
+const NATIONAL_CHAMPIONSHIP_EVENT_LABELS = {
+  meItt: "ME ITT",
+  meRoadRace: "ME Road Race",
+  weItt: "WE ITT",
+  weRoadRace: "WE Road Race",
+};
+const NATIONAL_CHAMPIONSHIP_EVENT_GROUPS = {
+  meItt: "Men's Elite Individual Time Trial",
+  meRoadRace: "Men's Elite Road Race",
+  weItt: "Women's Elite Individual Time Trial",
+  weRoadRace: "Women's Elite Road Race",
+};
+const NATIONAL_CHAMPIONSHIP_FEATURED_COUNTRIES = [
+  "United States",
+  "Australia",
+  "New Zealand",
+  "Colombia",
+  "South Africa",
+  "Finland",
+  "Bolivia",
+  "Chile",
+  "Ecuador",
+  "Panama",
+  "Uruguay",
+  "United Arab Emirates",
+  "Philippines",
+  "Zimbabwe",
+  "Thailand",
+];
+const NATIONAL_CHAMPION_NAME_CORRECTIONS = {
+  "Artem Schmidt": "Artem Shmidt",
+};
+const NATIONAL_CHAMPIONSHIP_EVENT_METADATA = {
+  "United States": {
+    meItt: {
+      date: "2026-06-17",
+      location: "Charleston, West Virginia",
+      podium: ["Artem Shmidt", "Larry Warbasse", "William Barta"],
+      sourceUrl:
+        "https://www.cyclingnews.com/pro-cycling/racing/us-pro-national-championships-artem-shmidt-tops-larry-warbasse-in-elite-mens-time-trial/",
+    },
+    meRoadRace: {
+      date: "2026-06-21",
+      location: "Charleston, West Virginia",
+      podium: ["Quinn Simmons"],
+      finishVideoUrl: "https://www.youtube.com/watch?v=hSVSHs9lPPI",
+    },
+    weItt: {
+      date: "2026-06-17",
+      location: "Charleston, West Virginia",
+      podium: ["Taylor Knibb", "Emily Ehrlich", "Paige Onweller"],
+      sourceUrl:
+        "https://www.cyclingweekly.com/news/taylor-knibb-artem-shmidt-win-time-trial-titles-on-opening-day-of-us-pro-road-nationals",
+    },
+    weRoadRace: {
+      date: "2026-06-21",
+      location: "Charleston, West Virginia",
+      podium: ["Kate Courtney", "Lauren Stephens", "Grace Arlandson"],
+      sourceUrl:
+        "https://www.cyclingnews.com/pro-cycling/womens-cycling/us-road-championships-kate-courtney-outsprints-lauren-stephens-to-win/",
+    },
+  },
+  "Great Britain": {
+    meItt: {
+      date: "2026-06-25",
+      location: "Lampeter, Wales",
+    },
+    weItt: {
+      date: "2026-06-25",
+      location: "Lampeter, Wales",
+    },
+    meRoadRace: {
+      date: "2026-06-28",
+      location: "Aberystwyth, Wales",
+    },
+    weRoadRace: {
+      date: "2026-06-28",
+      location: "Aberystwyth, Wales",
+    },
+  },
+};
 const TOP_TIER_PUBLISHERS = [
   { pattern: /reuters/i, score: 140 },
   { pattern: /\bap\b|associated press|ap news/i, score: 135 },
@@ -59,58 +145,9 @@ const SEASONS = [
     thirdIndex: 4,
     statusStartIndex: 2,
   },
-  {
-    pageTitle: "2026_UCI_ProSeries",
-    label: "Men's ProSeries",
-    winnerMode: "winner",
-    dateIndex: 1,
-    winnerIndex: 2,
-    secondIndex: 3,
-    thirdIndex: 4,
-    statusStartIndex: 2,
-  },
-  {
-    pageTitle: "2026_UCI_Women's_ProSeries",
-    label: "Women's ProSeries",
-    winnerMode: "winner",
-    dateIndex: 1,
-    winnerIndex: 2,
-    secondIndex: 3,
-    thirdIndex: 4,
-    statusStartIndex: 2,
-  },
-  {
-    pageTitle: "2026_UCI_Europe_Tour",
-    label: "Men's Europe Tour",
-    winnerMode: "winner",
-    dateIndex: 2,
-    winnerIndex: 3,
-    statusStartIndex: 3,
-    includePageTitles: [
-      "2026 Étoile de Bessèges",
-      "2026 Tour de la Provence",
-      "Giro di Sardegna",
-      "Settimana Internazionale di Coppi e Bartali",
-      "2026 O Gran Camiño",
-      "Vuelta Asturias",
-      "Grande Prémio Anicolor",
-      "Tour of Greece",
-      "Flèche du Sud",
-      "GP Beiras e Serra da Estrela",
-      "Tour of Estonia",
-      "Route d'Occitanie",
-      "Sibiu Cycling Tour",
-      "Tour of Austria",
-      "Tour de l'Ain",
-      "Tour du Limousin",
-      "Tour Poitou-Charentes en Nouvelle-Aquitaine",
-      "Tour of Istanbul",
-      "Giro d'Abruzzo",
-      "Okolo Slovenska",
-      "Tour of Holland",
-    ],
-  },
 ];
+
+const ACTIVE_SEASONS = SEASONS;
 
 const COUNTRY_NAMES = {
   ALG: "Algeria",
@@ -244,6 +281,9 @@ const RACE_FINISH_VIDEO_URLS = {
     9: "https://www.youtube.com/watch?v=ZhO3_roH_mg",
     13: "https://www.youtube.com/watch?v=RUOs9YzSato",
     19: "https://www.youtube.com/watch?v=CyQsfq_O6S4",
+  },
+  "2026 Tour de Suisse": {
+    5: "https://www.youtube.com/watch?v=f61NRl63jFg",
   },
   "2026 La Vuelta Femenina": "https://www.youtube.com/watch?v=_aJn7pjCTVw",
   "2026 Tour de Romandie": "https://www.youtube.com/watch?v=e3eX4dZpAAg",
@@ -461,6 +501,77 @@ const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
 
+const HTML_NAMED_ENTITY_CODEPOINTS = {
+  Aacute: 0x00c1,
+  aacute: 0x00e1,
+  Acirc: 0x00c2,
+  acirc: 0x00e2,
+  Agrave: 0x00c0,
+  agrave: 0x00e0,
+  Aring: 0x00c5,
+  aring: 0x00e5,
+  Atilde: 0x00c3,
+  atilde: 0x00e3,
+  Auml: 0x00c4,
+  auml: 0x00e4,
+  Ccedil: 0x00c7,
+  ccedil: 0x00e7,
+  Eacute: 0x00c9,
+  eacute: 0x00e9,
+  Ecirc: 0x00ca,
+  ecirc: 0x00ea,
+  Egrave: 0x00c8,
+  egrave: 0x00e8,
+  Euml: 0x00cb,
+  euml: 0x00eb,
+  Iacute: 0x00cd,
+  iacute: 0x00ed,
+  Icirc: 0x00ce,
+  icirc: 0x00ee,
+  Igrave: 0x00cc,
+  igrave: 0x00ec,
+  Iuml: 0x00cf,
+  iuml: 0x00ef,
+  Ntilde: 0x00d1,
+  ntilde: 0x00f1,
+  Oacute: 0x00d3,
+  oacute: 0x00f3,
+  Ocirc: 0x00d4,
+  ocirc: 0x00f4,
+  Ograve: 0x00d2,
+  ograve: 0x00f2,
+  Oslash: 0x00d8,
+  oslash: 0x00f8,
+  Otilde: 0x00d5,
+  otilde: 0x00f5,
+  Ouml: 0x00d6,
+  ouml: 0x00f6,
+  Uacute: 0x00da,
+  uacute: 0x00fa,
+  Ucirc: 0x00db,
+  ucirc: 0x00fb,
+  Ugrave: 0x00d9,
+  ugrave: 0x00f9,
+  Uuml: 0x00dc,
+  uuml: 0x00fc,
+  Yacute: 0x00dd,
+  yacute: 0x00fd,
+  yuml: 0x00ff,
+  THORN: 0x00de,
+  thorn: 0x00fe,
+  ETH: 0x00d0,
+  eth: 0x00f0,
+  szlig: 0x00df,
+  AElig: 0x00c6,
+  aelig: 0x00e6,
+  OElig: 0x0152,
+  oelig: 0x0153,
+  Scaron: 0x0160,
+  scaron: 0x0161,
+  Zcaron: 0x017d,
+  zcaron: 0x017e,
+};
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -486,6 +597,10 @@ function decodeHtml(value) {
   }
 
   decoded = decoded
+    .replace(/&([A-Za-z][A-Za-z0-9]+);/g, (match, entityName) => {
+      const codePoint = HTML_NAMED_ENTITY_CODEPOINTS[entityName];
+      return codePoint ? String.fromCodePoint(codePoint) : match;
+    })
     .replace(/&#(\d+);/g, (_, codePoint) => {
       const value = Number.parseInt(codePoint, 10);
       if (!Number.isFinite(value)) {
@@ -976,6 +1091,253 @@ async function fetchWikiRaw(title) {
 async function fetchJson(url) {
   const text = await fetchText(url);
   return JSON.parse(text);
+}
+
+function cleanNationalChampionCell(value) {
+  const cleaned = cleanFeedText(value)
+    .replace(/\uFEFF/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || /^Row\s+\d+\s+-\s+Cell\b/i.test(cleaned)) {
+    return "";
+  }
+
+  return NATIONAL_CHAMPION_NAME_CORRECTIONS[cleaned] || cleaned;
+}
+
+function extractHtmlTableByCaption(html, captionPattern) {
+  return [...String(html || "").matchAll(/<table[\s\S]*?<\/table>/gi)].find((match) => {
+    const caption = match[0].match(/<caption[^>]*>([\s\S]*?)<\/caption>/i);
+    return captionPattern.test(cleanFeedText(caption?.[1] || ""));
+  })?.[0] || "";
+}
+
+function hasNationalChampion(row) {
+  return NATIONAL_CHAMPIONSHIP_EVENT_KEYS.some((key) => Boolean(row?.[key]));
+}
+
+function isCompleteNationalChampionRow(row) {
+  return NATIONAL_CHAMPIONSHIP_EVENT_KEYS.every((key) => Boolean(row?.[key]));
+}
+
+function createNationalChampionshipEventId(country, eventKey) {
+  const countrySlug = String(country || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `${countrySlug || "unknown"}-${eventKey}`;
+}
+
+function getNationalChampionshipEventMetadata(country, eventKey) {
+  return NATIONAL_CHAMPIONSHIP_EVENT_METADATA[country]?.[eventKey] || {};
+}
+
+function formatNationalChampionshipDate(dateIso) {
+  if (!dateIso) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(new Date(`${dateIso}T00:00:00Z`));
+}
+
+function normalizeNationalChampionshipPodium(metadataPodium, champion) {
+  const podium = Array.isArray(metadataPodium) ? metadataPodium : [];
+  const normalized = podium
+    .map((rider, index) => ({
+      place: String(index + 1),
+      rider: cleanNationalChampionCell(rider),
+    }))
+    .filter((entry) => entry.rider)
+    .slice(0, 3);
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return champion ? [{ place: "1", rider: champion }] : [];
+}
+
+function getNationalChampionshipStatus(champion, dateIso, today = new Date()) {
+  if (champion) {
+    return "completed";
+  }
+
+  if (!dateIso) {
+    return "pending";
+  }
+
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const eventDate = new Date(`${dateIso}T00:00:00Z`);
+  return eventDate.getTime() >= todayUtc.getTime() ? "upcoming" : "pending";
+}
+
+function buildNationalChampionshipEventRecords(rows) {
+  return (rows || []).flatMap((row) =>
+    NATIONAL_CHAMPIONSHIP_EVENT_KEYS.map((eventKey) => {
+      const champion = cleanNationalChampionCell(row?.[eventKey]);
+      const metadata = getNationalChampionshipEventMetadata(row?.country, eventKey);
+      const dateIso = metadata.date || "";
+      const dateLabel = formatNationalChampionshipDate(dateIso);
+      const status = getNationalChampionshipStatus(champion, dateIso);
+      const podium = normalizeNationalChampionshipPodium(metadata.podium, champion);
+
+      return {
+        id: createNationalChampionshipEventId(row?.country, eventKey),
+        country: row?.country || "",
+        eventKey,
+        eventLabel: NATIONAL_CHAMPIONSHIP_EVENT_LABELS[eventKey],
+        eventName: NATIONAL_CHAMPIONSHIP_EVENT_GROUPS[eventKey],
+        champion,
+        podium,
+        status,
+        date: dateIso,
+        dateLabel,
+        location: metadata.location || "",
+        finishVideoUrl: metadata.finishVideoUrl || "",
+        sourceUrl: metadata.sourceUrl || "",
+      };
+    }),
+  );
+}
+
+function sortNationalChampionshipEvents(events) {
+  return [...(events || [])].sort((left, right) => {
+    if (left.status !== right.status) {
+      if (left.status === "completed") {
+        return -1;
+      }
+      if (right.status === "completed") {
+        return 1;
+      }
+      if (left.status === "upcoming") {
+        return -1;
+      }
+      if (right.status === "upcoming") {
+        return 1;
+      }
+    }
+
+    const leftTime = left.date ? new Date(`${left.date}T00:00:00Z`).getTime() : 0;
+    const rightTime = right.date ? new Date(`${right.date}T00:00:00Z`).getTime() : 0;
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+
+    const countryCompare = String(left.country || "").localeCompare(String(right.country || ""));
+    if (countryCompare !== 0) {
+      return countryCompare;
+    }
+
+    return NATIONAL_CHAMPIONSHIP_EVENT_KEYS.indexOf(left.eventKey) - NATIONAL_CHAMPIONSHIP_EVENT_KEYS.indexOf(right.eventKey);
+  });
+}
+
+function selectNationalChampionshipHighlights(rows, limit = 6) {
+  return [...(rows || [])]
+    .filter(hasNationalChampion)
+    .map((row, originalIndex) => {
+      const featuredIndex = NATIONAL_CHAMPIONSHIP_FEATURED_COUNTRIES.findIndex(
+        (country) => country === row.country,
+      );
+      const completedEventCount = NATIONAL_CHAMPIONSHIP_EVENT_KEYS.filter((key) => Boolean(row[key])).length;
+      const roadRaceCount = Number(Boolean(row.meRoadRace)) + Number(Boolean(row.weRoadRace));
+      const featuredScore = featuredIndex >= 0 ? 1000 - featuredIndex : 0;
+
+      return {
+        row,
+        score: featuredScore + completedEventCount * 25 + roadRaceCount * 40,
+        originalIndex,
+      };
+    })
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      return left.originalIndex - right.originalIndex;
+    })
+    .slice(0, limit)
+    .map((entry) => entry.row);
+}
+
+function buildEmptyNationalChampionships(error) {
+  return {
+    sourceLabel: NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL,
+    sourceUrl: NATIONAL_CHAMPIONSHIPS_SOURCE_URL,
+    sourceLastModified: "",
+    fetchedAt: new Date().toISOString(),
+    rows: [],
+    events: [],
+    highlights: [],
+    totalCountryCount: 0,
+    reportingCountryCount: 0,
+    completeCountryCount: 0,
+    completedEventCount: 0,
+    upcomingEventCount: 0,
+    error: error?.message || "",
+  };
+}
+
+function parseNationalChampionshipsIndex(html) {
+  const table = extractHtmlTableByCaption(html, /elite road national champions/i);
+  if (!table) {
+    return buildEmptyNationalChampionships(new Error("National championships table was not found."));
+  }
+
+  const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .slice(1)
+    .map((match) => {
+      const cells = [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((cellMatch) => cleanNationalChampionCell(cellMatch[1]));
+
+      if (cells.length < 5 || !cells[0]) {
+        return null;
+      }
+
+      return {
+        country: cells[0],
+        meItt: cells[1],
+        meRoadRace: cells[2],
+        weItt: cells[3],
+        weRoadRace: cells[4],
+      };
+    })
+    .filter(Boolean);
+  const events = sortNationalChampionshipEvents(buildNationalChampionshipEventRecords(rows));
+
+  const sourceLastModified =
+    String(html || "").match(/"dateModified"\s*:\s*"([^"]+)"/)?.[1] ||
+    String(html || "").match(/"datePublished"\s*:\s*"([^"]+)"/)?.[1] ||
+    "";
+
+  return {
+    sourceLabel: NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL,
+    sourceUrl: NATIONAL_CHAMPIONSHIPS_SOURCE_URL,
+    sourceLastModified,
+    fetchedAt: new Date().toISOString(),
+    rows,
+    events,
+    highlights: selectNationalChampionshipHighlights(rows),
+    totalCountryCount: rows.length,
+    reportingCountryCount: rows.filter(hasNationalChampion).length,
+    completeCountryCount: rows.filter(isCompleteNationalChampionRow).length,
+    completedEventCount: events.filter((event) => event.status === "completed").length,
+    upcomingEventCount: events.filter((event) => event.status === "upcoming").length,
+    error: "",
+  };
+}
+
+async function loadNationalChampionships() {
+  try {
+    const html = await fetchText(NATIONAL_CHAMPIONSHIPS_SOURCE_URL);
+    return parseNationalChampionshipsIndex(html);
+  } catch (error) {
+    return buildEmptyNationalChampionships(error);
+  }
 }
 
 function createWikiRawLoader() {
@@ -3778,7 +4140,7 @@ async function buildRaceMetadata(options = {}) {
   const startedAt = Date.now();
   const includeDeferred = options.includeDeferred === true;
   const wikiRawLoader = createWikiRawLoader();
-  const seasons = includeDeferred ? SEASONS : SEASONS.filter((season) => /WorldTour/.test(season.label));
+  const seasons = ACTIVE_SEASONS;
   const seasonPagesStartedAt = Date.now();
   const seasonPages = await Promise.all(
     seasons.map(async (season) => {
@@ -3881,6 +4243,8 @@ async function buildRaceData(metadata, options = {}) {
   const selectedEuropeTourLiveStageRaces = includeDeferred ? europeTourLiveStageRaces : [];
   const selectedEuropeTourUpcomingRaces = includeDeferred ? europeTourUpcomingRaces : [];
 
+  const nationalChampionshipsStartedAt = Date.now();
+  const nationalChampionshipsPromise = loadNationalChampionships();
   const stageRaceDisplays = [
     ...selectedLiveStageCandidates,
     ...selectedEuropeTourRecentResults,
@@ -3903,6 +4267,8 @@ async function buildRaceData(metadata, options = {}) {
   const stageSnapshotsStartedAt = Date.now();
   await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
   const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
+  const nationalChampionships = await nationalChampionshipsPromise;
+  const nationalChampionshipsMs = Date.now() - nationalChampionshipsStartedAt;
 
   const finalizedStageRaces = (
     includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates
@@ -3952,11 +4318,13 @@ async function buildRaceData(metadata, options = {}) {
     europeTourRecentResults: selectedEuropeTourRecentResults,
     europeTourLiveStageRaces: selectedEuropeTourLiveStageRaces,
     europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
+    nationalChampionships,
     buildTimings: {
       totalMs: Date.now() - startedAt,
       recentStandingsMs,
       finalizedStageStandingsMs,
       stageSnapshotsMs,
+      nationalChampionshipsMs,
       recentResultCount: includeDeferred ? selectedRecentOneDayResults.length : selectedHomepageRecentCandidates.length,
       recentStandingsTargetCount: includeDeferred ? selectedRecentOneDayResults.length : homepageRecentStandingsTargets.length,
       finalizedStageCandidateCount: selectedFinalizedStageCandidates.length,
@@ -4372,6 +4740,7 @@ function buildHomepageDataPayload(data) {
     finalizedStageRaces: data.finalizedStageRaces,
     liveStageRaces: data.liveStageRaces,
     upcomingRaces: data.upcomingRaces,
+    nationalChampionships: data.nationalChampionships,
   };
 }
 
@@ -4692,31 +5061,6 @@ function getCompetitionGroups(data) {
       recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
       recentGridClass: "competition-grid-three",
     },
-    {
-      id: "proseries",
-      label: "UCI ProSeries",
-      tag: "Expanded Calendar",
-      description: "The ProSeries races added today, with live stage races, fresh results, and upcoming events.",
-      deferred: true,
-      predicate: (race) => /ProSeries/.test(race.series),
-      recentSource: "recentResults",
-      recentBlockTitle: "Recent Results",
-      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
-      recentGridClass: "competition-grid-three",
-    },
-    {
-      id: "europe-tour",
-      label: "Europe Tour Spotlight",
-      tag: "Selected 2.1 Races",
-      description: "Selected Europe Tour stage races that are worth tracking alongside the top-tier calendars.",
-      deferred: true,
-      predicate: (race) => race.series === "Men's Europe Tour",
-      liveSource: "europeTourLiveStageRaces",
-      recentSource: "europeTourRecentResults",
-      upcomingSource: "europeTourUpcomingRaces",
-      recentBlockTitle: "Recent Stage Race Results",
-      recentBlockDescription: "Finalized multi-stage results from the selected Europe Tour races.",
-    },
   ];
 
   return definitions.map((definition) => ({
@@ -4844,6 +5188,158 @@ function buildCompetitionSection(group, coverageView) {
     </section>`;
 }
 
+function buildNationalChampionValue(value) {
+  return value ? escapeHtml(value) : `<span class="champion-tbd">TBD</span>`;
+}
+
+function buildNationalChampionshipPodium(event) {
+  if (!event.podium?.length) {
+    return `
+      <div class="national-event-empty">
+        <span>${escapeHtml(event.dateLabel || "TBD")}</span>
+        <strong>${event.status === "upcoming" ? "Upcoming" : "TBD"}</strong>
+      </div>`;
+  }
+
+  const podiumMarkup = event.podium
+    .map(
+      (entry) => `
+        <li class="national-podium-item">
+          <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
+          <span class="rider-text">${escapeHtml(entry.rider)}</span>
+        </li>`,
+    )
+    .join("");
+
+  return `<ol class="national-podium-list">${podiumMarkup}</ol>`;
+}
+
+function buildNationalChampionshipEventCard(event) {
+  const statusLabel =
+    event.status === "completed"
+      ? "Completed"
+      : event.status === "upcoming"
+      ? "Upcoming"
+      : "TBD";
+  const dateLabel = event.dateLabel || "TBD";
+  const locationLabel = event.location || "Location TBD";
+  const sourceLink = event.sourceUrl
+    ? `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">Report</a>`
+    : "";
+  const finishVideoLink = event.finishVideoUrl
+    ? `<a href="${escapeHtml(event.finishVideoUrl)}" target="_blank" rel="noreferrer">Watch race finish</a>`
+    : "";
+  const linkMarkup = [finishVideoLink, sourceLink].filter(Boolean).join("");
+
+  return `
+    <article
+      class="card national-event-card"
+      data-national-event-card
+      data-country="${escapeHtml(event.country)}"
+      data-event-key="${escapeHtml(event.eventKey)}"
+      data-status="${escapeHtml(event.status)}"
+      ${event.status === "completed" ? "" : "hidden"}
+    >
+      <div class="card-kicker">${escapeHtml(statusLabel)} ${event.status === "completed" ? "National Title" : "National Title"}</div>
+      <h3>${escapeHtml(event.country)}</h3>
+      <p class="meta">${escapeHtml(event.eventName)}</p>
+      <div class="national-event-meta">
+        <span>${escapeHtml(dateLabel)}</span>
+        <span>${escapeHtml(locationLabel)}</span>
+      </div>
+      ${buildNationalChampionshipPodium(event)}
+      ${linkMarkup ? `<div class="national-event-links">${linkMarkup}</div>` : ""}
+    </article>`;
+}
+
+function buildNationalChampionshipFilters(events) {
+  if (!events?.length) {
+    return "";
+  }
+
+  const countries = [...new Set(events.map((event) => event.country).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const countryOptions = countries
+    .map((country) => `<option value="${escapeHtml(country)}">${escapeHtml(country)}</option>`)
+    .join("");
+  const eventOptions = NATIONAL_CHAMPIONSHIP_EVENT_KEYS
+    .map((eventKey) => `<option value="${escapeHtml(eventKey)}">${escapeHtml(NATIONAL_CHAMPIONSHIP_EVENT_LABELS[eventKey])}</option>`)
+    .join("");
+
+  return `
+    <div class="national-filter-bar">
+      <label class="national-filter">
+        <span>Country</span>
+        <select id="national-country-filter" data-national-filter="country">
+          <option value="">All countries</option>
+          ${countryOptions}
+        </select>
+      </label>
+      <label class="national-filter">
+        <span>Category</span>
+        <select id="national-event-filter" data-national-filter="event">
+          <option value="">All categories</option>
+          ${eventOptions}
+        </select>
+      </label>
+    </div>`;
+}
+
+function buildNationalChampionshipsSection(nationalChampionships) {
+  const data = nationalChampionships || buildEmptyNationalChampionships();
+  const events = sortNationalChampionshipEvents(data.events || buildNationalChampionshipEventRecords(data.rows || []));
+  const eventMarkup = events.map(buildNationalChampionshipEventCard).join("");
+  const filterMarkup = buildNationalChampionshipFilters(events);
+  const sourceUpdatedLabel = data.sourceLastModified
+    ? `Source updated ${formatTimestamp(data.sourceLastModified)} Eastern Time.`
+    : `Source fetched ${formatTimestamp(data.fetchedAt)} Eastern Time.`;
+  const summaryMarkup = `
+    <div class="national-summary-grid">
+      <div class="national-summary-card">
+        <span>Countries Listed</span>
+        <strong>${escapeHtml(String(data.totalCountryCount || 0))}</strong>
+      </div>
+      <div class="national-summary-card">
+        <span>Completed Events</span>
+        <strong>${escapeHtml(String(data.completedEventCount || events.filter((event) => event.status === "completed").length))}</strong>
+      </div>
+      <div class="national-summary-card">
+        <span>Scheduled/TBD</span>
+        <strong>${escapeHtml(String(events.filter((event) => event.status !== "completed").length))}</strong>
+      </div>
+    </div>`;
+  const errorMarkup = data.error
+    ? `<p class="meta national-error">National championship data is temporarily unavailable: ${escapeHtml(data.error)}</p>`
+    : "";
+
+  return `
+    <section class="section national-section" id="national-championships">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">National Titles</div>
+          <h2>National Championships</h2>
+          <p>Elite men and women road race and individual time trial champions by country.</p>
+        </div>
+      </div>
+      <div class="competition-stack">
+        ${summaryMarkup}
+        ${errorMarkup}
+        <div class="competition-block national-results-block">
+          <div class="competition-block-head">
+            <h3>Results</h3>
+            <p>${escapeHtml(data.sourceLabel)}. ${escapeHtml(sourceUpdatedLabel)} <a href="${escapeHtml(data.sourceUrl)}" target="_blank" rel="noreferrer">View source</a>.</p>
+          </div>
+          ${filterMarkup}
+          <div class="grid competition-grid competition-grid-three national-event-grid" data-national-event-grid>
+            ${eventMarkup}
+          </div>
+          <p class="meta national-empty-state" data-national-empty-state hidden>No national championship entries match those filters.</p>
+        </div>
+      </div>
+    </section>`;
+}
+
 function buildDeferredSectionButtons(groups) {
   if (groups.length === 0) {
     return "";
@@ -4869,7 +5365,7 @@ function buildDeferredSectionButtons(groups) {
         <div>
           <div class="section-tag">More Race Coverage</div>
           <h2>Load More Racing</h2>
-          <p>Open the expanded UCI ProSeries and Europe Tour Spotlight sections only when you want them.</p>
+          <p>Open additional race sections only when you want them.</p>
         </div>
       </div>
       <div class="deferred-button-row">${buttons}</div>
@@ -4893,13 +5389,18 @@ function buildHtmlPage(data, view) {
     .map((group) => buildCompetitionSection(group, view.coverageByGroup[group.id]))
     .filter(Boolean)
     .join("");
+  const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
   const heroSubheader = [
     "TOP-FIVE RACE RESULTS",
+    "NATIONAL CHAMPIONS",
     "UPCOMING RACE CALENDARS",
     "LATEST RACE NEWS",
     "FEATURED STAGE RACES",
   ].join(" • ");
-  const heroMenu = competitionGroups
+  const heroMenu = [
+    ...competitionGroups,
+    { id: "national-championships", label: "National Championships" },
+  ]
     .map(
       (group) => `
         ${
@@ -4937,7 +5438,7 @@ function buildHtmlPage(data, view) {
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Pro Cycling Results" />
     <meta property="og:title" content="Pro Cycling Results" />
-    <meta property="og:description" content="Live race standings, recent results, and news coverage for the 2026 UCI WorldTour, Women's WorldTour, ProSeries, and Europe Tour." />
+    <meta property="og:description" content="Live race standings, recent results, national champions, and news coverage for the 2026 men's and women's UCI WorldTour." />
     <meta property="og:url" content="https://procyclingresults.up.railway.app" />
     <meta property="og:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
     <meta property="og:image:width" content="1200" />
@@ -4945,7 +5446,7 @@ function buildHtmlPage(data, view) {
     <meta property="og:image:alt" content="Pro Cycling Results — Live UCI Race Coverage" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Pro Cycling Results" />
-    <meta name="twitter:description" content="Live race standings, recent results, and news coverage for the 2026 UCI WorldTour, Women's WorldTour, ProSeries, and Europe Tour." />
+    <meta name="twitter:description" content="Live race standings, recent results, national champions, and news coverage for the 2026 men's and women's UCI WorldTour." />
     <meta name="twitter:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
@@ -5338,6 +5839,229 @@ function buildHtmlPage(data, view) {
         margin-top: 1rem;
       }
 
+      .national-section::before {
+        background: var(--rainbow);
+      }
+
+      .national-summary-grid {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .national-summary-card {
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(0, 120, 199, 0.05));
+      }
+
+      .national-summary-card span,
+      .champion-line span {
+        display: block;
+        color: var(--muted);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .national-summary-card strong {
+        display: block;
+        margin-top: 0.2rem;
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 2rem;
+        line-height: 1;
+      }
+
+      .champion-lines {
+        display: grid;
+        gap: 0.65rem;
+        margin-top: 1rem;
+      }
+
+      .champion-line {
+        display: grid;
+        gap: 0.18rem;
+        padding-top: 0.65rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .champion-line:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .champion-line strong {
+        color: var(--ink);
+        font-size: 0.98rem;
+        line-height: 1.35;
+      }
+
+      .champion-tbd {
+        color: rgba(79, 97, 136, 0.68);
+        font-weight: 600;
+      }
+
+      .national-error {
+        padding: 0.85rem 1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(239, 51, 64, 0.24);
+        background: rgba(239, 51, 64, 0.06);
+      }
+
+      .national-results-block a {
+        color: var(--uci-blue);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .national-results-block a:hover {
+        text-decoration: underline;
+      }
+
+      .national-filter-bar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.85rem;
+        margin-bottom: 1rem;
+      }
+
+      .national-filter {
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .national-filter span,
+      .national-event-meta span,
+      .national-event-empty span {
+        color: var(--muted);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .national-filter select {
+        width: 100%;
+        min-height: 2.8rem;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: white;
+        color: var(--ink);
+        font: inherit;
+        font-weight: 700;
+        padding: 0.65rem 0.8rem;
+      }
+
+      .national-event-card[hidden] {
+        display: none;
+      }
+
+      .national-event-meta {
+        display: grid;
+        gap: 0.35rem;
+        margin-top: 0.9rem;
+        padding-top: 0.85rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .national-podium-list {
+        display: grid;
+        gap: 0.55rem;
+        list-style: none;
+        margin: 1rem 0 0;
+        padding: 0;
+      }
+
+      .national-podium-item {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .national-event-empty {
+        display: grid;
+        gap: 0.25rem;
+        margin-top: 1rem;
+      }
+
+      .national-event-empty strong {
+        color: var(--ink);
+        font-size: 1.05rem;
+      }
+
+      .national-event-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.85rem;
+        margin-top: 1rem;
+      }
+
+      .national-empty-state {
+        padding: 0.85rem 1rem;
+        border-radius: 18px;
+        border: 1px dashed var(--line);
+        background: rgba(255, 255, 255, 0.62);
+      }
+
+      .national-table-wrap {
+        overflow-x: auto;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .national-table {
+        width: 100%;
+        min-width: 760px;
+        border-collapse: collapse;
+      }
+
+      .national-table th,
+      .national-table td {
+        padding: 0.82rem 0.9rem;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink);
+        font-size: 0.92rem;
+        line-height: 1.35;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .national-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--uci-blue-deep);
+        color: white;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .national-table tbody th {
+        width: 14rem;
+        color: var(--uci-blue-deep);
+        font-weight: 800;
+      }
+
+      .national-table tbody tr:last-child th,
+      .national-table tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .national-table tbody tr:nth-child(even) {
+        background: rgba(0, 120, 199, 0.035);
+      }
+
       .card,
       .article-card {
         position: relative;
@@ -5714,6 +6438,14 @@ function buildHtmlPage(data, view) {
         .article-controls-left {
           min-width: 100%;
         }
+
+        .national-summary-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .national-filter-bar {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 960px) {
@@ -5744,10 +6476,11 @@ function buildHtmlPage(data, view) {
       </section>
 
       ${competitionSections}
+      ${nationalChampionshipsSection}
       ${deferredSectionButtons}
       ${deferredSectionMounts}
 
-      <p class="footer-note">Data refreshes automatically from live season pages when the server cache expires. Race coverage links update from current news feeds.</p>
+      <p class="footer-note">WorldTour data refreshes from live season pages when the server cache expires. National champions update from the current championship index.</p>
     </main>
     <script>
       const deferredSectionState = new Map();
@@ -5769,7 +6502,7 @@ function buildHtmlPage(data, view) {
         }
 
         return '<section class="section section-cta deferred-followup-cta">' +
-          '<div class="section-head"><div><div class="section-tag">More Race Coverage</div><h2>Load More Racing</h2><p>Open the next deferred race section only when you want it.</p></div></div>' +
+          '<div class="section-head"><div><div class="section-tag">More Race Coverage</div><h2>Load More Racing</h2><p>Open the next race section only when you want it.</p></div></div>' +
           '<div class="deferred-button-row">' +
           groups.map((group) => buildDeferredButtonMarkup(group, true)).join("") +
           '</div></section>';
@@ -5844,6 +6577,42 @@ function buildHtmlPage(data, view) {
             trigger.classList.remove("is-loading");
           }
         }
+      }
+
+      function bindNationalChampionshipFilters() {
+        const countrySelect = document.getElementById("national-country-filter");
+        const eventSelect = document.getElementById("national-event-filter");
+        const cards = Array.from(document.querySelectorAll("[data-national-event-card]"));
+        const emptyState = document.querySelector("[data-national-empty-state]");
+        if (!countrySelect || !eventSelect || cards.length === 0) {
+          return;
+        }
+
+        const applyFilters = () => {
+          const selectedCountry = countrySelect.value;
+          const selectedEvent = eventSelect.value;
+          const includePending = Boolean(selectedCountry);
+          let visibleCount = 0;
+
+          cards.forEach((card) => {
+            const matchesCountry = !selectedCountry || card.dataset.country === selectedCountry;
+            const matchesEvent = !selectedEvent || card.dataset.eventKey === selectedEvent;
+            const matchesStatus = includePending || card.dataset.status === "completed";
+            const shouldShow = matchesCountry && matchesEvent && matchesStatus;
+            card.hidden = !shouldShow;
+            if (shouldShow) {
+              visibleCount += 1;
+            }
+          });
+
+          if (emptyState) {
+            emptyState.hidden = visibleCount !== 0;
+          }
+        };
+
+        countrySelect.addEventListener("change", applyFilters);
+        eventSelect.addEventListener("change", applyFilters);
+        applyFilters();
       }
 
       function bindArticleControls(root = document) {
@@ -5972,6 +6741,7 @@ function buildHtmlPage(data, view) {
       });
 
       bindArticleControls();
+      bindNationalChampionshipFilters();
     </script>
   </body>
 </html>`;
@@ -6227,6 +6997,15 @@ const server = http.createServer(async (request, response) => {
 
       if (url.pathname === "/api/competition-section") {
         const groupId = url.searchParams.get("group") || "";
+        if (RETIRED_COMPETITION_GROUP_IDS.has(groupId)) {
+          sendJson(response, 410, {
+            error: "This competition section is retired.",
+            message:
+              "UCI ProSeries and Europe Tour sections are archived in the repository but are not part of the active product scope.",
+          });
+          return;
+        }
+
         if (!DEFERRED_COMPETITION_GROUP_IDS.has(groupId)) {
           sendJson(response, 404, { error: "Unknown competition group." });
           return;
@@ -6247,6 +7026,15 @@ const server = http.createServer(async (request, response) => {
 
       if (url.pathname === "/api/competition-coverage") {
         const groupId = url.searchParams.get("group") || "";
+        if (RETIRED_COMPETITION_GROUP_IDS.has(groupId)) {
+          sendJson(response, 410, {
+            error: "This competition group is retired.",
+            message:
+              "UCI ProSeries and Europe Tour article coverage is archived with the retired section code and is not currently loaded.",
+          });
+          return;
+        }
+
         const data = DEFERRED_COMPETITION_GROUP_IDS.has(groupId)
           ? await loadCompetitionGroupData(groupId)
           : await loadRaceData({ includeDeferred: false });
@@ -6265,7 +7053,7 @@ const server = http.createServer(async (request, response) => {
       }
 
       if (url.pathname === "/api/races") {
-        const data = await loadRaceData({ includeDeferred: true });
+        const data = await loadRaceData({ includeDeferred: false });
         const debugRequested = url.searchParams.get("debug") === "1";
         sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : data);
         return;

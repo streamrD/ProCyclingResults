@@ -20,16 +20,16 @@ The app is a live race desk for selected 2026 UCI calendars. It surfaces:
 - Live multi-stage race standings
 - Finalized stage-race classifications
 - Upcoming races
+- Elite road national champions by country
 - Race-specific article coverage
 
-The current content model is split into four competition sections:
+The current content model is intentionally focused on three sections:
 
 - Men's WorldTour
 - Women's WorldTour
-- UCI ProSeries
-- Europe Tour Spotlight
+- National Championships
 
-Europe Tour coverage is intentionally narrower than the other calendars. It only includes selected races from the broader season page, currently filtered to specific entries such as `Vuelta Asturias`.
+The app previously included UCI ProSeries and Europe Tour Spotlight sections. Those sections were retired from the active UI and API on 2026-06-22 so the project can focus on the highest-value coverage: men's WorldTour, women's WorldTour, and national championships. Their restoration reference is kept in `archive/proseries-europe-tour-sections.js`.
 
 ## Stack
 
@@ -62,6 +62,8 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 .
 ├── assets/
 │   └── fonts/
+├── archive/
+│   └── proseries-europe-tour-sections.js
 ├── data/
 │   └── static-stage-race-snapshots.json
 ├── package.json
@@ -109,11 +111,11 @@ There is currently:
 - `/`
   Returns the server-rendered HTML shell. On cold start, this can initially render a warmup state while homepage WorldTour data loads.
 - `/api/homepage-data`
-  Returns the lighter homepage payload used by `/`. This contains only the WorldTour-first data needed for the initial page experience.
+  Returns the active homepage payload used by `/`. This contains WorldTour race data plus national championships.
 - `/api/races`
-  Returns the full aggregated race payload as JSON, including deferred competition sections.
+  Returns the active aggregated race payload as JSON. It currently mirrors the WorldTour plus national championship product scope.
 - `/api/competition-section?group=<id>`
-  Returns a lazily loaded section payload for deferred groups such as `proseries` and `europe-tour`.
+  Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
 - `/api/competition-coverage?group=<id>`
   Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
 - `/assets/*`
@@ -127,12 +129,10 @@ The app follows a single-process request/response model:
 
 1. An incoming request reaches the Node `http` server.
 2. If the request is for `/assets/*`, the file is served directly.
-3. The homepage path and the full-data path are intentionally split.
-4. `/api/homepage-data` loads or reuses a lighter WorldTour-first payload used to bring the initial page out of warming state faster.
-5. `/api/races` loads or reuses the fuller payload that includes deferred sections and broader enrichment work.
-6. `/api/competition-section` loads deferred competition sections on demand.
-7. `/api/competition-coverage` loads article coverage on demand for the requested section.
-8. `/` renders the shell plus inline client JS that warms the homepage payload, loads deferred sections when clicked, and lazy-loads article coverage.
+3. `/api/homepage-data` and `/api/races` load or reuse the active WorldTour plus national championship payload.
+4. `/api/competition-section` is retained for future deferred sections, but there are no active deferred sections currently.
+5. `/api/competition-coverage` loads article coverage on demand for the requested active WorldTour section.
+6. `/` renders the shell plus inline client JS that warms the homepage payload and lazy-loads article coverage.
 
 There is no persistence layer. All state is in memory and rebuilt from live upstream sources when caches expire.
 
@@ -146,15 +146,24 @@ The main race schedule/results pipeline reads raw wikitext from season pages suc
 
 - `2026_UCI_World_Tour`
 - `2026_UCI_Women's_World_Tour`
-- `2026_UCI_ProSeries`
-- `2026_UCI_Women's_ProSeries`
-- `2026_UCI_Europe_Tour`
 
 The application fetches raw page content via:
 
 - `https://en.wikipedia.org/w/index.php?title=<PAGE>&action=raw`
 
 It parses season tables, race pages, infobox fields, result templates, and stage-race sections directly from raw wiki markup using regular expressions and string heuristics.
+
+Retired ProSeries and Europe Tour season configuration is archived in `archive/proseries-europe-tour-sections.js`; it is not part of the active season fetch list.
+
+### National championships source
+
+National championship results are parsed from the Cyclingnews 2026 Road National Champions index:
+
+- `https://www.cyclingnews.com/pro-cycling/racing/2026-road-national-champions-index/`
+
+The parser reads the `2026 Elite Road National Champions` table and extracts country-level elite men's and women's individual time trial and road race winners. Empty placeholder cells are treated as missing results. The app then expands each country row into four event-level records so the UI can prioritize completed results and filter by country or category.
+
+Some championship event records have small local metadata overrides for known date, location, podium, source report, or finish-video information. Keep these narrow and source-backed; the broad winner list should continue to come from the Cyclingnews index.
 
 ### Secondary source: Bing News RSS
 
@@ -192,8 +201,6 @@ Current special cases:
   Pulls the official WordPress post feed plus the linked liveblog JSON endpoint to recover current stage results and a bounded GC fallback when upstream race pages are thin
 - Eschborn-Frankfurt
   Pulls the official rankings page to recover top-five one-day results when the current-edition Wikipedia race page is missing
-- Selected 2026 Europe Tour stage races
-  Use static snapshot data from `data/static-stage-race-snapshots.json` when the current upstream race pages do not expose complete stage / GC result blocks
 - Grande Prémio Anicolor
   Uses a date-bounded live fallback snapshot while the current edition is in progress and upstream live stage data is still sparse
 
@@ -201,16 +208,11 @@ This source logic is centralized behind provider registries plus `loadOfficialSt
 
 ## Data Model and Aggregation Flow
 
-The central pipeline is `loadRaceData()`, but it now operates in two important modes:
-
-- `includeDeferred: false`
-  Homepage mode. This powers `/api/homepage-data` and the initial `/` experience. It only loads the WorldTour-first data needed for the initial page, keeps location enrichment non-blocking, and limits recent-standings enrichment so cold-start readiness is materially faster.
-- `includeDeferred: true`
-  Full mode. This powers `/api/races` and the deferred sections. It includes the broader competition set plus the heavier enrichment paths.
+The central pipeline is `loadRaceData()`. The active path powers `/`, `/api/homepage-data`, and `/api/races` with WorldTour race data plus national championships. The older `includeDeferred` option remains in code as a restoration hook for previously deferred sections, but no deferred groups are active.
 
 At a high level it does the following:
 
-1. Fetch the configured season pages from Wikipedia.
+1. Fetch the active WorldTour season pages from Wikipedia.
 2. Parse the season tables into normalized race objects.
 3. Remove cancelled or malformed rows.
 4. Split races into display buckets based on date and category.
@@ -219,22 +221,22 @@ At a high level it does the following:
    Official and Wikipedia-derived stage-race data are merged field-by-field rather than treated as all-or-nothing snapshots.
    Wikipedia fetches are rate-limited and retried because fresh live-race refreshes can otherwise hit upstream `429` responses during busy race windows.
    Cold-cache latency is therefore mostly an upstream-fetch problem rather than a rendering problem: live race rebuilds can touch multiple Wikipedia and official race pages, and the Wikipedia throttling guard intentionally trades speed for safer refresh behavior.
-7. Mark races that finished today.
-8. Assign stable `id` values from page titles.
-9. Return the aggregate payload and cache it in memory.
+7. Fetch and parse the national championship index, then expand rows into event-level records.
+8. Mark races that finished today.
+9. Assign stable `id` values from page titles.
+10. Return the aggregate payload and cache it in memory.
 
 The returned JSON shape currently contains:
 
 - `fetchedAt`
+- `metadataFetchedAt`
 - `recentResults`
 - `finalizedStageRaces`
 - `liveStageRaces`
 - `upcomingRaces`
-- `europeTourRecentResults`
-- `europeTourLiveStageRaces`
-- `europeTourUpcomingRaces`
+- `nationalChampionships`
 
-The homepage payload returned by `/api/homepage-data` is intentionally narrower than `/api/races`. It omits deferred section data so the first user-visible render is not blocked on ProSeries and Europe Tour work.
+Legacy `europeTour*` keys may still appear internally as empty backward-compatible fields while the retired code is being preserved, but they are not active UI sections.
 
 ## Core Race Object Shape
 
@@ -402,18 +404,17 @@ There are several independent in-memory caches.
 
 ### Race metadata caches
 
-- `raceMetadataCache` for homepage metadata
-- `deferredRaceMetadataCache` for the full/deferred metadata path
+- `raceMetadataCache` for active WorldTour metadata
+- `deferredRaceMetadataCache` retained as a legacy restoration hook
 - TTL: 60 minutes
 - Store `updatedAt`, `data`, and `promise`
 
-Homepage metadata is intentionally lighter than the deferred/full metadata path. The homepage metadata builder only parses the WorldTour pages and lets some location enrichment continue in the background.
+The active metadata builder parses the WorldTour pages and lets some location enrichment continue in the background.
 
 ### Race data caches
 
-- `raceDataCache` for homepage data
-- `deferredRaceDataCache` for full `/api/races`
-- group-specific deferred section caches for `proseries` and `europe-tour`
+- `raceDataCache` for the active homepage/API payload
+- `deferredRaceDataCache` and group-specific deferred section caches retained as legacy restoration hooks
 - Live-race TTL: 60 seconds
 - Store `updatedAt`, `data`, and `promise`
 
@@ -436,7 +437,7 @@ Operational implications:
 - Cache disappears on restart/redeploy
 - Multi-instance deployments do not share cache state
 - First request after a true cold start can be slower
-- The homepage and full API now have different cold-start profiles. `/api/homepage-data` is the user-visible readiness path for the initial page, while `/api/races` may still take longer because it includes deferred sections.
+- `/api/homepage-data` is the user-visible readiness path for the initial page; `/api/races` currently uses the same active scope.
 - Active stage-race updates are intentionally fresher than before because live data now revalidates on a shorter cadence and does not always serve stale results first.
 - The slowdown is usually dominated by upstream fetch latency and Wikipedia rate limiting, not server-side HTML rendering
 - The warmup screen on `/` exists specifically to make cold starts feel intentional instead of looking hung
@@ -452,7 +453,7 @@ Useful commands:
 - `npm run benchmark:ready`
   Measures cold-start readiness for `/api/races`.
 - `npm run benchmark:load -- --runs=5 --include-deferred --include-coverage`
-  Measures warmed response times for the homepage, full API, deferred section endpoints, and coverage endpoints.
+  Measures warmed response times for the homepage, full API, optional deferred section endpoints, and coverage endpoints. With no active deferred groups, deferred section measurements are mostly useful when restoring archived sections.
 
 The script can also target another environment via `--base-url=<url>`.
 
@@ -467,6 +468,7 @@ Major rendering helpers include:
 - `buildCoverageBlock()`
 - `buildRaceCard()`
 - `buildStageRaceCard()`
+- `buildNationalChampionshipsSection()`
 - `buildUpcomingCard()`
 - `buildArticleCard()`
 
@@ -484,9 +486,9 @@ The design system is encoded directly in the inline `<style>` block:
 Client-side JS is still intentionally small, but it now does more than simple form submission:
 
 - Polls `/api/homepage-data` while the homepage is warming
-- Loads `UCI ProSeries` and `Europe Tour Spotlight` on demand from hero and in-page buttons
-- Shows a loading state for deferred sections before their payload returns
-- Loads race coverage on demand for each competition group
+- Filters National Championships cards by country and category; the default view shows completed events first, while country-specific selections can reveal scheduled or TBD events.
+- Keeps deferred-section loading utilities available for future sections, though none are active right now
+- Loads race coverage on demand for each active competition group
 - Changing a race selector submits the coverage request
 - Clicking refresh increments a hidden refresh token and reloads the coverage block
 
@@ -551,14 +553,16 @@ Given the repo structure, changes usually fall into one of these categories:
 
 Typical files/areas:
 
-- `SEASONS`
+- `ACTIVE_SEASONS`
 - competition-group definitions in `getCompetitionGroups()`
 - section copy / labels in render helpers
+- national championship parser/render helpers when changing championship coverage
+- `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` for narrow date, location, podium, source-report, and finish-video overrides
 
 Examples:
 
 - adding a new calendar
-- changing Europe Tour filters
+- restoring an archived ProSeries or Europe Tour section from `archive/proseries-europe-tour-sections.js`
 - adjusting max counts for sections
 
 ### 2. Improve parsing fidelity
@@ -597,6 +601,10 @@ Typical files/areas:
 
 Current API is simple because the UI and API share the same aggregated payload. Any future consumer should start with `/api/races` unless it needs finer-grained endpoints.
 
+### Retired sections
+
+The UCI ProSeries and Europe Tour Spotlight sections were implemented previously and retired from the active app on 2026-06-22. The archived config lives in `archive/proseries-europe-tour-sections.js`. To restore those sections, reintroduce the archived season configs into the active season list, re-enable deferred group IDs, review the old group-data builder paths, update docs, and rerun the parser regression suite plus endpoint checks.
+
 ## Recommended Workflow for Future Changes
 
 1. Read `server.js` end-to-end before making structural changes.
@@ -608,7 +616,7 @@ Current API is simple because the UI and API share the same aggregated payload. 
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, and static snapshot coverage for Grande Prémio Anicolor.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing, national championship parsing/rendering, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, and static snapshot coverage for Grande Prémio Anicolor.
 
 Run it with:
 
@@ -628,6 +636,7 @@ The project still lacks several safeguards:
 If the project grows, the best next quality investment would be fixture-driven tests for:
 
 - season page parsing
+- national championship source drift beyond the current table fixture
 - stage-race extraction
 - Vuelta Asturias official parsing
 - one-day result rendering fallbacks

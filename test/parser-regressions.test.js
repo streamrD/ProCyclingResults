@@ -61,6 +61,9 @@ function loadParserExports() {
       selectPreferredStageRaceSnapshot,
       hasFreshnessSensitiveRaceData,
       getRaceDataCacheTtlMs,
+      parseNationalChampionshipsIndex,
+      buildNationalChampionshipsSection,
+      getCompetitionGroups,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -656,8 +659,8 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
       await fetchGiroDItaliaWomenOfficialSnapshot(
         {
           pageTitle: "2026 Giro d'Italia Women",
-          startDate: new Date("2026-05-27T00:00:00Z"),
-          endDate: new Date("2026-06-04T00:00:00Z"),
+          startDate: new Date("2026-06-18T00:00:00Z"),
+          endDate: new Date("2026-06-26T00:00:00Z"),
         },
         async (url) => (url.includes("/di-tappa/") ? stageHtml : rankingsHtml),
       ),
@@ -737,8 +740,8 @@ test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content ser
       await fetchGiroDItaliaWomenOfficialSnapshot(
         {
           pageTitle: "2026 Giro d'Italia Women",
-          startDate: new Date("2026-05-27T00:00:00Z"),
-          endDate: new Date("2026-06-04T00:00:00Z"),
+          startDate: new Date("2026-06-18T00:00:00Z"),
+          endDate: new Date("2026-06-26T00:00:00Z"),
         },
         async (url) => (url.includes("/di-tappa/") ? staleStageHtml : rankingsHtml),
       ),
@@ -1158,6 +1161,126 @@ test("partitionRaceBuckets keeps completed Europe Tour stage races even when the
 
   assert.equal(buckets.europeTourRecentResults.length, 1);
   assert.equal(buckets.europeTourRecentResults[0].title, "Flèche du Sud");
+});
+
+test("parseNationalChampionshipsIndex extracts national champions and cleans placeholder cells", () => {
+  const { parseNationalChampionshipsIndex } = loadParserExports();
+  const html = `
+    <script type="application/ld+json">{"dateModified":"2026-06-21T22:58:07+00:00"}</script>
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr>
+        <th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE ITT</th><th>WE Road Race</th>
+      </tr>
+      <tr>
+        <th>Australia</th><td>Luke Plapp</td><td>Axel K&auml;llberg</td><td>Grace Brown</td><td>Ruby Roseman-Gannon</td>
+      </tr>
+      <tr>
+        <th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td>
+      </tr>
+      <tr>
+        <th>Blankovia</th><td>Row 12 - Cell 2</td><td></td><td> </td><td>Row 12 - Cell 5</td>
+      </tr>
+      <tr>
+        <th>Great Britain</th><td></td><td></td><td></td><td></td>
+      </tr>
+      <tr>
+        <th>Canada</th><td></td><td>Alison Jackson</td><td></td><td></td>
+      </tr>
+    </table>`;
+
+  const parsed = parseNationalChampionshipsIndex(html);
+  const australia = parsed.rows.find((row) => row.country === "Australia");
+  const unitedStates = parsed.rows.find((row) => row.country === "United States");
+  const blankovia = parsed.rows.find((row) => row.country === "Blankovia");
+  const usMensRoadRace = parsed.events.find(
+    (event) => event.country === "United States" && event.eventKey === "meRoadRace",
+  );
+  const usWomensRoadRace = parsed.events.find(
+    (event) => event.country === "United States" && event.eventKey === "weRoadRace",
+  );
+  const britishMensTimeTrial = parsed.events.find(
+    (event) => event.country === "Great Britain" && event.eventKey === "meItt",
+  );
+
+  assert.equal(parsed.sourceLastModified, "2026-06-21T22:58:07+00:00");
+  assert.equal(parsed.totalCountryCount, 5);
+  assert.equal(parsed.reportingCountryCount, 3);
+  assert.equal(parsed.completeCountryCount, 2);
+  assert.equal(parsed.completedEventCount, 9);
+  assert.equal(parsed.events.length, 20);
+  assert.equal(australia.meRoadRace, "Axel Källberg");
+  assert.equal(unitedStates.meItt, "Artem Shmidt");
+  assert.equal(unitedStates.meRoadRace, "Quinn Simmons");
+  assert.equal(parsed.events[0].country, "United States");
+  assert.equal(parsed.events[0].eventKey, "meRoadRace");
+  assert.equal(usMensRoadRace.dateLabel, "Jun 21, 2026");
+  assert.equal(usMensRoadRace.location, "Charleston, West Virginia");
+  assert.equal(usMensRoadRace.finishVideoUrl, "https://www.youtube.com/watch?v=hSVSHs9lPPI");
+  assert.deepEqual(JSON.parse(JSON.stringify(usWomensRoadRace.podium)), [
+    { place: "1", rider: "Kate Courtney" },
+    { place: "2", rider: "Lauren Stephens" },
+    { place: "3", rider: "Grace Arlandson" },
+  ]);
+  assert.equal(britishMensTimeTrial.dateLabel, "Jun 25, 2026");
+  assert.equal(britishMensTimeTrial.location, "Lampeter, Wales");
+  assert.deepEqual(JSON.parse(JSON.stringify(blankovia)), {
+    country: "Blankovia",
+    meItt: "",
+    meRoadRace: "",
+    weItt: "",
+    weRoadRace: "",
+  });
+  assert.equal(parsed.highlights[0].country, "United States");
+});
+
+test("buildNationalChampionshipsSection renders source-backed champion table", () => {
+  const { parseNationalChampionshipsIndex, buildNationalChampionshipsSection } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <script type="application/ld+json">{"dateModified":"2026-06-21T22:58:07+00:00"}</script>
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE ITT</th><th>WE Road Race</th></tr>
+      <tr><th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+      <tr><th>Sweden</th><td>Axel K&auml;llberg</td><td></td><td>Zo&euml; Andersson</td><td></td></tr>
+      <tr><th>Great Britain</th><td></td><td></td><td></td><td></td></tr>
+    </table>`);
+  const markup = buildNationalChampionshipsSection(parsed);
+
+  assert.match(markup, /National Championships/);
+  assert.match(markup, /Quinn Simmons/);
+  assert.match(markup, /Axel Källberg/);
+  assert.match(markup, /Zoë Andersson/);
+  assert.match(markup, /Taylor Knibb/);
+  assert.match(markup, /Lauren Stephens/);
+  assert.match(markup, /Watch race finish/);
+  assert.match(markup, /national-country-filter/);
+  assert.match(markup, /national-event-filter/);
+  assert.match(markup, /Great Britain/);
+  assert.match(markup, /hidden/);
+  assert.match(markup, /Cyclingnews/);
+  assert.match(markup, /2026-road-national-champions-index/);
+  assert.doesNotMatch(markup, /All Countries/);
+});
+
+test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out of the active UI", () => {
+  const { getCompetitionGroups } = loadParserExports();
+  const groups = getCompetitionGroups({
+    recentResults: [
+      { series: "Men's WorldTour" },
+      { series: "Women's WorldTour" },
+      { series: "Men's ProSeries" },
+      { series: "Men's Europe Tour" },
+    ],
+    liveStageRaces: [],
+    upcomingRaces: [],
+  });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(groups.map((group) => group.id))), [
+    "mens-worldtour",
+    "womens-worldtour",
+  ]);
+  assert.equal(groups.some((group) => group.deferred), false);
 });
 
 test("selectPreferredStageRaceSnapshot prefers richer fallback when stage progress is tied", () => {
@@ -1616,6 +1739,30 @@ test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () =>
       },
     }),
     "https://www.youtube.com/watch?v=RUOs9YzSato",
+  );
+});
+
+test("getRaceFinishVideoUrl returns Tour de Suisse video only for the final completed stage", () => {
+  const { getRaceFinishVideoUrl } = loadParserExports();
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Tour de Suisse",
+      stageRace: {
+        completedStages: 5,
+      },
+    }),
+    "https://www.youtube.com/watch?v=f61NRl63jFg",
+  );
+
+  assert.equal(
+    getRaceFinishVideoUrl({
+      pageTitle: "2026 Tour de Suisse",
+      stageRace: {
+        completedStages: 4,
+      },
+    }),
+    "",
   );
 });
 
