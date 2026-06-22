@@ -56,6 +56,10 @@ function loadParserExports() {
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
+      buildFinishVideoQuery,
+      parseYouTubeSearchVideos,
+      isLikelyFinishVideo,
+      selectFinishVideo,
       parseTourOfGreeceOfficialStandings,
       extractTourOfGreeceLatestStageNumber,
       buildRaceCard,
@@ -1108,6 +1112,74 @@ test("fetchTourDeFranceOfficialSnapshot is gated to the current edition before t
   );
 
   assert.equal(snapshot, null);
+});
+
+const TDF_STAGE21_RACE = {
+  pageTitle: "2026 Tour de France",
+  title: "Tour de France",
+  endDate: new Date("2026-07-26T00:00:00Z"),
+  stageRace: { completedStages: 21, latestStage: { number: 21, standings: [{ place: "1", rider: "x" }] } },
+};
+
+function loadYouTubeFixtureVideos() {
+  const { parseYouTubeSearchVideos } = loadParserExports();
+  const html = fs.readFileSync(path.join(__dirname, "fixtures", "youtube-search-tdf-stage21.html"), "utf8");
+  return { parseYouTubeSearchVideos, videos: parseYouTubeSearchVideos(html) };
+}
+
+test("buildFinishVideoQuery includes the race name, year, stage, and highlights", () => {
+  const { buildFinishVideoQuery } = loadParserExports();
+  assert.equal(buildFinishVideoQuery(TDF_STAGE21_RACE), "Tour de France 2026 stage 21 highlights");
+  assert.equal(
+    buildFinishVideoQuery({
+      pageTitle: "2026 Paris–Roubaix",
+      title: "Paris–Roubaix",
+      endDate: new Date("2026-04-12T00:00:00Z"),
+    }),
+    "Paris–Roubaix 2026 highlights",
+  );
+});
+
+test("parseYouTubeSearchVideos reads videoId, title, channel, length, and verified badge from ytInitialData", () => {
+  const { videos } = loadYouTubeFixtureVideos();
+  assert.equal(videos.length, 8);
+  const official = videos.find((video) => video.id === "tdfOfficial21");
+  assert.equal(official.channel, "Tour de France");
+  assert.equal(official.lengthSeconds, 616);
+  assert.equal(official.verified, true);
+});
+
+test("selectFinishVideo prefers the official race channel over region-locked broadcasters", () => {
+  const { parseYouTubeSearchVideos, videos } = loadYouTubeFixtureVideos();
+  void parseYouTubeSearchVideos;
+  const { selectFinishVideo } = loadParserExports();
+  const best = selectFinishVideo(videos, TDF_STAGE21_RACE);
+  assert.equal(best.id, "tdfOfficial21");
+});
+
+test("isLikelyFinishVideo rejects wrong stage, wrong year, previews, and unrelated races", () => {
+  const { isLikelyFinishVideo } = loadParserExports();
+  const { videos } = loadYouTubeFixtureVideos();
+  const byId = Object.fromEntries(videos.map((video) => [video.id, video]));
+
+  assert.equal(isLikelyFinishVideo(byId.tdfOfficial21, TDF_STAGE21_RACE), true);
+  assert.equal(isLikelyFinishVideo(byId.gcnWrongStage, TDF_STAGE21_RACE), false); // stage 20
+  assert.equal(isLikelyFinishVideo(byId.nbcWrongYear, TDF_STAGE21_RACE), false); // 2025
+  assert.equal(isLikelyFinishVideo(byId.euroPreview, TDF_STAGE21_RACE), false); // preview
+  assert.equal(isLikelyFinishVideo(byId.giroUnrelated, TDF_STAGE21_RACE), false); // different race
+});
+
+test("selectFinishVideo will not show a men's video for a women's race", () => {
+  const { selectFinishVideo } = loadParserExports();
+  const { videos } = loadYouTubeFixtureVideos();
+  const womensRace = {
+    pageTitle: "2026 Paris–Roubaix Femmes",
+    title: "Paris–Roubaix Femmes",
+    endDate: new Date("2026-04-12T00:00:00Z"),
+  };
+  // The fixture only contains men's / neutral clips, so the women's division
+  // filter should reject all of them rather than surface a men's video.
+  assert.equal(selectFinishVideo(videos, womensRace), null);
 });
 
 test("extractGiroDItaliaLatestCompletedStageNumber finds the latest stage rankings link", () => {

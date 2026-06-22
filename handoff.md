@@ -239,6 +239,12 @@ Known current video override:
 
 Finish/highlight links are resolved by `getRaceFinishVideoUrl()`.
 
+Resolution priority:
+
+1. Curated `RACE_FINISH_VIDEO_URLS` overrides (race-level string or per-stage map).
+2. Official-provider video already attached to the race (e.g. Giro livefeed `Last Km`).
+3. Automatic YouTube search result attached during the data build by `enrichFinishVideos()`.
+
 Static race and stage mappings live in `RACE_FINISH_VIDEO_URLS`.
 
 Known current static stage links include:
@@ -248,6 +254,27 @@ Known current static stage links include:
 - 2026 Tour Auvergne-Rhône-Alpes stage 5: `https://www.youtube.com/watch?v=4VSnvDeUO4E`
 
 Giro d'Italia links prefer official livefeed-derived `Last Km` URLs before falling back to the static map.
+
+### Automatic YouTube finish-video search
+
+For recently finished races (and the latest stage of a live stage race) that have
+no curated or official-provider video, `enrichFinishVideos()` searches YouTube and
+attaches the best match. Key pieces:
+
+- `buildFinishVideoQuery()` — race name + year + stage + `highlights`.
+- `parseYouTubeSearchVideos()` — extracts `videoRenderer` entries from the page's
+  `ytInitialData` JSON (no API key, no dependency).
+- `isLikelyFinishVideo()` — enforces exact stage, race year, division (men/women),
+  race-token match, and drops previews / start lists / livestreams.
+- `scoreFinishVideo()` — prefers the race's own official channel (channel name
+  carries the race tokens), then trusted broadcasters in
+  `TRUSTED_FINISH_VIDEO_CHANNELS`, with bonuses for "extended highlights", verified
+  badges, sensible clip length, and recency.
+- Results cache in `finishVideoCache` (hits ~6h, misses ~20m so a later upload is
+  still picked up); lookups per build are capped by `FINISH_VIDEO_LOOKUP_LIMIT`.
+
+This is gated behind the curated map and official providers, so it never overrides a
+hand-picked or official link, and it degrades silently to no link on failure.
 
 ## Testing Cross-Reference
 

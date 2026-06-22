@@ -23,6 +23,14 @@ const MAX_EUROPE_TOUR_UPCOMING = 4;
 const WORLDTOUR_RECENT_RESULTS = 6;
 const PROSERIES_RECENT_RESULTS = 10;
 const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
+// YouTube finish-video lookups: found URLs are stable so they cache for hours,
+// while "not found yet" misses re-check sooner so a video that is uploaded an hour
+// after the finish still gets picked up. Lookups per build are capped and only run
+// for recently finished races to bound cold-start cost.
+const FINISH_VIDEO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const FINISH_VIDEO_MISS_CACHE_TTL_MS = 20 * 60 * 1000;
+const FINISH_VIDEO_LOOKUP_LIMIT = 6;
+const FINISH_VIDEO_MAX_AGE_DAYS = 6;
 const DEFERRED_COMPETITION_GROUP_IDS = new Set();
 const RETIRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -511,6 +519,19 @@ let deferredRaceDataCache = {
 const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
+const finishVideoCache = new Map();
+// Channels whose cycling highlights are reliable. The race's own official channel
+// is scored separately (by matching race tokens in the channel name), so this list
+// is for the major broadcasters that cover many races.
+const TRUSTED_FINISH_VIDEO_CHANNELS = [
+  { pattern: /\buci\b|union cycliste/i, score: 70 },
+  { pattern: /global cycling network|\bgcn\b/i, score: 66 },
+  { pattern: /eurosport|discovery|tnt sports/i, score: 64 },
+  { pattern: /flobikes|flosports/i, score: 60 },
+  { pattern: /nbc sports|peacock/i, score: 58 },
+  { pattern: /sporza|rai ?sport|france ?tv|rtbf|\bned\b|nos sport/i, score: 52 },
+  { pattern: /red bull/i, score: 50 },
+];
 
 const HTML_NAMED_ENTITY_CODEPOINTS = {
   Aacute: 0x00c1,
@@ -4671,6 +4692,11 @@ async function buildRaceData(metadata, options = {}) {
     race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
   });
 
+  // Resolve YouTube finish videos for the races that render a finish link, after
+  // curated/official sources have had their say. Bounded + cached so it does not
+  // dominate cold-start latency; failures degrade silently to no link.
+  await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
+
   return {
     fetchedAt: new Date().toISOString(),
     metadataFetchedAt: metadata?.fetchedAt || "",
@@ -5139,6 +5165,304 @@ function buildPodiumMarkup(entries, options = {}) {
   return podium ? `<ol class="podium-list">${podium}</ol>` : `<p class="meta">Result details are still being updated.</p>`;
 }
 
+function extractYouTubeInitialData(html) {
+  const text = String(html || "");
+  const match =
+    text.match(/ytInitialData\s*=\s*(\{[\s\S]*?\})\s*;\s*<\/script>/) ||
+    text.match(/ytInitialData"\]\s*=\s*(\{[\s\S]*?\})\s*;/);
+  if (!match) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function getYouTubeRendererText(node) {
+  if (!node) {
+    return "";
+  }
+  if (typeof node.simpleText === "string") {
+    return node.simpleText;
+  }
+  if (Array.isArray(node.runs)) {
+    return node.runs.map((run) => run?.text || "").join("");
+  }
+  return "";
+}
+
+function collectYouTubeVideoRenderers(node, out = []) {
+  if (Array.isArray(node)) {
+    node.forEach((value) => collectYouTubeVideoRenderers(value, out));
+  } else if (node && typeof node === "object") {
+    if (node.videoRenderer?.videoId) {
+      out.push(node.videoRenderer);
+    }
+    Object.values(node).forEach((value) => collectYouTubeVideoRenderers(value, out));
+  }
+  return out;
+}
+
+function parseYouTubeDurationSeconds(text) {
+  const parts = String(text || "")
+    .trim()
+    .split(":")
+    .map((value) => Number.parseInt(value, 10));
+  if (parts.length === 0 || parts.some((value) => Number.isNaN(value))) {
+    return 0;
+  }
+  return parts.reduce((total, value) => total * 60 + value, 0);
+}
+
+function parseYouTubeSearchVideos(html) {
+  const data = extractYouTubeInitialData(html);
+  if (!data) {
+    return [];
+  }
+
+  return collectYouTubeVideoRenderers(data)
+    .map((renderer) => ({
+      id: renderer.videoId,
+      title: getYouTubeRendererText(renderer.title),
+      channel: getYouTubeRendererText(renderer.ownerText) || getYouTubeRendererText(renderer.longBylineText),
+      lengthSeconds: parseYouTubeDurationSeconds(getYouTubeRendererText(renderer.lengthText)),
+      ageText: getYouTubeRendererText(renderer.publishedTimeText),
+      verified: (renderer.ownerBadges || []).some((badge) =>
+        /VERIFIED|OFFICIAL_ARTIST|OFFICIAL/i.test(badge?.metadataBadgeRenderer?.style || ""),
+      ),
+    }))
+    .filter((video) => video.id && video.title);
+}
+
+function buildFinishVideoQuery(race) {
+  const base = cleanFeedText(getRaceArticleVariants(race)[0] || race?.title || "").replace(/^20\d{2}\s+/, "");
+  if (!base) {
+    return "";
+  }
+
+  const year = getRaceYear(race);
+  const stageNumber = getRaceCoverageStageNumber(race);
+  return [base, year || "", stageNumber > 0 ? `stage ${stageNumber}` : "", "highlights"]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isLikelyFinishVideo(video, race) {
+  const combined = normalizeSearchText(`${video.title} ${video.channel}`);
+  const titleText = normalizeSearchText(video.title);
+  const tokens = getRaceTokens(race);
+  const tokenMatches = tokens.filter((token) => combined.includes(token)).length;
+
+  // Require at least one strong, race-specific token so generic cycling clips are dropped.
+  if (tokens.length > 0 && tokenMatches === 0) {
+    return false;
+  }
+
+  // Reject a clearly different edition (e.g. last year's highlights surfacing for
+  // the same race). A title with no year is allowed through.
+  const raceYear = getRaceYear(race);
+  if (raceYear) {
+    const mentionedYears = extractMentionedYears(video.title);
+    if (mentionedYears.length > 0 && !mentionedYears.includes(raceYear)) {
+      return false;
+    }
+  }
+
+  // Stage races: the title must name the exact stage, otherwise it could be a
+  // different stage, an overall recap, or a non-result clip.
+  const stageNumber = getRaceCoverageStageNumber(race);
+  if (stageNumber > 0 && !new RegExp(`\\bstage ?${stageNumber}\\b`).test(titleText)) {
+    return false;
+  }
+
+  const division = getRaceDivision(race);
+  if (division === "women" && !hasWomenMarker(combined)) {
+    return false;
+  }
+  if (division === "men" && hasWomenMarker(combined) && !hasMenMarker(combined)) {
+    return false;
+  }
+
+  if (
+    /\bpreview\b|how to watch|where to watch|\blive\b|live ?stream|\bteaser\b|start ?list|\bprofile\b|\bguide\b|\bpredict/i.test(
+      video.title,
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function scoreFinishVideo(video, race) {
+  const titleText = normalizeSearchText(video.title);
+  const channelText = normalizeSearchText(video.channel);
+  const tokens = getRaceTokens(race);
+  let score = 0;
+
+  for (const channel of TRUSTED_FINISH_VIDEO_CHANNELS) {
+    if (channel.pattern.test(video.channel)) {
+      score += channel.score;
+      break;
+    }
+  }
+
+  // The race's own official channel (channel name carries the race tokens) is the
+  // most authoritative source for a finish video.
+  // Official race channels are globally available and permanent, unlike
+  // region-locked broadcaster uploads, so they should win when they exist.
+  const channelTokenMatches = tokens.filter((token) => channelText.includes(token)).length;
+  if (tokens.length > 0 && channelTokenMatches >= Math.min(2, tokens.length)) {
+    score += 70;
+  }
+
+  if (video.verified) {
+    score += 15;
+  }
+
+  if (/\bextended highlights\b/i.test(video.title)) {
+    score += 32;
+  } else if (/\bhighlights\b|\brecap\b|\bfinish\b|final kilomet|last kilomet|\bfinale\b/i.test(video.title)) {
+    score += 24;
+  }
+
+  score += tokens.filter((token) => titleText.includes(token)).length * 10;
+
+  const seconds = video.lengthSeconds;
+  if (seconds >= 120 && seconds <= 20 * 60) {
+    score += 12;
+  } else if (seconds > 0 && seconds < 75) {
+    score -= 12;
+  } else if (seconds > 45 * 60) {
+    score -= 8;
+  }
+
+  if (/\b(?:hour|minute)s?\b|just now|\btoday\b/i.test(video.ageText)) {
+    score += 20;
+  } else if (/\b1 day\b/i.test(video.ageText) || /\bdays\b/i.test(video.ageText)) {
+    score += 10;
+  } else if (/\bweek\b|\bweeks\b/i.test(video.ageText)) {
+    score += 4;
+  }
+
+  return score;
+}
+
+function selectFinishVideo(videos, race) {
+  return videos
+    .filter((video) => isLikelyFinishVideo(video, race))
+    .map((video) => ({ video, score: scoreFinishVideo(video, race) }))
+    .sort((left, right) => right.score - left.score)[0]?.video || null;
+}
+
+async function fetchYouTubeFinishVideoUrl(race) {
+  const query = buildFinishVideoQuery(race);
+  if (!query) {
+    return "";
+  }
+
+  const html = await fetchText(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
+  const best = selectFinishVideo(parseYouTubeSearchVideos(html), race);
+  return best ? `https://www.youtube.com/watch?v=${best.id}` : "";
+}
+
+function hasCuratedFinishVideo(race) {
+  const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
+  if (!mapped) {
+    return false;
+  }
+  if (typeof mapped === "string") {
+    return true;
+  }
+  return Boolean(mapped[getRaceCoverageStageNumber(race)]);
+}
+
+async function resolveRaceFinishVideoUrl(race) {
+  const key = `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
+  const cached = finishVideoCache.get(key);
+  const now = Date.now();
+  if (cached) {
+    const ttl = cached.url ? FINISH_VIDEO_CACHE_TTL_MS : FINISH_VIDEO_MISS_CACHE_TTL_MS;
+    if (now - cached.updatedAt < ttl) {
+      return cached.url;
+    }
+  }
+
+  try {
+    const url = await fetchYouTubeFinishVideoUrl(race);
+    finishVideoCache.set(key, { updatedAt: Date.now(), url });
+    return url;
+  } catch {
+    if (cached) {
+      return cached.url;
+    }
+    finishVideoCache.set(key, { updatedAt: now, url: "" });
+    return "";
+  }
+}
+
+function shouldSearchFinishVideo(race, todayUtc) {
+  if (!race || hasCuratedFinishVideo(race)) {
+    return false;
+  }
+  // A provider (e.g. the Giro livefeed) may already have supplied a stage video.
+  if (race.stageRace?.latestStage?.finishVideoUrl || race.finishVideoUrl) {
+    return false;
+  }
+
+  const liveStageWithResult =
+    isMultiDayRace(race) &&
+    !isFinalizedStageRace(race) &&
+    (race.stageRace?.latestStage?.standings?.length || 0) > 0;
+  if (liveStageWithResult) {
+    return true;
+  }
+
+  const endUtc = toUtcDateOnly(race.endDate);
+  if (!endUtc) {
+    return false;
+  }
+  const ageDays = Math.floor((todayUtc.getTime() - endUtc.getTime()) / (24 * 60 * 60 * 1000));
+  return ageDays >= 0 && ageDays <= FINISH_VIDEO_MAX_AGE_DAYS;
+}
+
+async function enrichFinishVideos(races, now = new Date()) {
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const seenKeys = new Set();
+  const candidates = [];
+  for (const race of races || []) {
+    if (!shouldSearchFinishVideo(race, todayUtc)) {
+      continue;
+    }
+    const key = `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
+    if (seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    candidates.push(race);
+    if (candidates.length >= FINISH_VIDEO_LOOKUP_LIMIT) {
+      break;
+    }
+  }
+
+  await Promise.all(
+    candidates.map(async (race) => {
+      const url = await resolveRaceFinishVideoUrl(race);
+      if (!url) {
+        return;
+      }
+      if (isMultiDayRace(race) && race.stageRace?.latestStage) {
+        race.stageRace.latestStage.finishVideoUrl = race.stageRace.latestStage.finishVideoUrl || url;
+      } else {
+        race.finishVideoUrl = race.finishVideoUrl || url;
+      }
+    }),
+  );
+}
+
 function getRaceFinishVideoUrl(race) {
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
   const stageNumber = Number(race?.stageRace?.completedStages || race?.stageRace?.latestStage?.number || 0);
@@ -5152,7 +5476,7 @@ function getRaceFinishVideoUrl(race) {
     }
   }
 
-  return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || "");
+  return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || race?.finishVideoUrl || "");
 }
 
 function buildRaceFinishLink(race) {

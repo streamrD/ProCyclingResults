@@ -484,6 +484,8 @@ Major rendering helpers include:
 
 Result and stage-race cards now render rider names with country-flag emoji when a normalized rider country code is available. Recent-result and stage-race cards can also show a race-specific external finish/highlights link via `getRaceFinishVideoUrl()` and `buildRaceFinishLink()`.
 
+Finish-video links resolve in priority order: curated `RACE_FINISH_VIDEO_URLS` overrides, then an official-provider video on the race (e.g. the Giro livefeed `Last Km`), then an automatic YouTube search. The YouTube step runs during the data build (`enrichFinishVideos()`): for recently finished races and the latest stage of a live stage race that lack a curated/official video, it searches `youtube.com/results`, parses the `ytInitialData` JSON (no API key or dependency), and attaches the best match. Selection enforces the exact stage, race year, and division, prefers the race's own official channel and trusted broadcasters, and caches results so the lookup stays cheap. It is strictly additive — it never overrides a curated or official link and degrades silently to no link on failure.
+
 The design system is encoded directly in the inline `<style>` block:
 
 - UCI-inspired blue/yellow/red palette
