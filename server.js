@@ -287,6 +287,33 @@ const ALPHA2_TO_COUNTRY_CODE = new Map(
   Object.entries(COUNTRY_FLAG_CODES).map(([countryCode, alpha2Code]) => [alpha2Code, countryCode]),
 );
 
+// Country-name to ISO 3166-1 alpha-2, covering every federation in the Cyclingnews
+// National Championships index (the rider flag table only covers ~50 race nations).
+// Keys are lowercased; a few aliases cover alternate source spellings.
+const COUNTRY_NAME_ALPHA2 = {
+  afghanistan: "AF", albania: "AL", algeria: "DZ", "antigua and barbuda": "AG", argentina: "AR",
+  australia: "AU", austria: "AT", belarus: "BY", belgium: "BE", belize: "BZ", bermuda: "BM",
+  bolivia: "BO", "bosnia and herzegovina": "BA", brazil: "BR", bulgaria: "BG", "burkina faso": "BF",
+  cameroon: "CM", canada: "CA", "cape verde": "CV", chile: "CL", china: "CN", colombia: "CO",
+  "costa rica": "CR", croatia: "HR", cuba: "CU", cyprus: "CY", czechia: "CZ", "czech republic": "CZ",
+  denmark: "DK", "dominican republic": "DO", ecuador: "EC", egypt: "EG", "el salvador": "SV",
+  eritrea: "ER", estonia: "EE", ethiopia: "ET", finland: "FI", france: "FR", germany: "DE",
+  "great britain": "GB", "united kingdom": "GB", greece: "GR", grenada: "GD", guatemala: "GT",
+  honduras: "HN", "hong kong, china": "HK", "hong kong": "HK", hungary: "HU", iceland: "IS",
+  india: "IN", indonesia: "ID", iran: "IR", ireland: "IE", italy: "IT", japan: "JP", kazakhstan: "KZ",
+  kenya: "KE", korea: "KR", "south korea": "KR", kosovo: "XK", laos: "LA", latvia: "LV", lesotho: "LS",
+  lithuania: "LT", luxembourg: "LU", macao: "MO", macau: "MO", malaysia: "MY", malta: "MT",
+  mauritius: "MU", mexico: "MX", mongolia: "MN", montenegro: "ME", morocco: "MA", namibia: "NA",
+  netherlands: "NL", "new zealand": "NZ", "north macedonia": "MK", norway: "NO", pakistan: "PK",
+  panama: "PA", paraguay: "PY", peru: "PE", philippines: "PH", poland: "PL", portugal: "PT",
+  "puerto rico": "PR", romania: "RO", rwanda: "RW", "saint vincent and the grenadines": "VC",
+  serbia: "RS", singapore: "SG", slovakia: "SK", slovenia: "SI", "south africa": "ZA", spain: "ES",
+  sweden: "SE", switzerland: "CH", thailand: "TH", "trinidad and tobago": "TT", tunisia: "TN",
+  "türkiye": "TR", turkiye: "TR", turkey: "TR", uganda: "UG", ukraine: "UA",
+  "united arab emirates": "AE", "united states": "US", "united states of america": "US", usa: "US",
+  uruguay: "UY", uzbekistan: "UZ", venezuela: "VE", zimbabwe: "ZW",
+};
+
 const RACE_FINISH_VIDEO_URLS = {
   "2026 Giro d'Italia": {
     1: "https://www.youtube.com/watch?v=k9etTDahUFo",
@@ -5646,8 +5673,7 @@ function buildUpcomingCard(race) {
     </article>`;
 }
 
-function getCountryFlagEmoji(countryCode) {
-  const alpha2Code = COUNTRY_FLAG_CODES[normalizeCountryCode(countryCode)];
+function alpha2ToFlagEmoji(alpha2Code) {
   if (!/^[A-Z]{2}$/.test(alpha2Code || "")) {
     return "";
   }
@@ -5655,6 +5681,14 @@ function getCountryFlagEmoji(countryCode) {
   return [...alpha2Code]
     .map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)))
     .join("");
+}
+
+function getCountryFlagEmoji(countryCode) {
+  return alpha2ToFlagEmoji(COUNTRY_FLAG_CODES[normalizeCountryCode(countryCode)]);
+}
+
+function getCountryFlagEmojiByName(countryName) {
+  return alpha2ToFlagEmoji(COUNTRY_NAME_ALPHA2[String(countryName || "").trim().toLowerCase()]);
 }
 
 function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
@@ -5918,6 +5952,10 @@ function buildNationalChampionshipEventCard(event) {
     ? `<a href="${escapeHtml(event.finishVideoUrl)}" target="_blank" rel="noreferrer">Watch race finish</a>`
     : "";
   const linkMarkup = [finishVideoLink, sourceLink].filter(Boolean).join("");
+  const flagEmoji = getCountryFlagEmojiByName(event.country);
+  const flagMarkup = flagEmoji
+    ? `<span class="national-flag" aria-hidden="true">${escapeHtml(flagEmoji)}</span>`
+    : "";
 
   return `
     <article
@@ -5929,7 +5967,7 @@ function buildNationalChampionshipEventCard(event) {
       ${event.status === "completed" ? "" : "hidden"}
     >
       <div class="card-kicker">${escapeHtml(statusLabel)} ${event.status === "completed" ? "National Title" : "National Title"}</div>
-      <h3>${escapeHtml(event.country)}</h3>
+      <h3 class="national-title">${flagMarkup}<span>${escapeHtml(event.country)}</span></h3>
       <p class="meta">${escapeHtml(event.eventName)}</p>
       <div class="national-event-meta">
         <span>${escapeHtml(dateLabel)}</span>
@@ -6859,6 +6897,18 @@ function buildHtmlPage(data, view) {
       .country-flag {
         flex: 0 0 auto;
         font-size: 0.95em;
+        line-height: 1;
+      }
+
+      .national-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .national-flag {
+        flex: 0 0 auto;
+        font-size: 1.5em;
         line-height: 1;
       }
 

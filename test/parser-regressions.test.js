@@ -73,6 +73,8 @@ function loadParserExports() {
       hasFreshnessSensitiveRaceData,
       getRaceDataCacheTtlMs,
       parseNationalChampionshipsIndex,
+      getCountryFlagEmojiByName,
+      buildNationalChampionshipEventCard,
       buildNationalChampionshipsSection,
       getCompetitionGroups,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
@@ -1682,6 +1684,37 @@ test("buildNationalChampionshipsSection renders source-backed champion table", (
   assert.match(markup, /Cyclingnews/);
   assert.match(markup, /2026-road-national-champions-index/);
   assert.doesNotMatch(markup, /All Countries/);
+});
+
+test("getCountryFlagEmojiByName maps source spellings and aliases, and ignores unknowns", () => {
+  const { getCountryFlagEmojiByName } = loadParserExports();
+  assert.equal(getCountryFlagEmojiByName("United States"), "🇺🇸");
+  assert.equal(getCountryFlagEmojiByName("Great Britain"), "🇬🇧");
+  assert.equal(getCountryFlagEmojiByName("Czechia"), "🇨🇿");
+  assert.equal(getCountryFlagEmojiByName("Türkiye"), "🇹🇷");
+  assert.equal(getCountryFlagEmojiByName("Korea"), "🇰🇷");
+  assert.equal(getCountryFlagEmojiByName("hong kong, china"), "🇭🇰");
+  assert.equal(getCountryFlagEmojiByName("Atlantis"), "");
+  assert.equal(getCountryFlagEmojiByName(""), "");
+});
+
+test("National Championships country headers carry a flag, but podium riders do not", () => {
+  const { buildNationalChampionshipsSection, parseNationalChampionshipsIndex } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE ITT</th><th>WE Road Race</th></tr>
+      <tr><th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+    </table>`);
+  const markup = buildNationalChampionshipsSection(parsed);
+
+  // Flag sits in the country header.
+  assert.match(markup, /<h3 class="national-title"><span class="national-flag"[^>]*>🇺🇸<\/span><span>United States<\/span>/);
+  // A single podium list renders its riders without an inline flag.
+  const podiumMatch = markup.match(/<ol class="national-podium-list">[\s\S]*?<\/ol>/);
+  assert.ok(podiumMatch, "expected a rendered podium list");
+  assert.doesNotMatch(podiumMatch[0], /country-flag|national-flag/);
+  assert.match(markup, /Quinn Simmons/);
 });
 
 test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out of the active UI", () => {

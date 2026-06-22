@@ -219,7 +219,10 @@ Current behavior:
 - Country and category dropdowns filter the event cards.
 - Selecting a country can reveal upcoming or TBD events for that country.
 - Completed events show top three places when known.
+- Each country card header shows a national flag (larger than the rider flags used in the WorldTour sections); individual podium riders are intentionally left flag-free since the header flag covers the whole card.
 - Known event dates, locations, podiums, source reports, and finish videos are metadata overrides, not broad replacement data.
+
+Country-header flags come from `getCountryFlagEmojiByName()`, backed by `COUNTRY_NAME_ALPHA2`, which covers every federation name in the Cyclingnews index (the rider `COUNTRY_FLAG_CODES` table only covers race nations). Styling: `.national-title` / `.national-flag`.
 
 Key functions/constants:
 
