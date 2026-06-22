@@ -56,6 +56,7 @@ function loadParserExports() {
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
+      isCurrentEditionRaceArticle,
       buildFinishVideoQuery,
       parseYouTubeSearchVideos,
       isLikelyFinishVideo,
@@ -435,6 +436,92 @@ test("buildRaceArticleQueries adds stage-specific Giro coverage searches", () =>
 
   assert.ok(selectedArticles.some((article) => article.url === "https://example.com/stage-a"));
   assert.ok(selectedArticles.some((article) => article.url === "https://example.com/general-a"));
+});
+
+test("selectRaceArticles shows the most recent day first, best article within a day", () => {
+  const { selectRaceArticles } = loadParserExports();
+  const order = selectRaceArticles(
+    [
+      { title: "Older but high-scored tactics piece", url: "u/b", publishedAt: "2026-05-20T10:00:00Z", score: 300 },
+      { title: "Result A same day high score", url: "u/a", publishedAt: "2026-05-31T09:00:00Z", score: 250 },
+      { title: "Result C same day low score", url: "u/c", publishedAt: "2026-05-31T20:00:00Z", score: 200 },
+      { title: "Most recent day", url: "u/d", publishedAt: "2026-06-02T08:00:00Z", score: 150 },
+    ],
+    0,
+    { pageTitle: "2026 Giro d'Italia", title: "Giro d'Italia" },
+  ).map((article) => article.url);
+
+  // Most recent day leads; within 05-31 the higher score wins; the older (higher
+  // scored) tactics article sinks to the bottom.
+  assert.deepEqual([...order], ["u/d", "u/a", "u/c", "u/b"]);
+});
+
+test("isCurrentEditionRaceArticle trusts an in-window publish date over past-year mentions", () => {
+  const { isCurrentEditionRaceArticle } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Paris–Roubaix",
+    title: "Paris–Roubaix",
+    startDate: new Date("2026-04-12T00:00:00Z"),
+    endDate: new Date("2026-04-12T00:00:00Z"),
+  };
+  // Result article published on race day, referencing past attempts (2019/2022) but
+  // not "2026" — must still be accepted because its date is in this edition's window.
+  assert.equal(
+    isCurrentEditionRaceArticle(
+      {
+        title: "Wout van Aert finally wins Paris–Roubaix after years of chasing since 2019",
+        description: "His 2022 runner-up finish is behind him.",
+        publishedAt: "2026-04-12T16:30:00Z",
+      },
+      race,
+    ),
+    true,
+  );
+  // An article published months after the window is rejected.
+  assert.equal(
+    isCurrentEditionRaceArticle(
+      { title: "Van Aert's Paris-Roubaix celebrations", description: "", publishedAt: "2026-06-08T00:00:00Z" },
+      race,
+    ),
+    false,
+  );
+});
+
+test("scoreRaceArticle sinks stale previews below result coverage once a race is over", () => {
+  const { scoreRaceArticle } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Copenhagen Sprint",
+    title: "Copenhagen Sprint",
+    startDate: new Date("2026-06-14T00:00:00Z"),
+    endDate: new Date("2026-06-14T00:00:00Z"),
+    winner: "Jasper Philipsen",
+  };
+  const result = scoreRaceArticle(
+    { title: "Jasper Philipsen wins Copenhagen Sprint", description: "", publisher: "Cyclingnews", publishedAt: "2026-06-14T16:00:00Z" },
+    race,
+  );
+  const preview = scoreRaceArticle(
+    { title: "Copenhagen Sprint contenders preview: Wiebes and Meeus", description: "", publisher: "Cyclingnews", publishedAt: "2026-06-11T08:00:00Z" },
+    race,
+  );
+  assert.ok(result > preview, `expected result (${result}) to outrank stale preview (${preview})`);
+});
+
+test("buildRaceArticleQueries adds result and winner searches for a race with a known winner", () => {
+  const { buildRaceArticleQueries } = loadParserExports();
+  const queries = JSON.parse(
+    JSON.stringify(
+      buildRaceArticleQueries({
+        pageTitle: "2026 Paris–Roubaix",
+        title: "Paris–Roubaix",
+        startDate: new Date("2026-04-12T00:00:00Z"),
+        endDate: new Date("2026-04-12T00:00:00Z"),
+        winner: "Wout van Aert",
+      }),
+    ),
+  );
+  assert.ok(queries.some((query) => /results report/.test(query)));
+  assert.ok(queries.some((query) => query.includes("Wout van Aert")));
 });
 
 test("parseGiroDItaliaLivefeedStageStandings parses the official Stage 2 top five", () => {

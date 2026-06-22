@@ -372,11 +372,7 @@ For a requested competition group:
 
 The app generates multiple search variants from race titles and page titles. It normalizes punctuation, removes year prefixes where appropriate, and handles women-specific naming variants such as `Women` and `Femmes`.
 
-For live multi-stage races with a current stage snapshot, it also adds targeted stage-result variants such as:
-
-- `"<race>" <year> stage <n>`
-- `"<race>" stage <n> results`
-- `"<race>" "<latest winner>" stage <n>`
+It also builds result-oriented searches first (so they survive the 32-query cap): for any race with a known winner it adds `"<race>" <year> results report` and winner queries like `"<race>" <year> <winner>`, across the top few name-spelling variants (e.g. `Paris–Roubaix` and `Paris-Roubaix`). A bare `"<race>" <year> cycling` query tends to surface previews/guides; naming the winner is what surfaces the actual result coverage. For live multi-stage races it also adds stage-result variants such as `"<race>" stage <n> results` and `"<race>" "<latest winner>" stage <n>`.
 
 ### Filtering and ranking
 
@@ -384,19 +380,20 @@ Articles are scored using several signals:
 
 - Publisher reputation
 - Whether the title/description matches race tokens
-- Whether it looks like results / victory / preview coverage
-- Recency
+- Whether it looks like result / victory / report coverage
+- Recency (a continuous decay, so newer articles always rank above older ones)
 - For live stage races, whether it mentions the current stage number or latest stage winner
+
+Once a race is over, previews, guides, start lists, and "how to watch" pieces are penalized so they sink below actual result coverage.
 
 It also filters out:
 
-- wrong-edition articles
-- articles that mention conflicting years
+- wrong-edition articles (but an article whose publish date falls inside the edition window is trusted even if it references previous editions, e.g. "finally wins after years")
 - likely women's articles for men's races
 - likely men's articles for women's races
 - duplicate title/publisher combinations
 
-Recognized top-tier publishers have manually assigned scores. If any top-tier coverage exists for a race, lower-tier coverage is suppressed from the final pool.
+Recognized top-tier publishers have manually assigned scores and are listed first in the pool, but they no longer suppress lower-tier coverage entirely — otherwise a single evergreen top-tier "guide" page could crowd out the real result articles, which often come from wire/aggregator sources.
 
 For active stage races, the final 8 articles are also intentionally blended:
 
@@ -404,9 +401,9 @@ For active stage races, the final 8 articles are also intentionally blended:
 - broader race-context stories are still retained when available
 - remaining slots are filled from the best overall articles
 
-### Article rotation
+### Article ordering and rotation
 
-If more than 8 strong articles exist, the app does not simply take the top 8. It uses deterministic seeded ordering plus a `refresh` counter so the user can rotate through multiple batches without introducing full randomness on every page load.
+The displayed articles are ordered most-recent-first (bucketed by day, with the highest-scored article leading within a day), so the current result leads instead of an older but higher-scored story. When more than 8 strong articles exist, the `refresh` token pages through older batches.
 
 ## Caching Model
 

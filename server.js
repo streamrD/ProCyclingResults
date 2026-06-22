@@ -4028,6 +4028,28 @@ function buildRaceArticleQueries(race) {
   const variants = getRaceArticleVariants(race).slice(0, 8);
   const stageNumber = getRaceCoverageStageNumber(race);
   const latestStageWinner = cleanWikiText(race?.stageRace?.latestStage?.winner || "");
+  const overallWinner = cleanWikiText(race?.winner || "");
+  const primaryVariant = variants[0] || "";
+
+  // Result-oriented queries placed first so they survive the 32-query cap. A bare
+  // "<race> <year> cycling" query tends to surface previews/guides; naming the
+  // winner and asking for the report is what surfaces the actual result coverage
+  // (e.g. "Wout Van Aert beats Tadej Pogacar" for Paris-Roubaix).
+  // Cover the top few name variants (e.g. "Paris–Roubaix" and "Paris-Roubaix"),
+  // since news sources spell punctuation differently and the result articles only
+  // surface under some spellings.
+  const priorityQueries = [];
+  const yearPart = raceYear ? `${raceYear} ` : "";
+  variants.slice(0, 3).forEach((variant) => {
+    priorityQueries.push(`"${variant}" ${yearPart}results report`);
+    if (overallWinner) {
+      priorityQueries.push(`"${variant}" ${yearPart}${overallWinner}`);
+    }
+  });
+  if (primaryVariant && overallWinner) {
+    priorityQueries.push(`"${primaryVariant}" "${overallWinner}" wins`);
+  }
+
   const queries = variants.flatMap((variant) => {
     const variantQueries = [];
 
@@ -4056,7 +4078,7 @@ function buildRaceArticleQueries(race) {
     return variantQueries;
   });
 
-  return [...new Set(queries)].slice(0, 32);
+  return [...new Set([...priorityQueries, ...queries])].slice(0, 32);
 }
 
 function getPublisherScore(publisher) {
@@ -4103,6 +4125,30 @@ function isCurrentEditionRaceArticle(article, race) {
   const raceYear = getRaceYear(race);
   const combinedText = normalizeSearchText([article.title, article.description].join(" "));
   const articleTime = article.publishedAt ? new Date(article.publishedAt).getTime() : 0;
+  const toTime = (value) => {
+    const date = value instanceof Date ? value : value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.getTime() : null;
+  };
+  const startTime = toTime(race?.startDate);
+  const endTime = toTime(race?.endDate);
+  const hasWindow = startTime !== null && endTime !== null;
+  const earliestAllowed = hasWindow ? startTime - 30 * 24 * 60 * 60 * 1000 : null;
+  const latestAllowed = hasWindow ? endTime + 10 * 24 * 60 * 60 * 1000 : null;
+
+  // When the publish date lands inside this edition's window and matches the race
+  // year, the date settles it — accept even if the article references previous
+  // editions (e.g. "Van Aert finally wins after years"), which the mentioned-year
+  // heuristic below would otherwise wrongly reject.
+  if (
+    articleTime &&
+    raceYear &&
+    hasWindow &&
+    new Date(articleTime).getUTCFullYear() === raceYear &&
+    articleTime >= earliestAllowed &&
+    articleTime <= latestAllowed
+  ) {
+    return true;
+  }
 
   if (raceYear) {
     const mentionedYears = extractMentionedYears([article.title, article.description].join(" "));
@@ -4119,12 +4165,10 @@ function isCurrentEditionRaceArticle(article, race) {
     return false;
   }
 
-  if (!(race?.startDate instanceof Date) || !(race?.endDate instanceof Date)) {
+  if (!hasWindow) {
     return true;
   }
 
-  const earliestAllowed = race.startDate.getTime() - 30 * 24 * 60 * 60 * 1000;
-  const latestAllowed = race.endDate.getTime() + 10 * 24 * 60 * 60 * 1000;
   return articleTime >= earliestAllowed && articleTime <= latestAllowed;
 }
 
@@ -4185,11 +4229,29 @@ function scoreRaceArticle(article, race) {
   const latestStageWinner = normalizeSearchText(race?.stageRace?.latestStage?.winner || "");
   const combinedText = `${title} ${description}`;
 
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const nowUtc = toUtcDateOnly(new Date());
+  const raceConcluded = Boolean(endUtc && nowUtc && endUtc.getTime() < nowUtc.getTime());
+
   let score = getPublisherScore(article.publisher);
   score += titleMatches * 28;
   score += descriptionMatches * 12;
-  score += /result|results|wins|won|victory|podium|preview|report|gallery|highlights/i.test(article.title) ? 18 : 0;
-  score += Math.max(0, 48 - Math.min(hoursOld, 48));
+  // Reward result/report coverage; keep "preview" out of this list so it is not
+  // treated as a positive signal.
+  score += /\bresult|results|wins|won|victory|podium|report|recap|highlights|gallery\b/i.test(article.title) ? 22 : 0;
+  // Once a race is over, previews/guides/start lists are stale and should sink
+  // below actual result coverage (e.g. the Copenhagen Sprint "contenders" preview).
+  if (
+    raceConcluded &&
+    /\bpreview|contenders|guide|how to watch|where to watch|start ?list|favou?rites|predictions?|ultimate guide\b/i.test(
+      article.title,
+    )
+  ) {
+    score -= 45;
+  }
+  // Continuous recency so newer articles always rank above older ones, not just
+  // within the first 48 hours (kept the Giro result below an older tactics piece).
+  score += Math.max(0, 60 - Math.min(hoursOld, 720) / 12);
   if (stageNumber > 0 && combinedText.includes(`stage ${stageNumber}`)) {
     score += 36;
   }
@@ -4216,19 +4278,44 @@ function isStageSpecificRaceArticle(article, race) {
   return Boolean(latestStageWinner && combinedText.includes(latestStageWinner) && /\bwin|wins|won|victory|result|results|report\b/.test(combinedText));
 }
 
+function compareArticleRecency(left, right) {
+  // Bucket by calendar day so the most recent day leads, but within a day order by
+  // score — otherwise a stale "how to watch" published hours after the finish could
+  // outrank the actual result article from the same day.
+  const dayOf = (article) => {
+    if (!article.publishedAt) {
+      return -Infinity;
+    }
+    const time = new Date(article.publishedAt).getTime();
+    return Number.isNaN(time) ? -Infinity : Math.floor(time / (24 * 60 * 60 * 1000));
+  };
+  const leftDay = dayOf(left);
+  const rightDay = dayOf(right);
+  if (rightDay !== leftDay) {
+    return rightDay - leftDay; // most recent day first; undated articles sink
+  }
+  return (right.score || 0) - (left.score || 0);
+}
+
 function selectRaceArticles(articlePool, refreshToken, race = null) {
+  // Rank by score to choose the quality pool, but display most-recent-first so the
+  // current result leads instead of an older (if higher-scored) article.
   const rankedPool = [...articlePool]
     .sort((left, right) => right.score - left.score)
     .slice(0, 32);
 
   if (rankedPool.length <= MAX_RACE_ARTICLES) {
-    return rankedPool;
+    return [...rankedPool].sort(compareArticleRecency);
   }
 
   const hasLiveStageContext = Boolean(race && isMultiDayRace(race) && !isFinalizedStageRace(race) && getRaceCoverageStageNumber(race) > 0);
   if (hasLiveStageContext) {
-    const stageSpecific = rankedPool.filter((article) => isStageSpecificRaceArticle(article, race));
-    const broaderContext = rankedPool.filter((article) => !isStageSpecificRaceArticle(article, race));
+    const stageSpecific = rankedPool
+      .filter((article) => isStageSpecificRaceArticle(article, race))
+      .sort(compareArticleRecency);
+    const broaderContext = rankedPool
+      .filter((article) => !isStageSpecificRaceArticle(article, race))
+      .sort(compareArticleRecency);
     const selected = [];
     const usedUrls = new Set();
     const addArticles = (articles, limit) => {
@@ -4250,23 +4337,14 @@ function selectRaceArticles(articlePool, refreshToken, race = null) {
     if (selected.length < MAX_RACE_ARTICLES) {
       const fillerPool = [...rankedPool]
         .filter((article) => !usedUrls.has(article.url))
-        .sort((left, right) => {
-          const leftValue = seededValue(refreshToken, `${left.url}|${left.title}`);
-          const rightValue = seededValue(refreshToken, `${right.url}|${right.title}`);
-          return leftValue - rightValue;
-        });
+        .sort(compareArticleRecency);
       addArticles(fillerPool, MAX_RACE_ARTICLES);
     }
 
     return selected.slice(0, MAX_RACE_ARTICLES);
   }
-  const orderedPool = [...rankedPool]
-    .sort((left, right) => {
-      const leftValue = seededValue(0, `${left.url}|${left.title}`);
-      const rightValue = seededValue(0, `${right.url}|${right.title}`);
-      return leftValue - rightValue;
-    })
-    .slice(0);
+  // Most-recent-first; the refresh token pages through older batches.
+  const orderedPool = [...rankedPool].sort(compareArticleRecency);
   const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
   const batchIndex = refreshToken % batchCount;
   const startIndex = batchIndex * MAX_RACE_ARTICLES;
@@ -4342,8 +4420,13 @@ async function fetchRaceArticles(race) {
     }))
     .sort((left, right) => right.score - left.score);
 
+  // Keep top-tier coverage first, but do not let it suppress lower-tier articles
+  // entirely: an evergreen top-tier "guide" page must not crowd out the actual
+  // result coverage (e.g. "Van Aert beats Pogacar" from Yahoo/MSN). Publisher
+  // quality is already reflected in each article's score.
   const topTierArticles = articles.filter((article) => getPublisherScore(article.publisher) > 40);
-  return (topTierArticles.length > 0 ? topTierArticles : articles).slice(0, 32);
+  const otherArticles = articles.filter((article) => getPublisherScore(article.publisher) <= 40);
+  return [...topTierArticles, ...otherArticles].slice(0, 32);
 }
 
 async function loadRaceArticlePool(race) {
