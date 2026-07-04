@@ -1383,6 +1383,53 @@ test("isLikelyFinishVideo rejects wrong stage, wrong year, previews, and unrelat
   assert.equal(isLikelyFinishVideo(byId.giroUnrelated, TDF_STAGE21_RACE), false); // different race
 });
 
+test("isLikelyFinishVideo rejects another ASO race posted on the official Tour de France channel", () => {
+  const { isLikelyFinishVideo } = loadParserExports();
+  // The official ASO channel is literally named "Tour de France" but also uploads
+  // highlights for the other races it organises. The race token ("france") only
+  // appears in the channel, not the title, so this must not pass for the Tour.
+  const wrongRaceOnOfficialChannel = {
+    id: "auvergne1",
+    title: "Tour Auvergne-Rhône-Alpes 2026 - Stage 1 - Extended Highlights",
+    channel: "Tour de France",
+    verified: true,
+    lengthSeconds: 300,
+    ageText: "3 weeks ago",
+  };
+  const realTdfStage1 = {
+    id: "tdf1",
+    title: "Tour de France 2026 Stage 1 Highlights",
+    channel: "Some Cycling Channel",
+    verified: false,
+    lengthSeconds: 300,
+    ageText: "2 hours ago",
+  };
+  const tdfStage1Race = {
+    pageTitle: "2026 Tour de France",
+    title: "Tour de France",
+    endDate: new Date("2026-07-26T00:00:00Z"),
+    stageRace: { completedStages: 1, latestStage: { number: 1, standings: [{ place: "1", rider: "x" }] } },
+  };
+
+  assert.equal(isLikelyFinishVideo(wrongRaceOnOfficialChannel, tdfStage1Race), false);
+  assert.equal(isLikelyFinishVideo(realTdfStage1, tdfStage1Race), true);
+});
+
+test("isLikelyFinishVideo rejects preview/analysis talk clips that are not race finishes", () => {
+  const { isLikelyFinishVideo } = loadParserExports();
+  // Stage number matches the race, so the only disqualifier is the preview/talk wording.
+  const storylines = {
+    id: "nbc1",
+    title: "Key storylines entering Stage 21 of 2026 Tour De France | Beyond the Podium | NBC Sports",
+    channel: "NBC Sports",
+    verified: true,
+    lengthSeconds: 400,
+    ageText: "1 day ago",
+  };
+
+  assert.equal(isLikelyFinishVideo(storylines, TDF_STAGE21_RACE), false);
+});
+
 test("selectFinishVideo will not show a men's video for a women's race", () => {
   const { selectFinishVideo } = loadParserExports();
   const { videos } = loadYouTubeFixtureVideos();

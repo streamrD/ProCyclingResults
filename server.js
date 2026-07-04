@@ -5425,7 +5425,11 @@ function isLikelyFinishVideo(video, race) {
   const combined = normalizeSearchText(`${video.title} ${video.channel}`);
   const titleText = normalizeSearchText(video.title);
   const tokens = getRaceTokens(race);
-  const tokenMatches = tokens.filter((token) => combined.includes(token)).length;
+  // Match race tokens against the title, not the channel: official ASO channels
+  // (e.g. a channel literally named "Tour de France") also post highlights for the
+  // other races they organise, so a channel-name match would wrongly admit a
+  // different race's stage. The title is what identifies the actual clip.
+  const tokenMatches = tokens.filter((token) => titleText.includes(token)).length;
 
   // Require at least one strong, race-specific token so generic cycling clips are dropped.
   if (tokens.length > 0 && tokenMatches === 0) {
@@ -5458,7 +5462,7 @@ function isLikelyFinishVideo(video, race) {
   }
 
   if (
-    /\bpreview\b|how to watch|where to watch|\blive\b|live ?stream|\bteaser\b|start ?list|\bprofile\b|\bguide\b|\bpredict/i.test(
+    /\bpreview\b|how to watch|where to watch|\blive\b|live ?stream|\bteaser\b|start ?list|\bprofile\b|\bguide\b|\bpredict|storylines|what to expect|beyond the podium|\bpre-?race\b/i.test(
       video.title,
     )
   ) {
