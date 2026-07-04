@@ -34,6 +34,10 @@ const FINISH_VIDEO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FINISH_VIDEO_MISS_CACHE_TTL_MS = 20 * 60 * 1000;
 const FINISH_VIDEO_LOOKUP_LIMIT = 6;
 const FINISH_VIDEO_MAX_AGE_DAYS = 6;
+// A plausible highlights runtime: long enough to be real coverage rather than a
+// clip/Short, short enough to exclude full-stage replays and livestream VODs.
+const FINISH_VIDEO_MIN_LENGTH_SECONDS = 2 * 60;
+const FINISH_VIDEO_MAX_LENGTH_SECONDS = 20 * 60;
 const DEFERRED_COMPETITION_GROUP_IDS = new Set();
 const RETIRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -5423,19 +5427,33 @@ function buildFinishVideoQuery(race) {
 
 // A finish video must come from a source we trust, because a title/description can
 // be gamed: clickbait channels post talking-head videos titled "<race> stage N
-// highlights" that are not the race at all. Accept a major broadcaster from the
-// trusted list, or the race's own official channel (its name carries the race
-// tokens) when that channel is verified — genuine race channels carry the badge,
-// which a copycat handle does not.
+// highlights" that are not the race at all. Accept, in order:
+//   1. a major broadcaster from the trusted list;
+//   2. the race's own official channel (its name carries the race tokens), verified;
+//   3. any other channel only when it is YouTube-verified (an established channel,
+//      not a throwaway) AND the clip runs a sensible highlights length.
+// Rule 3 is the deliberately looser middle ground: it still blocks unverified
+// clickbait and Shorts/VODs while recovering coverage from legitimate verified
+// channels that are not on the broadcaster list.
 function isRecognizedFinishVideoSource(video, race) {
   if (TRUSTED_FINISH_VIDEO_CHANNELS.some((channel) => channel.pattern.test(video.channel))) {
     return true;
   }
 
+  if (!video.verified) {
+    return false;
+  }
+
   const tokens = getRaceTokens(race);
   const channelText = normalizeSearchText(video.channel);
   const channelTokenMatches = tokens.filter((token) => channelText.includes(token)).length;
-  return Boolean(video.verified) && tokens.length > 0 && channelTokenMatches >= Math.min(2, tokens.length);
+  const isOfficialRaceChannel = tokens.length > 0 && channelTokenMatches >= Math.min(2, tokens.length);
+
+  const hasSensibleLength =
+    video.lengthSeconds >= FINISH_VIDEO_MIN_LENGTH_SECONDS &&
+    video.lengthSeconds <= FINISH_VIDEO_MAX_LENGTH_SECONDS;
+
+  return isOfficialRaceChannel || hasSensibleLength;
 }
 
 function isLikelyFinishVideo(video, race) {
@@ -5485,7 +5503,7 @@ function isLikelyFinishVideo(video, race) {
   }
 
   if (
-    /\bpreview\b|how to watch|where to watch|\blive\b|live ?stream|\bteaser\b|start ?list|\bprofile\b|\bguide\b|\bpredict|storylines|what to expect|beyond the podium|\bpre-?race\b/i.test(
+    /\bpreview\b|how to watch|where to watch|\blive\b|live ?stream|\bteaser\b|start ?list|\bprofile\b|\bguide\b|\bpredict|storylines|what to expect|beyond the podium|\bpre-?race\b|warm-?up/i.test(
       video.title,
     )
   ) {

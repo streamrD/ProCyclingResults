@@ -1416,26 +1416,30 @@ test("isLikelyFinishVideo rejects another ASO race posted on the official Tour d
   assert.equal(isLikelyFinishVideo(trustedTdfStage1, tdfStage1Race), true);
 });
 
-test("isLikelyFinishVideo rejects a correct-looking title from an unrecognized (clickbait) channel", () => {
+test("isLikelyFinishVideo gates unrecognized channels on the verified badge and a sensible length", () => {
   const { isLikelyFinishVideo } = loadParserExports();
-  // The title/stage/year all match, but the channel is neither a trusted broadcaster
-  // nor the race's verified official channel, so it must not be surfaced.
-  const clickbait = {
-    id: "spam1",
-    title: "Tour de France 2026 Stage 1 Highlights",
-    channel: "Usman Khan",
-    verified: false,
-    lengthSeconds: 300,
-    ageText: "2 hours ago",
-  };
   const tdfStage1Race = {
     pageTitle: "2026 Tour de France",
     title: "Tour de France",
     endDate: new Date("2026-07-26T00:00:00Z"),
     stageRace: { completedStages: 1, latestStage: { number: 1, standings: [{ place: "1", rider: "x" }] } },
   };
+  const base = {
+    id: "unknown1",
+    title: "Tour de France 2026 Stage 1 Highlights",
+    channel: "Some Cycling Channel",
+    lengthSeconds: 300,
+    ageText: "2 hours ago",
+  };
 
-  assert.equal(isLikelyFinishVideo(clickbait, tdfStage1Race), false);
+  // Unverified channel with a correct-looking title is still clickbait -> rejected.
+  assert.equal(isLikelyFinishVideo({ ...base, verified: false }, tdfStage1Race), false);
+  // Verified channel with a sensible highlights length -> allowed (middle ground).
+  assert.equal(isLikelyFinishVideo({ ...base, verified: true }, tdfStage1Race), true);
+  // Verified but a 40s clip/Short -> rejected on length.
+  assert.equal(isLikelyFinishVideo({ ...base, verified: true, lengthSeconds: 40 }, tdfStage1Race), false);
+  // Verified but a 90-minute replay/VOD -> rejected on length.
+  assert.equal(isLikelyFinishVideo({ ...base, verified: true, lengthSeconds: 90 * 60 }, tdfStage1Race), false);
 });
 
 test("isLikelyFinishVideo rejects preview/analysis talk clips that are not race finishes", () => {
