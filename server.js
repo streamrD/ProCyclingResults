@@ -5421,10 +5421,33 @@ function buildFinishVideoQuery(race) {
     .join(" ");
 }
 
+// A finish video must come from a source we trust, because a title/description can
+// be gamed: clickbait channels post talking-head videos titled "<race> stage N
+// highlights" that are not the race at all. Accept a major broadcaster from the
+// trusted list, or the race's own official channel (its name carries the race
+// tokens) when that channel is verified — genuine race channels carry the badge,
+// which a copycat handle does not.
+function isRecognizedFinishVideoSource(video, race) {
+  if (TRUSTED_FINISH_VIDEO_CHANNELS.some((channel) => channel.pattern.test(video.channel))) {
+    return true;
+  }
+
+  const tokens = getRaceTokens(race);
+  const channelText = normalizeSearchText(video.channel);
+  const channelTokenMatches = tokens.filter((token) => channelText.includes(token)).length;
+  return Boolean(video.verified) && tokens.length > 0 && channelTokenMatches >= Math.min(2, tokens.length);
+}
+
 function isLikelyFinishVideo(video, race) {
   const combined = normalizeSearchText(`${video.title} ${video.channel}`);
   const titleText = normalizeSearchText(video.title);
   const tokens = getRaceTokens(race);
+
+  // Only surface finish videos from recognized sources; a correct-looking title
+  // from an unknown channel is not enough (it is often clickbait).
+  if (!isRecognizedFinishVideoSource(video, race)) {
+    return false;
+  }
   // Match race tokens against the title, not the channel: official ASO channels
   // (e.g. a channel literally named "Tour de France") also post highlights for the
   // other races they organise, so a channel-name match would wrongly admit a

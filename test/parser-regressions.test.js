@@ -1396,10 +1396,34 @@ test("isLikelyFinishVideo rejects another ASO race posted on the official Tour d
     lengthSeconds: 300,
     ageText: "3 weeks ago",
   };
-  const realTdfStage1 = {
-    id: "tdf1",
+  const tdfStage1Race = {
+    pageTitle: "2026 Tour de France",
+    title: "Tour de France",
+    endDate: new Date("2026-07-26T00:00:00Z"),
+    stageRace: { completedStages: 1, latestStage: { number: 1, standings: [{ place: "1", rider: "x" }] } },
+  };
+  // Correct-race title from a trusted broadcaster is accepted.
+  const trustedTdfStage1 = {
+    id: "gcn1",
     title: "Tour de France 2026 Stage 1 Highlights",
-    channel: "Some Cycling Channel",
+    channel: "Global Cycling Network",
+    verified: true,
+    lengthSeconds: 300,
+    ageText: "2 hours ago",
+  };
+
+  assert.equal(isLikelyFinishVideo(wrongRaceOnOfficialChannel, tdfStage1Race), false);
+  assert.equal(isLikelyFinishVideo(trustedTdfStage1, tdfStage1Race), true);
+});
+
+test("isLikelyFinishVideo rejects a correct-looking title from an unrecognized (clickbait) channel", () => {
+  const { isLikelyFinishVideo } = loadParserExports();
+  // The title/stage/year all match, but the channel is neither a trusted broadcaster
+  // nor the race's verified official channel, so it must not be surfaced.
+  const clickbait = {
+    id: "spam1",
+    title: "Tour de France 2026 Stage 1 Highlights",
+    channel: "Usman Khan",
     verified: false,
     lengthSeconds: 300,
     ageText: "2 hours ago",
@@ -1411,8 +1435,7 @@ test("isLikelyFinishVideo rejects another ASO race posted on the official Tour d
     stageRace: { completedStages: 1, latestStage: { number: 1, standings: [{ place: "1", rider: "x" }] } },
   };
 
-  assert.equal(isLikelyFinishVideo(wrongRaceOnOfficialChannel, tdfStage1Race), false);
-  assert.equal(isLikelyFinishVideo(realTdfStage1, tdfStage1Race), true);
+  assert.equal(isLikelyFinishVideo(clickbait, tdfStage1Race), false);
 });
 
 test("isLikelyFinishVideo rejects preview/analysis talk clips that are not race finishes", () => {
