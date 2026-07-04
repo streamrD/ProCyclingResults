@@ -2225,7 +2225,13 @@ function parseLetourOfficialStandings(html) {
       const slugName = (row.match(/\/en\/rider\/\d+\/[^/]+\/([a-z0-9-]+)/i)?.[1] || "").replace(/-/g, " ").trim();
       const altName = cleanFeedText(row.match(/<img[^>]*\balt="([^"]+)"/i)?.[1] || "");
       const profileText = cleanFeedText(row.match(/<td class="[^"]*\brunner\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i)?.[1] || "");
-      const rider = toTitleCaseWords(slugName || altName || profileText);
+      // A team time trial classification lists teams, not riders: the profile cell
+      // carries a `team` class and links to /en/team/... with the team name in the
+      // anchor text (e.g. "TEAM VISMA | LEASE A BIKE") rather than a rider slug.
+      const teamName = cleanFeedText(
+        row.match(/<td class="[^"]*\bteam\b[^"]*"[^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i)?.[1] || "",
+      );
+      const rider = toTitleCaseWords(slugName || altName || profileText || teamName);
       const countryCode = normalizeCountryCode((row.match(/flag--([a-z]{2,3})\b/i)?.[1] || "").toUpperCase());
       const timeCells = [...row.matchAll(/<td class="is-alignCenter time">\s*([\s\S]*?)\s*<\/td>/gi)].map((cell) =>
         decodeHtml(cleanFeedText(cell[1] || "")),
@@ -2284,14 +2290,16 @@ function extractTourDeFranceTeamStageAjaxUrl(html) {
 }
 
 function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
-  if (/No edition of individual classification during a Team Time Trial/i.test(stageHtml || "")) {
-    const teamStandings = parseLetourOfficialStandings(teamStageHtml);
-    if (teamStandings.length > 0) {
-      return teamStandings;
-    }
+  // Normal stages expose an individual stage classification. A team time trial has
+  // none (letour.fr may not even offer an "ite" tab, so stageHtml can be empty or a
+  // "No edition of individual classification during a Team Time Trial" notice), and
+  // the team classification is the meaningful stage result in that case.
+  const individualStandings = parseLetourOfficialStandings(stageHtml);
+  if (individualStandings.length > 0) {
+    return individualStandings;
   }
 
-  return parseLetourOfficialStandings(stageHtml);
+  return parseLetourOfficialStandings(teamStageHtml);
 }
 
 function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race) {

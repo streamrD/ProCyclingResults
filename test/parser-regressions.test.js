@@ -48,6 +48,7 @@ function loadParserExports() {
       fetchVueltaABurgosFeminasOfficialSnapshot,
       fetchTourAuvergneRhoneAlpesOfficialSnapshot,
       parseLetourOfficialStandings,
+      resolveLetourStageStandings,
       extractTourDeFranceOfficialStageInfo,
       extractTourDeFranceStageAjaxUrl,
       extractTourDeFranceGeneralAjaxUrl,
@@ -1190,6 +1191,51 @@ test("parseLetourOfficialStandings reads the full Tour de France top five with n
   // Country and stage time are carried through for the winner.
   assert.equal(standings[0].countryCode, "BEL");
   assert.equal(standings[0].time, "3:07:30");
+});
+
+const LETOUR_TEAM_TTT_HTML = `
+  <table class="rankingTable  rankingTables--with-pict  rtable js-extend-target">
+    <tbody>
+      <tr class="rankingTables__row rankingTables__row--emphase has-shadowsep">
+        <td class="rankingTables__row__position is-alignCenter"><span>1</span></td>
+        <td class="rankingTables__row__profile break-line team">
+          <a href="/en/team/TVL/team-visma-lease-a-bike" data-xtclick="rankingTable::ETE">TEAM VISMA | LEASE A BIKE</a>
+        </td>
+        <td class="is-alignCenter time">00h 21&#039; 47&#039;&#039;</td>
+        <td class="is-alignCenter time"> - </td>
+        <td class="is-alignCenter time">-</td>
+      </tr>
+      <tr class="rankingTables__row rankingTables__row--second has-shadowsep">
+        <td class="rankingTables__row__position is-alignCenter"><span>2</span></td>
+        <td class="rankingTables__row__profile break-line team">
+          <a href="/en/team/IGD/netcompany-ineos" data-xtclick="rankingTable::ETE">NETCOMPANY INEOS CYCLING TEAM</a>
+        </td>
+        <td class="is-alignCenter time">00h 21&#039; 55&#039;&#039;</td>
+        <td class="is-alignCenter time">+ 0h 00&#039; 08&#039;&#039;</td>
+        <td class="is-alignCenter time">-</td>
+      </tr>
+    </tbody>
+  </table>`;
+
+test("parseLetourOfficialStandings reads team rows for a team time trial classification", () => {
+  const { parseLetourOfficialStandings } = loadParserExports();
+  const standings = parseLetourOfficialStandings(LETOUR_TEAM_TTT_HTML);
+
+  assert.equal(standings.length, 2);
+  assert.equal(standings[0].rider, "Team Visma | Lease A Bike");
+  assert.equal(standings[0].time, "21:47");
+  assert.equal(standings[1].rider, "Netcompany Ineos Cycling Team");
+  assert.equal(standings[1].gap, "+00:08");
+});
+
+test("resolveLetourStageStandings falls back to team standings when there is no individual stage", () => {
+  const { resolveLetourStageStandings } = loadParserExports();
+  // Stage 1 of the 2026 Tour is a team time trial: letour.fr exposes no "ite" tab,
+  // so the individual stage HTML is empty and the team classification is the result.
+  const standings = resolveLetourStageStandings("", LETOUR_TEAM_TTT_HTML);
+
+  assert.equal(standings.length, 2);
+  assert.equal(standings[0].rider, "Team Visma | Lease A Bike");
 });
 
 test("extractTourDeFranceOfficialStageInfo uses the stage menu, not rest-day calendar inference", () => {
