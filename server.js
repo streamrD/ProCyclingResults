@@ -1556,6 +1556,16 @@ function extractWikiTableByCaption(rawText, captionPattern) {
   })?.[0] || "";
 }
 
+// A parsed athlete cell that is empty or still holds table-layout residue (colspan /
+// rowspan / stray markup characters) is not a real rider name. This guards against a
+// wiki row separator that carries attributes (e.g. "|- class=sortbottom" on a "Total"
+// footer) merging that footer into the last data row and exposing its spanning cell as
+// a fake stage winner.
+function isPlausibleRiderName(rider) {
+  const value = String(rider || "").trim();
+  return value.length > 0 && !/[=|{}]|colspan|rowspan/i.test(value);
+}
+
 function extractRouteStageWinners(rawText) {
   const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
   if (!routeTable) {
@@ -1584,7 +1594,10 @@ function extractRouteStageWinners(rawText) {
 
       const stageInfo = parseStageSequence(cells[0]);
       const winner = parseAthleteDetails(cells[cells.length - 1]);
-      return stageInfo && winner.rider ? { ...stageInfo, winner } : null;
+      // A stage whose race has not happened yet has an empty winner cell; reject
+      // any winner still carrying table-layout residue (e.g. a "colspan" cell from
+      // a merged "Total" footer row) so a scheduled stage is never read as raced.
+      return stageInfo && isPlausibleRiderName(winner.rider) ? { ...stageInfo, winner } : null;
     })
     .filter(Boolean);
 }
@@ -2234,19 +2247,27 @@ function extractTourDeFranceOfficialStageInfo(html, race) {
   const listedStages = [...text.matchAll(/stage-select__option__stage">\s*Stage\s*(\d+)\s*</gi)]
     .map((match) => Number.parseInt(match[1], 10))
     .filter(Number.isFinite);
+  // The "<year> Rankings - Stage <n>" header reflects the edition and stage the
+  // page is actually displaying. Until the current edition's first stage is
+  // published, letour.fr defaults this to the previous edition's final GC, so we
+  // capture the year here to reject stale prior-edition data downstream.
+  const headerMatch = text.match(/(20\d\d)\s+Rankings\s*-\s*Stage\s*(\d+)/i);
+  const editionYear = headerMatch ? Number.parseInt(headerMatch[1], 10) : 0;
+  const headerStageNumber = headerMatch ? Number.parseInt(headerMatch[2], 10) : 0;
   // The stage menu is authoritative for a Grand Tour; calendar-day inference would
   // over-count because of rest days, so only use it when the menu is unavailable.
   const totalStages =
     listedStages.length > 0 ? Math.max(...listedStages) : inferStageCountFromDates(race) || 21;
   const stageNumber =
     titleStageNumber ||
+    headerStageNumber ||
     listedStages.reduce((max, value) => Math.max(max, value), 0) ||
-    Number.parseInt(text.match(/(?:20\d\d) Rankings\s*-\s*Stage\s*(\d+)/i)?.[1] || "", 10) ||
     0;
 
   return {
     stageNumber,
     totalStages,
+    editionYear,
   };
 }
 
@@ -2274,7 +2295,16 @@ function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
 }
 
 function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race) {
-  const { stageNumber, totalStages } = extractTourDeFranceOfficialStageInfo(rankingsHtml, race);
+  const { stageNumber, totalStages, editionYear } = extractTourDeFranceOfficialStageInfo(rankingsHtml, race);
+  // letour.fr keeps serving the previous edition's final classification on its
+  // rankings page until the current edition's first stage is published. Reject any
+  // snapshot whose displayed edition year does not match this race so we never
+  // surface last year's Tour as the current result. Once ASO flips the page to the
+  // new edition (e.g. "2026 Rankings - Stage 1"), this passes and results appear.
+  const raceYear = getRaceYear(race);
+  if (editionYear && raceYear && editionYear !== raceYear) {
+    return null;
+  }
   // The main rankings page renders the general classification table inline, so it
   // is a reliable GC source even before the AJAX general tab is fetched.
   const stageStandings = resolveLetourStageStandings(stageHtml, teamStageHtml);

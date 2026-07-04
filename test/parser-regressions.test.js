@@ -112,6 +112,56 @@ test("extractStageRaceSnapshot reads stage and GC fallbacks from La Vuelta Femen
   });
 });
 
+test("extractStageRaceSnapshot treats a not-yet-raced schedule table as zero completed stages", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  // A Grand Tour route table before the race has empty winner cells and a
+  // "|- class=sortbottom" Total footer whose spanning "colspan" cell would otherwise
+  // merge into the final stage row and read as a fake winner.
+  const rawText = [
+    "{{Infobox cycling race report",
+    "|name = 2026 Tour de France",
+    "|stages = 21",
+    "}}",
+    "",
+    '{| class="wikitable sortable"',
+    "|+Stage characteristics",
+    '! scope="col" |Stage',
+    '! scope="col" |Date',
+    '! scope="col" |Course',
+    '! scope="col" |Distance',
+    '! colspan="2" scope="col" |Type',
+    '! scope="col" |Winner',
+    "|-",
+    '! scope="row" |[[2026 Tour de France, Stage 1 to Stage 11#Stage 1|1]]',
+    '| style="text-align:right" |4 July',
+    "| [[Barcelona]] (Spain)",
+    '| style="text-align:center;" |{{convert|19.6|km|abbr=on}}',
+    "| [[File:Team Time Trial Stage.svg|20px|alt=|link=]]",
+    "| [[Team time trial]]",
+    "|",
+    "|-",
+    '! scope="row" |[[2026 Tour de France, Stage 12 to Stage 21#Stage 21|21]]',
+    '| style="text-align:right" |26 July',
+    "| [[Thoiry, Yvelines|Thoiry]] to [[Paris]]",
+    '| style="text-align:center;" |{{convert|133|km|abbr=on}}',
+    "| [[File:Plainstage.svg|link=|alt=|20x20px]]",
+    "| Flat stage",
+    "|",
+    "|- class=sortbottom",
+    '! colspan="3" |Total',
+    '| style="text-align:center" |{{convert|3321|km|abbr=on}}',
+    '| colspan="3" |',
+    "|}",
+  ].join("\n");
+
+  const snapshot = extractStageRaceSnapshot(rawText);
+
+  assert.equal(snapshot.totalStages, 21);
+  assert.equal(snapshot.completedStages, 0);
+  assert.equal(snapshot.latestStage, null);
+  assert.equal(snapshot.generalClassification, null);
+});
+
 test("applyKnownStageRaceCorrections expands La Vuelta Femenina stage 1 fallback to top five", () => {
   const { applyKnownStageRaceCorrections } = loadParserExports();
   const corrected = JSON.parse(
@@ -1185,6 +1235,34 @@ test("buildTourDeFranceOfficialSnapshot builds a full stage + GC snapshot from l
   assert.equal(snapshot.latestStage.standings.length, 5);
   assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
   assert.equal(snapshot.generalClassification.standings.length, 5);
+});
+
+test("buildTourDeFranceOfficialSnapshot rejects a stale previous-edition rankings page", () => {
+  const { buildTourDeFranceOfficialSnapshot } = loadParserExports();
+  // letour.fr keeps showing last year's final GC (with a "<year> Rankings - Stage N"
+  // header for the previous edition) until the new edition's first stage posts. The
+  // meta title still references the current edition, so the year header is the signal
+  // that this is stale data we must not surface as the current Tour result.
+  const staleRankingsHtml = `
+    <title>Official classifications of Tour de France 2026 - Stage 21</title>
+    <div class="ranking__header-title"><h2 class="heading heading--3">2025 Rankings - Stage 21</h2></div>
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="rankingTables__row__position"><span>1</span></td>
+          <td class="runner"><a href="/en/rider/123/team/tadej-pogacar">T. Pogacar</a></td>
+          <td class="is-alignCenter time">80:00:00</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  const snapshot = buildTourDeFranceOfficialSnapshot(staleRankingsHtml, "", "", staleRankingsHtml, {
+    pageTitle: "2026 Tour de France",
+    startDate: new Date("2026-07-04T00:00:00Z"),
+    endDate: new Date("2026-07-26T00:00:00Z"),
+  });
+
+  assert.equal(snapshot, null);
 });
 
 test("fetchTourDeFranceOfficialSnapshot is gated to the current edition before the race starts", async () => {
