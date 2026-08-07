@@ -706,7 +706,7 @@ function cleanWikiText(value) {
     .replace(/<[^>]+>/g, " ")
     .replace(/\{\{flagicon\|[^}]+\}\}/gi, "")
     .replace(/\{\{flag\|([^}|]+)(?:\|[^}]*)?\}\}/gi, "$1")
-    .replace(/\{\{flagathlete\|([^}|]+)(?:\|[^}]*)?\}\}/gi, "$1")
+    .replace(/\{\{flag[\s_]*athlete\|([^}|]+)(?:\|[^}]*)?\}\}/gi, "$1")
     .replace(/\{\{nowrap\|([^}]*)\}\}/gi, "$1")
     .replace(/\{\{small\|([^}]*)\}\}/gi, "$1")
     .replace(/\{\{abbr\|([^}|]+)\|[^}]+\}\}/gi, "$1")
@@ -787,7 +787,11 @@ function isVueltaABurgosFeminasRace(race) {
 
 function parseAthleteDetails(cell) {
   const text = String(cell || "");
-  const match = text.match(/\{\{\s*flagathlete\s*\|([\s\S]+?)\}\}/i);
+  // Wikipedia race pages use several redirects of the same template interchangeably
+  // ("{{flagathlete}}", "{{Flagathlete}}", "{{Flag athlete}}"). The spaced spelling is
+  // now the most common one on Tour de France / Tour de France Femmes pages, so a
+  // name-only match silently dropped every rider on those pages.
+  const match = text.match(/\{\{\s*flag[\s_]*athlete\s*\|([\s\S]+?)\}\}/i);
   const templateArgs = match
     ? splitWikiTemplateArgs(match[0].replace(/^\{\{/, "").replace(/\}\}$/, ""))
     : [];
@@ -1652,6 +1656,90 @@ function extractStageLeadershipGcSnapshots(rawText) {
     .filter(Boolean);
 }
 
+// Cell attributes are written both quoted and bare on Wikipedia (`scope="row" |` and
+// `scope=row |`, `align="right" |` and `align=right |`), so accept either form.
+function stripWikiCellAttributes(line) {
+  return String(line || "")
+    .replace(/^[!|]\s*/, "")
+    .replace(/^(?:[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|]+)\s*)+\|\s*/i, "")
+    .trim();
+}
+
+// Wiki classification tables write seconds with a double quote ("19h 43' 34"",
+// "+ 12""), whereas the shared time/gap normalizers expect the ASO doubled-apostrophe
+// form. Those normalizers also require a two-digit seconds field and a minutes field,
+// neither of which a sub-minute gap has, so "+ 4"" has to become "+ 0' 04''" or the
+// gap is dropped entirely and the rider renders as level with the leader.
+function normalizeWikiTimeCell(value) {
+  const asoLike = cleanWikiText(value)
+    .replace(/[”″]/g, '"')
+    .replace(/[’′]/g, "'")
+    .replace(/"/g, "''")
+    .replace(/(\d{1,2})''/, (full, seconds) => `${seconds.padStart(2, "0")}''`);
+
+  return /\d\s*'(?!')/.test(asoLike) ? asoLike : asoLike.replace(/(\d{2})''/, "0' $1''");
+}
+
+function parseWikiClassificationTableStandings(table) {
+  return String(table || "")
+    .split("\n|-")
+    .map((row) => {
+      const cells = [];
+      for (const line of row.split("\n")) {
+        if (line === "|}" || line.startsWith("|+") || line.startsWith("{|")) {
+          continue;
+        }
+
+        if (line.startsWith("!") || line.startsWith("|")) {
+          cells.push(stripWikiCellAttributes(line));
+        }
+      }
+
+      // Rank / Rider / ... / Time. The header row's "Rank" cell is not a number, so
+      // it drops out here rather than needing a separate skip.
+      if (cells.length < 2) {
+        return null;
+      }
+
+      const place = Number.parseInt(cells[0], 10);
+      const rider = parseAthleteDetails(cells[1]);
+      if (!Number.isInteger(place) || place > MAX_RESULT_RIDERS || !rider.rider) {
+        return null;
+      }
+
+      // The leader's cell carries an elapsed time and everyone below carries a gap.
+      const timeCell = normalizeWikiTimeCell(cells[cells.length - 1]);
+      const isGap = timeCell.startsWith("+");
+
+      return buildStandingEntry(place, {
+        ...rider,
+        gap: isGap ? timeCell : "",
+        time: isGap ? "" : timeCell,
+      });
+    })
+    .filter(Boolean)
+    .sort((left, right) => Number(left.place) - Number(right.place));
+}
+
+// Grand Tour pages publish their in-progress standings as plain wikitables captioned
+// "General classification after Stage N" instead of the {{cycling result start}}
+// blocks smaller races use, so they need a dedicated reader to surface a GC at all.
+function extractClassificationTableGcSnapshots(rawText) {
+  return [...String(rawText || "").matchAll(/\{\|[\s\S]*?\n\|\}/g)]
+    .map((match) => {
+      const table = match[0];
+      const caption = cleanWikiText(table.match(/\|\+\s*([^\n]+)/)?.[1] || "");
+      const captionMatch = caption.match(/^general classification after stage\s+(\d+)/i);
+      if (!captionMatch) {
+        return null;
+      }
+
+      const standings = parseWikiClassificationTableStandings(table);
+      return standings.length > 0 ? { stageNumber: Number(captionMatch[1]), standings } : null;
+    })
+    .filter(Boolean);
+}
+
 function parseTotalStages(rawText) {
   const stagesField = getInfoboxField(rawText, "stages");
   if (!stagesField) {
@@ -1690,6 +1778,7 @@ function extractStageRaceSnapshot(rawText) {
   });
 
   const routeStageWinners = extractRouteStageWinners(rawText);
+  const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
   const latestStage =
     [...stageResults]
@@ -1708,8 +1797,12 @@ function extractStageRaceSnapshot(rawText) {
         standings: [buildStandingEntry(1, entry.winner)].filter(Boolean),
       }))[0] ||
     null;
+  // Ordering matters on ties: the {{cycling result}} blocks and the classification
+  // tables carry full standings, while the leadership table only yields the leader.
   const latestGc =
-    [...gcResults, ...leadershipGcResults].sort((left, right) => right.stageNumber - left.stageNumber)[0] || null;
+    [...gcResults, ...classificationTableGcResults, ...leadershipGcResults].sort(
+      (left, right) => right.stageNumber - left.stageNumber,
+    )[0] || null;
   const totalStages = parseTotalStages(rawText);
   const prologueClassification =
     !latestGc && latestStage?.stageLabel === "Prologue" && latestStage.standings.length > 0
@@ -1730,6 +1823,7 @@ function extractStageRaceSnapshot(rawText) {
       latestGc?.stageNumber || 0,
       latestStage?.stageOrder || 0,
       routeStageWinners.reduce((max, entry) => Math.max(max, entry.stageOrder), 0),
+      classificationTableGcResults.reduce((max, entry) => Math.max(max, entry.stageNumber), 0),
       leadershipGcResults.reduce((max, entry) => Math.max(max, entry.stageNumber), 0),
     ),
     latestStage: latestStage
@@ -1982,6 +2076,29 @@ function extractAsoRankingsAjaxUrl(html, baseUrl, type) {
   return new URL(path.replace(/\\\//g, "/"), baseUrl).toString();
 }
 
+async function fetchResolvedAsoRankingsAjaxHtml(url, baseUrl, type, fetchHtml = fetchText) {
+  if (!url) {
+    return "";
+  }
+
+  const html = await fetchHtml(url);
+  // The first response usually already carries the table, in which case the nested
+  // subtab is a wasted request. Only follow it when this response has no usable rows
+  // (ASO sometimes serves a "no rank available" stub), and keep the original when the
+  // subtab turns out to be empty too, so a good response is never traded for a stub.
+  if (parseLetourOfficialStandings(html, { rankingType: type }).length > 0) {
+    return html;
+  }
+
+  const nestedUrl = extractAsoRankingsAjaxUrl(html, baseUrl, type);
+  if (!nestedUrl || nestedUrl === url) {
+    return html;
+  }
+
+  const nestedHtml = await fetchHtml(nestedUrl);
+  return parseLetourOfficialStandings(nestedHtml, { rankingType: type }).length > 0 ? nestedHtml : html;
+}
+
 function parseAsoOfficialStandings(html, options = {}) {
   const riderCellPattern = options.riderCellPattern || /<td class="runner[\s\S]*?<a [^>]*>([\s\S]*?)<\/a>/i;
   const includeCountry = options.includeCountry !== false;
@@ -2208,20 +2325,54 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
 }
 
 const TOUR_DE_FRANCE_RANKINGS_URL = "https://www.letour.fr/en/rankings";
+const TOUR_DE_FRANCE_FEMMES_RANKINGS_URL = "https://www.letourfemmes.fr/en/rankings";
+
+// letour.fr and letourfemmes.fr are the same ASO rankings deployment, so both races
+// share every parser below and differ only in entry point, page title and stage count.
+const TOUR_DE_FRANCE_RANKINGS_SOURCE = {
+  pageTitle: "2026 Tour de France",
+  rankingsUrl: TOUR_DE_FRANCE_RANKINGS_URL,
+  // Anchored on "France -" so the men's page title never matches the Femmes edition.
+  titlePattern: /Official classifications of Tour de France\s*\d*\s*-\s*Stage\s*(\d+)/i,
+  defaultTotalStages: 21,
+};
+const TOUR_DE_FRANCE_FEMMES_RANKINGS_SOURCE = {
+  pageTitle: "2026 Tour de France Femmes",
+  rankingsUrl: TOUR_DE_FRANCE_FEMMES_RANKINGS_URL,
+  titlePattern: /Official classifications of Tour de France Femmes\s*\d*\s*-\s*Stage\s*(\d+)/i,
+  defaultTotalStages: 9,
+};
 
 // letour.fr runs the same ASO rankings platform as the Tour Auvergne / La Vuelta
 // Femenina providers, but the current markup keeps the rank inside a <span> and
 // the rider name only in the picture `alt` attribute (no anchor), so it needs a
 // dedicated row parser rather than the shared parseAsoOfficialStandings helper.
-function parseLetourOfficialStandings(html) {
+function parseLetourOfficialStandings(html, options = {}) {
   const tbodyMatch = String(html || "").match(/<table class="rankingTable[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
   if (!tbodyMatch) {
     return [];
   }
 
+  const expectedRankingType = String(options.rankingType || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  // The "rankingTable::<TYPE>" marker lives in the rider/team profile anchor, and some
+  // ASO markup variants render rows without that anchor at all (see above). Only
+  // enforce the type filter when this table carries markers, so an untagged variant
+  // degrades to the previous unfiltered behavior instead of parsing to nothing.
+  const hasRankingTypeMarkers = /RANKINGTABLE::/i.test(tbodyMatch[1]);
+
   return [...tbodyMatch[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
     .map((match) => {
       const row = match[1];
+      if (
+        expectedRankingType &&
+        hasRankingTypeMarkers &&
+        !row.toUpperCase().includes(`RANKINGTABLE::${expectedRankingType}`)
+      ) {
+        return null;
+      }
+
       const place = Number.parseInt(
         row.match(/<td class="rankingTables__row__position[^"]*"[^>]*>\s*(?:<span[^>]*>)?\s*(\d+)/i)?.[1] || "",
         10,
@@ -2251,12 +2402,9 @@ function parseLetourOfficialStandings(html) {
     .slice(0, MAX_RESULT_RIDERS);
 }
 
-function extractTourDeFranceOfficialStageInfo(html, race) {
+function extractTourDeFranceOfficialStageInfo(html, race, source = TOUR_DE_FRANCE_RANKINGS_SOURCE) {
   const text = String(html || "");
-  const titleStageNumber = Number.parseInt(
-    text.match(/Official classifications of Tour de France\s*\d*\s*-\s*Stage\s*(\d+)/i)?.[1] || "",
-    10,
-  );
+  const titleStageNumber = Number.parseInt(text.match(source.titlePattern)?.[1] || "", 10);
   const listedStages = [...text.matchAll(/stage-select__option__stage">\s*Stage\s*(\d+)\s*</gi)]
     .map((match) => Number.parseInt(match[1], 10))
     .filter(Number.isFinite);
@@ -2270,7 +2418,9 @@ function extractTourDeFranceOfficialStageInfo(html, race) {
   // The stage menu is authoritative for a Grand Tour; calendar-day inference would
   // over-count because of rest days, so only use it when the menu is unavailable.
   const totalStages =
-    listedStages.length > 0 ? Math.max(...listedStages) : inferStageCountFromDates(race) || 21;
+    listedStages.length > 0
+      ? Math.max(...listedStages)
+      : inferStageCountFromDates(race) || source.defaultTotalStages;
   const stageNumber =
     titleStageNumber ||
     headerStageNumber ||
@@ -2284,16 +2434,16 @@ function extractTourDeFranceOfficialStageInfo(html, race) {
   };
 }
 
-function extractTourDeFranceGeneralAjaxUrl(html) {
-  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "itg");
+function extractTourDeFranceGeneralAjaxUrl(html, rankingsUrl = TOUR_DE_FRANCE_RANKINGS_URL) {
+  return extractAsoRankingsAjaxUrl(html, rankingsUrl, "itg");
 }
 
-function extractTourDeFranceStageAjaxUrl(html) {
-  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "ite");
+function extractTourDeFranceStageAjaxUrl(html, rankingsUrl = TOUR_DE_FRANCE_RANKINGS_URL) {
+  return extractAsoRankingsAjaxUrl(html, rankingsUrl, "ite");
 }
 
-function extractTourDeFranceTeamStageAjaxUrl(html) {
-  return extractAsoRankingsAjaxUrl(html, TOUR_DE_FRANCE_RANKINGS_URL, "ete");
+function extractTourDeFranceTeamStageAjaxUrl(html, rankingsUrl = TOUR_DE_FRANCE_RANKINGS_URL) {
+  return extractAsoRankingsAjaxUrl(html, rankingsUrl, "ete");
 }
 
 function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
@@ -2301,16 +2451,31 @@ function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
   // none (letour.fr may not even offer an "ite" tab, so stageHtml can be empty or a
   // "No edition of individual classification during a Team Time Trial" notice), and
   // the team classification is the meaningful stage result in that case.
-  const individualStandings = parseLetourOfficialStandings(stageHtml);
+  // Ask for each table by type for the same reason the general classification does: if
+  // the "ite" endpoint ever serves the rankings shell instead, its inlined general
+  // rows would otherwise surface as the stage result and show the GC leader as the
+  // stage winner.
+  const individualStandings = parseLetourOfficialStandings(stageHtml, { rankingType: "ITE" });
   if (individualStandings.length > 0) {
     return individualStandings;
   }
 
-  return parseLetourOfficialStandings(teamStageHtml);
+  return parseLetourOfficialStandings(teamStageHtml, { rankingType: "ETE" });
 }
 
-function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race) {
-  const { stageNumber, totalStages, editionYear } = extractTourDeFranceOfficialStageInfo(rankingsHtml, race);
+function buildTourDeFranceOfficialSnapshot(
+  rankingsHtml,
+  stageHtml,
+  teamStageHtml,
+  generalHtml,
+  race,
+  source = TOUR_DE_FRANCE_RANKINGS_SOURCE,
+) {
+  const { stageNumber, totalStages, editionYear } = extractTourDeFranceOfficialStageInfo(
+    rankingsHtml,
+    race,
+    source,
+  );
   // letour.fr keeps serving the previous edition's final classification on its
   // rankings page until the current edition's first stage is published. Reject any
   // snapshot whose displayed edition year does not match this race so we never
@@ -2321,17 +2486,21 @@ function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtm
     return null;
   }
   // The main rankings page renders the general classification table inline, so it
-  // is a reliable GC source even before the AJAX general tab is fetched.
+  // is a reliable GC source only when the rows are explicitly tagged as ITG. While
+  // a stage tab is active, the same page can inline ITE stage rows instead.
   const stageStandings = resolveLetourStageStandings(stageHtml, teamStageHtml);
-  const gcStandings = parseLetourOfficialStandings(generalHtml) || [];
-  const inlineGcStandings = gcStandings.length > 0 ? gcStandings : parseLetourOfficialStandings(rankingsHtml);
+  const gcStandings = parseLetourOfficialStandings(generalHtml, { rankingType: "ITG" }) || [];
+  const inlineGcStandings =
+    gcStandings.length > 0
+      ? gcStandings
+      : parseLetourOfficialStandings(rankingsHtml, { rankingType: "ITG" });
 
   if (stageNumber <= 0 || (stageStandings.length === 0 && inlineGcStandings.length === 0)) {
     return null;
   }
 
   return {
-    totalStages: totalStages || inferStageCountFromDates(race) || 21,
+    totalStages: totalStages || inferStageCountFromDates(race) || source.defaultTotalStages,
     completedStages: stageNumber,
     latestStage:
       stageStandings.length > 0
@@ -2354,14 +2523,14 @@ function buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtm
   };
 }
 
-async function fetchTourDeFranceOfficialSnapshot(race, fetchHtml = fetchText) {
+async function fetchAsoTourRankingsSnapshot(race, fetchHtml, source) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate);
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== "2026 Tour de France" ||
+    race?.pageTitle !== source.pageTitle ||
     getRaceYear(race) !== 2026 ||
     !startUtc ||
     !endUtc ||
@@ -2370,14 +2539,22 @@ async function fetchTourDeFranceOfficialSnapshot(race, fetchHtml = fetchText) {
     return null;
   }
 
-  const rankingsHtml = await fetchHtml(TOUR_DE_FRANCE_RANKINGS_URL);
-  const stageUrl = extractTourDeFranceStageAjaxUrl(rankingsHtml);
-  const teamStageUrl = extractTourDeFranceTeamStageAjaxUrl(rankingsHtml);
-  const generalUrl = extractTourDeFranceGeneralAjaxUrl(rankingsHtml);
+  const rankingsHtml = await fetchHtml(source.rankingsUrl);
+  const stageUrl = extractTourDeFranceStageAjaxUrl(rankingsHtml, source.rankingsUrl);
+  const teamStageUrl = extractTourDeFranceTeamStageAjaxUrl(rankingsHtml, source.rankingsUrl);
+  const generalUrl = extractTourDeFranceGeneralAjaxUrl(rankingsHtml, source.rankingsUrl);
   const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
   const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
-  const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
-  return buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race);
+  const generalHtml = await fetchResolvedAsoRankingsAjaxHtml(generalUrl, source.rankingsUrl, "itg", fetchHtml);
+  return buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race, source);
+}
+
+async function fetchTourDeFranceOfficialSnapshot(race, fetchHtml = fetchText) {
+  return fetchAsoTourRankingsSnapshot(race, fetchHtml, TOUR_DE_FRANCE_RANKINGS_SOURCE);
+}
+
+async function fetchTourDeFranceFemmesOfficialSnapshot(race, fetchHtml = fetchText) {
+  return fetchAsoTourRankingsSnapshot(race, fetchHtml, TOUR_DE_FRANCE_FEMMES_RANKINGS_SOURCE);
 }
 
 function getStageRaceSnapshotQuality(snapshot) {
@@ -3743,6 +3920,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "tour-de-france-rankings",
     matches: (race) => race?.pageTitle === "2026 Tour de France",
     load: fetchTourDeFranceOfficialSnapshot,
+  },
+  {
+    id: "tour-de-france-femmes-rankings",
+    matches: (race) => race?.pageTitle === "2026 Tour de France Femmes",
+    load: fetchTourDeFranceFemmesOfficialSnapshot,
   },
   {
     id: "giro-ditalia-women-rankings",

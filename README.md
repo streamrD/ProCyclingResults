@@ -200,6 +200,8 @@ Current special cases:
   Pulls the official `results-2026` page and parses the current General Classification / Stage tables directly
 - Tour de France
   Pulls the official letour.fr rankings page (same ASO platform as the Tour Auvergne / La Vuelta Femenina providers) to recover the full stage top five and general classification within minutes of a stage finish, well ahead of Wikipedia. letour.fr's current markup keeps the rank inside a `<span>` and the rider's full name only in the profile-link slug, so it uses a dedicated `parseLetourOfficialStandings` rather than the shared ASO parser. Gated to the 2026 edition from its start date onward.
+- Tour de France Femmes
+  `letourfemmes.fr` is the same ASO rankings deployment as `letour.fr`, so it reuses every Tour de France parser through a shared `fetchAsoTourRankingsSnapshot`; the two differ only in entry point, expected page title and default stage count (9 vs 21). Gated to the 2026 edition from its start date onward.
 - Giro d'Italia
   Uses the official livefeed plus the official classifications page for stage / GC coverage when Wikipedia is still sparse. Giro finish-video links are sourced first from official livefeed `Last Km` video entries, with a small explicit fallback map retained for resilience. The shared Giro standings parser now accepts both the older `h5.position` row markup and the newer `div.position` variant used by current official pages.
 - Giro d'Italia Women
@@ -340,8 +342,14 @@ It does this from Wikipedia race pages when possible by parsing:
 - `{{cyclingresult ...}}` blocks
 - stage result sections
 - GC sections
+- classification standings wikitables captioned `General classification after Stage N`
 - route/stage winner tables
 - infobox first/second/third fields
+
+Two page-shape variations are worth knowing about, because both silently produced an empty snapshot until they were handled:
+
+- Grand Tour pages (Tour de France, Tour de France Femmes) publish in-progress standings as plain wikitables rather than `{{cycling result start}}` blocks, which is what `extractClassificationTableGcSnapshots` reads. Prefer it over the classification-leadership table, whose `rowspan` columns do not line up per row and yield the wrong leader.
+- Rider cells use several redirects of the same template interchangeably — `{{flagathlete}}`, `{{Flagathlete}}` and `{{Flag athlete}}`. The spaced spelling is now the most common one on Tour de France pages, so `parseAthleteDetails` matches all of them; a name-only match drops every rider on those pages.
 
 If a race has official provider logic, it is loaded alongside the parsed Wikipedia snapshot and the fresher stage, GC, and overall fields are merged independently. Live stage races also apply a simple date-based freshness floor so obviously stale progress is deprioritized.
 
@@ -626,7 +634,7 @@ The UCI ProSeries and Europe Tour Spotlight sections were implemented previously
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection, national championship parsing/rendering and country-header flags, the recent-results row reveal, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, and a synthetic YouTube `ytInitialData` search result.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection, national championship parsing/rendering and country-header flags, the recent-results row reveal, snapshot merging, cache-TTL behavior, and stage-race card rendering. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, Tour de France Femmes (letourfemmes.fr) rankings / stage / GC HTML plus a live Femmes race wikitext page, and a synthetic YouTube `ytInitialData` search result.
 
 Run it with:
 

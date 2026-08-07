@@ -54,6 +54,10 @@ function loadParserExports() {
       extractTourDeFranceGeneralAjaxUrl,
       buildTourDeFranceOfficialSnapshot,
       fetchTourDeFranceOfficialSnapshot,
+      fetchTourDeFranceFemmesOfficialSnapshot,
+      extractClassificationTableGcSnapshots,
+      parseAthleteDetails,
+      cleanWikiText,
       buildRaceArticleQueries,
       scoreRaceArticle,
       selectRaceArticles,
@@ -1281,6 +1285,393 @@ test("buildTourDeFranceOfficialSnapshot builds a full stage + GC snapshot from l
   assert.equal(snapshot.latestStage.standings.length, 5);
   assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
   assert.equal(snapshot.generalClassification.standings.length, 5);
+});
+
+const LETOUR_STAGE4_STAGE_TABLE_HTML = `
+  <table class="rankingTable rankingTables--with-pict rtable">
+    <tbody>
+      <tr class="rankingTables__row rankingTables__row--emphase has-shadowsep">
+        <td class="rankingTables__row__position is-alignCenter"><span>1</span></td>
+        <td class="rankingTables__row__profile runner">
+          <span data-bib="#33" class="flag flag--with-bib js-display-lazy" data-class="flag--den"></span>
+          <a class="rankingTables__row__profile--name" href="/en/rider/33/lidl-trek/mads-pedersen"
+             data-xtclick="rankingTable::ITE" data-clicktype="N">M. PEDERSEN</a>
+        </td>
+        <td class="is-alignCenter time">04h 10&#039; 45&#039;&#039;</td>
+        <td class="is-alignCenter time">-</td>
+      </tr>
+      <tr class="rankingTables__row rankingTables__row--second has-shadowsep">
+        <td class="rankingTables__row__position is-alignCenter"><span>2</span></td>
+        <td class="rankingTables__row__profile runner">
+          <span data-bib="#34" class="flag flag--with-bib js-display-lazy" data-class="flag--usa"></span>
+          <a class="rankingTables__row__profile--name" href="/en/rider/34/lidl-trek/quinn-simmons"
+             data-xtclick="rankingTable::ITE" data-clicktype="N">Q. SIMMONS</a>
+        </td>
+        <td class="is-alignCenter time">04h 10&#039; 45&#039;&#039;</td>
+        <td class="is-alignCenter time">-</td>
+      </tr>
+    </tbody>
+  </table>`;
+
+const LETOUR_STAGE4_ACTIVE_RANKINGS_HTML = `
+  <!doctype html>
+  <title>Official classifications of Tour de France 2026 - Stage 4</title>
+  <h2 class="heading heading--3">2026 Rankings - Stage 4</h2>
+  <span class="stage-select__option__stage">Stage 4</span>
+  <span class="js-tabs-ranking"
+        data-ajax-stack = {&quot;itg&quot;:&quot;\/en\/ajax\/ranking\/4\/itg\/gc-shell\/none&quot;}
+        data-type="g" data-xtclick="ranking::tab::overall">General ranking</span>
+  <span class="js-tabs-ranking"
+        data-ajax-stack = {&quot;ite&quot;:&quot;\/en\/ajax\/ranking\/4\/ite\/stage-shell\/none&quot;}
+        data-type="e" data-xtclick="ranking::tab::stage">Stage ranking</span>
+  ${LETOUR_STAGE4_STAGE_TABLE_HTML}`;
+
+const LETOUR_STAGE4_NO_GC_HTML = `
+  <span class="js-tabs-ranking-nested general"
+        data-tabs-ajax="/en/ajax/ranking/4/itg/gc-subtab/subtab"
+        data-type="itg"></span>
+  <p class="noRanking" data-tpl="ranking">No rank available in this section</p>`;
+
+const LETOUR_STAGE4_GC_TABLE_HTML = `
+  <table class="rankingTable rankingTables--with-pict rtable">
+    <tbody>
+      <tr class="rankingTables__row rankingTables__row--emphase has-shadowsep">
+        <td class="rankingTables__row__position is-alignCenter"><span>1</span></td>
+        <td class="rankingTables__row__profile runner">
+          <span data-bib="#1" class="flag flag--with-bib js-display-lazy" data-class="flag--slo"></span>
+          <a class="rankingTables__row__profile--name" href="/en/rider/1/uae-team-emirates-xrg/tadej-pogacar"
+             data-xtclick="rankingTable::ITG" data-clicktype="N">T. POGACAR</a>
+        </td>
+        <td class="is-alignCenter time">14h 35&#039; 10&#039;&#039;</td>
+        <td class="is-alignCenter time">-</td>
+      </tr>
+    </tbody>
+  </table>`;
+
+test("buildTourDeFranceOfficialSnapshot does not reuse active stage rows as GC fallback", () => {
+  const { buildTourDeFranceOfficialSnapshot } = loadParserExports();
+  const snapshot = JSON.parse(
+    JSON.stringify(
+      buildTourDeFranceOfficialSnapshot(
+        LETOUR_STAGE4_ACTIVE_RANKINGS_HTML,
+        LETOUR_STAGE4_STAGE_TABLE_HTML,
+        "",
+        LETOUR_STAGE4_NO_GC_HTML,
+        {
+          pageTitle: "2026 Tour de France",
+          startDate: new Date("2026-07-04T00:00:00Z"),
+          endDate: new Date("2026-07-26T00:00:00Z"),
+        },
+      ),
+    ),
+  );
+
+  assert.equal(snapshot.completedStages, 4);
+  assert.equal(snapshot.latestStage.winner, "Mads Pedersen");
+  assert.equal(snapshot.generalClassification, null);
+});
+
+test("fetchTourDeFranceOfficialSnapshot follows the nested ASO GC subtab", async () => {
+  const { fetchTourDeFranceOfficialSnapshot } = loadParserExports();
+  const fetchedUrls = [];
+  const snapshot = await fetchTourDeFranceOfficialSnapshot(
+    {
+      pageTitle: "2026 Tour de France",
+      startDate: new Date("2000-01-01T00:00:00Z"),
+      endDate: new Date("2026-07-26T00:00:00Z"),
+    },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.letour.fr/en/rankings") {
+        return LETOUR_STAGE4_ACTIVE_RANKINGS_HTML;
+      }
+
+      if (url.endsWith("/stage-shell/none")) {
+        return LETOUR_STAGE4_STAGE_TABLE_HTML;
+      }
+
+      if (url.endsWith("/gc-shell/none")) {
+        return LETOUR_STAGE4_NO_GC_HTML;
+      }
+
+      if (url.endsWith("/gc-subtab/subtab")) {
+        return LETOUR_STAGE4_GC_TABLE_HTML;
+      }
+
+      return "";
+    },
+  );
+
+  assert.equal(snapshot.latestStage.winner, "Mads Pedersen");
+  assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
+  assert.ok(fetchedUrls.some((url) => url.endsWith("/gc-subtab/subtab")));
+});
+
+test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
+  const { parseAthleteDetails } = loadParserExports();
+
+  for (const template of ["flagathlete", "Flagathlete", "Flag athlete", "flag_athlete"]) {
+    const details = parseAthleteDetails(`{{${template}|[[Marlen Reusser]]|SUI}}`);
+    assert.equal(details.rider, "Marlen Reusser", `expected {{${template}}} to resolve a rider`);
+    assert.equal(details.countryCode, "SUI", `expected {{${template}}} to resolve a country`);
+  }
+});
+
+test("extractStageRaceSnapshot reads a live Tour de France Femmes stage and GC from wikitables", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  // This page uses the spaced "{{Flag athlete}}" template and publishes its standings
+  // as plain wikitables rather than {{cycling result start}} blocks, so before both
+  // were supported the whole race rendered with no stage, GC or completed-stage count.
+  const rawText = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-femmes-stage6.wikitext"),
+    "utf8",
+  );
+
+  const snapshot = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText)));
+
+  assert.equal(snapshot.totalStages, 9);
+  assert.equal(snapshot.completedStages, 6);
+  assert.equal(snapshot.latestStage.number, 6);
+  assert.equal(snapshot.latestStage.winner, "Kimberley Le Court");
+  assert.equal(snapshot.generalClassification.stageNumber, 6);
+  assert.equal(snapshot.generalClassification.leader, "Marlen Reusser");
+  assert.equal(snapshot.generalClassification.leaderCountryCode, "SUI");
+  assert.deepEqual(snapshot.generalClassification.standings.slice(0, 3), [
+    { place: "1", rider: "Marlen Reusser", countryCode: "SUI", time: "19:43:34" },
+    { place: "2", rider: "Demi Vollering", countryCode: "NED", gap: "+00:12" },
+    { place: "3", rider: "Katarzyna Niewiadoma-Phinney", countryCode: "POL", gap: "+01:17" },
+  ]);
+});
+
+test("cleanWikiText resolves every {{flagathlete}} redirect spelling", () => {
+  const { cleanWikiText } = loadParserExports();
+  // Kept in step with parseAthleteDetails: an unmatched spelling falls through to the
+  // generic "{{...}} -> space" rule, which silently erases the rider's name.
+  for (const template of ["flagathlete", "Flagathlete", "Flag athlete", "flag_athlete"]) {
+    assert.equal(cleanWikiText(`{{${template}|Tadej Pogačar|SLO}}`), "Tadej Pogačar");
+  }
+});
+
+test("extractClassificationTableGcSnapshots keeps sub-ten-second GC gaps", () => {
+  const { extractClassificationTableGcSnapshots } = loadParserExports();
+  // "+ 4"" has neither the two-digit seconds nor the minutes field the shared gap
+  // normalizer needs, so without padding it normalized to "" and the rider rendered
+  // as level with the leader. Single-digit gaps are routine early in a Grand Tour.
+  const table = `
+{| class="wikitable"
+|+ General classification after Stage 2 (1–10)
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Marlen Reusser]]|SUI}}
+| {{UCI team code|MOV women|2026}}
+| align="right" | 4h 10' 45"
+|-
+! scope="row" | 2
+| {{Flag athlete|[[Demi Vollering]]|NED}}
+| {{UCI team code|FSF|2026}}
+| align="right" | + 4"
+|-
+! scope="row" | 3
+| {{Flag athlete|[[Puck Pieterse]]|NED}}
+| {{UCI team code|FEN|2026}}
+| align="right" | + 1' 7"
+|}`;
+
+  const [snapshot] = extractClassificationTableGcSnapshots(table);
+
+  assert.equal(snapshot.stageNumber, 2);
+  assert.equal(snapshot.standings[0].time, "4:10:45");
+  assert.equal(snapshot.standings[1].gap, "+00:04");
+  assert.equal(snapshot.standings[2].gap, "+01:07");
+});
+
+test("extractClassificationTableGcSnapshots reads unquoted cell attributes", () => {
+  const { extractClassificationTableGcSnapshots } = loadParserExports();
+  // Wikipedia writes both `scope="row" |` and the bare `scope=row |`; only handling
+  // the quoted form made every row fail to parse and dropped the whole table.
+  const table = `
+{| class="wikitable"
+|+ General classification after Stage 6 (1–10)
+|-
+! scope=row | 1
+| {{Flag athlete|[[Marlen Reusser]]|SUI}}
+| {{UCI team code|MOV women|2026}}
+| align=right | 19h 43' 34"
+|-
+! scope=row | 2
+| {{Flag athlete|[[Demi Vollering]]|NED}}
+| {{UCI team code|FSF|2026}}
+| align=right | + 12"
+|}`;
+
+  const [snapshot] = extractClassificationTableGcSnapshots(table);
+
+  assert.equal(snapshot.standings.length, 2);
+  assert.equal(snapshot.standings[0].rider, "Marlen Reusser");
+  assert.equal(snapshot.standings[0].time, "19:43:34");
+  assert.equal(snapshot.standings[1].gap, "+00:12");
+});
+
+test("extractClassificationTableGcSnapshots ignores the other jersey classification tables", () => {
+  const { extractClassificationTableGcSnapshots } = loadParserExports();
+  const rawText = fs.readFileSync(
+    path.join(__dirname, "fixtures", "tour-de-france-femmes-stage6.wikitext"),
+    "utf8",
+  );
+  const pointsTable = `
+{| class="wikitable"
+|+ Points classification after Stage 6 (1–10)
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Lorena Wiebes]]|NED}}
+| {{UCI team code|SDW|2026}}
+| align="right" | 210
+|}`;
+
+  const snapshots = extractClassificationTableGcSnapshots(rawText + pointsTable);
+
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].stageNumber, 6);
+  assert.equal(snapshots[0].standings[0].rider, "Marlen Reusser");
+});
+
+test("fetchTourDeFranceFemmesOfficialSnapshot builds a stage + GC snapshot from letourfemmes.fr", async () => {
+  const { fetchTourDeFranceFemmesOfficialSnapshot } = loadParserExports();
+  const readFixture = (name) => fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
+  const fetchedUrls = [];
+
+  const snapshot = await fetchTourDeFranceFemmesOfficialSnapshot(
+    {
+      pageTitle: "2026 Tour de France Femmes",
+      startDate: new Date("2026-08-01T00:00:00Z"),
+      endDate: new Date("2026-08-09T00:00:00Z"),
+    },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.letourfemmes.fr/en/rankings") {
+        return readFixture("tour-de-france-femmes-rankings-stage6.html");
+      }
+
+      if (url.includes("/ite/")) {
+        return readFixture("tour-de-france-femmes-stage6-ite.html");
+      }
+
+      if (url.includes("/itg/")) {
+        return readFixture("tour-de-france-femmes-stage6-itg.html");
+      }
+
+      return "";
+    },
+  );
+
+  // The men's providers must not leak in: every request has to stay on letourfemmes.fr.
+  assert.ok(fetchedUrls.every((url) => url.startsWith("https://www.letourfemmes.fr/")));
+  assert.equal(snapshot.totalStages, 9);
+  assert.equal(snapshot.completedStages, 6);
+  assert.equal(snapshot.latestStage.number, 6);
+  assert.equal(snapshot.latestStage.winner, "Kim Le Court De Billot Pienaar");
+  assert.equal(snapshot.latestStage.winnerCountryCode, "MRI");
+  assert.equal(snapshot.generalClassification.leader, "Marlen Reusser");
+  assert.equal(snapshot.generalClassification.standings[1].rider, "Demi Vollering");
+  assert.equal(snapshot.generalClassification.standings[1].gap, "+00:12");
+});
+
+test("fetchTourDeFranceFemmesOfficialSnapshot ignores races it does not serve", async () => {
+  const { fetchTourDeFranceFemmesOfficialSnapshot } = loadParserExports();
+  const snapshot = await fetchTourDeFranceFemmesOfficialSnapshot(
+    {
+      pageTitle: "2026 Tour de France",
+      startDate: new Date("2026-07-04T00:00:00Z"),
+      endDate: new Date("2026-07-26T00:00:00Z"),
+    },
+    async () => {
+      throw new Error("must not fetch for the men's race");
+    },
+  );
+
+  assert.equal(snapshot, null);
+});
+
+test("fetchTourDeFranceOfficialSnapshot keeps a good GC shell instead of an empty subtab", async () => {
+  const { fetchTourDeFranceOfficialSnapshot } = loadParserExports();
+  // The shell response can carry the ITG table and still advertise a nested subtab.
+  // Following it unconditionally traded a valid GC for a "no rank available" stub.
+  const gcShellWithNestedLink = `
+    <span class="js-tabs-ranking-nested general"
+          data-tabs-ajax="/en/ajax/ranking/4/itg/gc-subtab/subtab"
+          data-type="itg"></span>
+    ${LETOUR_STAGE4_GC_TABLE_HTML}`;
+  const fetchedUrls = [];
+
+  const snapshot = await fetchTourDeFranceOfficialSnapshot(
+    {
+      pageTitle: "2026 Tour de France",
+      startDate: new Date("2000-01-01T00:00:00Z"),
+      endDate: new Date("2026-07-26T00:00:00Z"),
+    },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.letour.fr/en/rankings") {
+        return LETOUR_STAGE4_ACTIVE_RANKINGS_HTML;
+      }
+
+      if (url.endsWith("/stage-shell/none")) {
+        return LETOUR_STAGE4_STAGE_TABLE_HTML;
+      }
+
+      if (url.endsWith("/gc-shell/none")) {
+        return gcShellWithNestedLink;
+      }
+
+      if (url.endsWith("/gc-subtab/subtab")) {
+        return `<p class="noRanking" data-tpl="ranking">No rank available in this section</p>`;
+      }
+
+      return "";
+    },
+  );
+
+  assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
+  // The usable shell makes the second request unnecessary in the first place.
+  assert.ok(!fetchedUrls.some((url) => url.endsWith("/gc-subtab/subtab")));
+});
+
+test("resolveLetourStageStandings rejects general rows served by the stage endpoint", () => {
+  const { resolveLetourStageStandings } = loadParserExports();
+  // Mirror of the inline-GC bug: if the "ite" endpoint serves the rankings shell, its
+  // ITG rows must not be surfaced as the stage result.
+  const standings = resolveLetourStageStandings(LETOUR_STAGE4_GC_TABLE_HTML, "");
+
+  assert.equal(standings.length, 0);
+});
+
+test("parseLetourOfficialStandings keeps untagged rows when a table carries no type markers", () => {
+  const { parseLetourOfficialStandings } = loadParserExports();
+  // Older ASO markup renders rows without the profile anchor that carries the
+  // "rankingTable::<TYPE>" marker, so the type filter must not blank those tables out.
+  const untaggedHtml = `
+    <table class="rankingTable">
+      <tbody>
+        <tr>
+          <td class="rankingTables__row__position"><span>1</span></td>
+          <td class="runner">
+            <span class="flag flag--slo"></span>
+            <img alt="Tadej POGACAR">
+          </td>
+          <td class="is-alignCenter time">14h 35' 10''</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  const standings = parseLetourOfficialStandings(untaggedHtml, { rankingType: "ITG" });
+
+  assert.equal(standings.length, 1);
+  assert.equal(standings[0].rider, "Tadej Pogacar");
 });
 
 test("buildTourDeFranceOfficialSnapshot rejects a stale previous-edition rankings page", () => {

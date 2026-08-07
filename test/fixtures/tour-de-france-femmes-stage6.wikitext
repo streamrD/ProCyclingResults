@@ -1,0 +1,152 @@
+{{Infobox cycling race report
+|series_number     = 5
+|race              = 2026 Tour de France Femmes
+|stages             = 9
+}}
+
+== Route and stages==
+{| class="wikitable sortable"
+|+Stage characteristics<ref name="route23" /><ref name="class" />
+! scope="col" |Stage
+! scope="col" |Date
+! scope="col" |Course
+! scope="col" |Distance
+! colspan="2" scope="col" |Type
+!Winner
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 1|1]]
+| 1 August
+| [[Lausanne]] (Switzerland) to Lausanne (Switzerland)
+| style="text-align:center;" | {{convert|138|km|abbr=on}}
+| [[File:Plainstage.svg|link=|alt=|20x20px]]
+| Flat stage
+| {{Flag athlete|[[Lorena Wiebes]]|NED}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 2|2]]
+| 2 August
+| [[Aigle]] (Switzerland) to [[Geneva]] (Switzerland)
+| style="text-align:center;" | {{convert|147.9|km|abbr=on}}
+| [[File:Plainstage.svg|link=|alt=|20x20px]]
+| Flat stage
+| {{Flag athlete|[[Lorena Wiebes]]|NED}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 3|3]]
+| 3 August
+| Geneva (Switzerland) to [[Poligny, Jura|Poligny]]
+| style="text-align:center;" |{{convert|156.5|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{nowrap|{{Flag athlete|[[Sigrid Ytterhus Haugset]]|NOR}}}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 1|4]]
+| 4 August
+| [[Gevrey-Chambertin]] to [[Dijon]]
+| style="text-align:center;" |{{convert|21|km|abbr=on}}
+| [[File:Time_Trial.svg|link=|alt=|20x20px]]
+| [[Individual time trial]]
+| {{Flag athlete|[[Marlen Reusser]]|SUI}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 5|5]]
+| 5 August
+| [[Mâcon]] to [[Belleville-en-Beaujolais]]
+| style="text-align:center;" |{{convert|140|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flag athlete|[[Demi Vollering]]|NED}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 6|6]]
+| 6 August
+| [[Montbrison, Loire|Montbrison]] to [[Tournon-sur-Rhône]]
+| style="text-align:center;" |{{convert|153.4|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flag athlete|[[Kimberley Le Court]]|MRI}}
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 7|7]]
+| 7 August
+| [[La Voulte-sur-Rhône]] to [[Mont Ventoux]]
+| style="text-align:center;" |{{convert|146.8|km|abbr=on}}
+| [[File:Mountainstage.svg|link=|alt=|20x20px]]
+| Mountain stage
+| 
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 8|8]]
+| 8 August
+| [[Sisteron]] to [[Nice]]
+| style="text-align:center;" |{{convert|171.9|km|abbr=on}}
+| [[File:Plainstage.svg|link=|alt=|20x20px]]
+| Flat stage
+| 
+|-
+! [[2026 Tour de France Femmes, Stage 1 to Stage 9#Stage 9|9]]
+| 9 August
+| Nice to Nice
+| style="text-align:center;" |{{convert|99.2|km|abbr=on}}
+| [[File:Mountainstage.svg|link=|alt=|20x20px]]
+| Mountain stage
+| 
+|-
+! colspan="3" |Total
+| colspan="4" |{{convert|1174.7|km|abbr=on}}
+|}
+
+==Classification standings==
+===General classification===
+{| class="wikitable" style="width:50em;margin-bottom:0;"
+|+ General classification after Stage 6 (1–10)<ref name="class">{{cite web|url=https://www.letourfemmes.fr/en/rankings|title=Official classifications of Tour de France Femmes 2026|work=[[Tour de France Femmes]]|access-date=6 August 2026}}</ref><ref name="tissottime">{{cite web|url=https://www.tissottiming.com/2026/trf/stage-6/rankings|title=Tour de France Femmes Rankings Tissot Timing|work=Tissot Timing|access-date=6 August 2026}}</ref>
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Marlen Reusser]]|SUI}} {{cjersey|yellow}}
+| {{UCI team code|MOV women|2026}}
+| align="right" | 19h 43' 34"
+|-
+! scope="row" | 2
+| {{Flag athlete|[[Demi Vollering]]|NED}}
+| {{UCI team code|FSF|2026}}
+| align="right" | + 12"
+|-
+! scope="row" | 3
+| {{Flag athlete|[[Katarzyna Niewiadoma-Phinney]]|POL}}
+| {{UCI team code|CSR|2026b}}
+| align="right" | + 1' 17"
+|-
+! scope="row" | 4
+| {{Flag athlete|[[Elisa Longo Borghini]]|ITA}} {{cjersey|yellow number}}
+| {{UCI team code|UAD women|2026b}}
+| align="right" | + 2' 28"
+|-
+! scope="row" | 5
+| {{Flag athlete|[[Antonia Niedermaier]]|GER}} {{cjersey|white}}
+| {{UCI team code|CSR|2026b}}
+| align="right" | + 2' 40"
+|-
+! scope="row" | 6
+| {{Flag athlete|[[Dominika Włodarczyk]]|POL}} {{cjersey|yellow number}}
+| {{UCI team code|UAD women|2026b}}
+| align="right" | + 2' 54"
+|-
+! scope="row" | 7
+| {{Flag athlete|[[Isabella Holmgren]]|CAN}}
+| {{UCI team code|LTK women|2026}}
+| align="right" | + 3' 05"
+|-
+! scope="row" | 8
+| {{Flag athlete|[[Cédrine Kerbaol]]|FRA}}
+| {{UCI team code|EFO|2026}}
+| align="right" | + 3' 07"
+|-
+! scope="row" | 9
+| {{Flag athlete|[[Kimberley Le Court]]|MRI}}
+| {{UCI team code|AGS|2026}}
+| align="right" | + 3' 26"
+|-
+! scope="row" | 10
+| {{Flag athlete|[[Paula Blasi]]|ESP}} {{cjersey|yellow number}}
+| {{UCI team code|UAD women|2026b}}
+| align="right" | + 3' 51"
+|}
