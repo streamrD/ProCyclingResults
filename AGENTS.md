@@ -57,6 +57,7 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - National Championships should prioritize completed event records in the UI. Use `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` only for narrow, source-backed date/location/podium/video overrides.
 - `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
 - Giro finish-video links now prefer official livefeed-derived URLs before falling back to the static map.
+- A fix only reaches the product when it is pushed to `main`; Railway deploys from there. If the user reports the site is wrong, check what the deployed instance returns before re-debugging local code — they are usually looking at production, not your working tree.
 
 ## Validation
 
@@ -71,6 +72,15 @@ When performance behavior changes, also consider:
 1. `npm run benchmark:homepage-ready`
 2. `npm run benchmark:ready`
 3. `npm run benchmark:load -- --runs=5 --include-coverage`
+
+Two techniques worth reusing:
+
+- To prove a data fix did not regress other races, capture `/api/races` before and after
+  and diff a per-race summary rather than eyeballing one card. Silent collateral damage
+  in shared parsers is the main risk in this repo.
+- For anything visual, headless Chrome renders without needing a browser extension:
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --screenshot=out.png --window-size=1000,1400 --hide-scrollbars "file://$PWD/page.html"`.
+  Do not trust hand-authored SVG or CSS until you have looked at the render.
 
 ## Token Efficiency Guidance
 
@@ -97,3 +107,7 @@ Task: <your task here>
 Most bugs here come from upstream content drift rather than complex internal state. When race data looks wrong, inspect the relevant parser/provider path before considering broader refactors.
 During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, national championship source drift, and upstream rate limiting before assuming the parser is wrong.
 Giro d'Italia and Giro d'Italia Women now use separate official standings sources, so check the correct provider path before changing shared Giro parsing heuristics.
+
+A race that renders as live but totally empty usually means every source failed at once, not that one is stale. Check what `stageRace.provenance.snapshot` says: `wikipedia-raw` with `completedStages: 0` means the Wikipedia parse returned nothing *and* no official provider matched. Confirm by running the raw wikitext through `extractStageRaceSnapshot` directly before touching anything.
+
+The repo-wide preference for narrow, race-specific fixes has one exception: when a shared heuristic is genuinely wrong for most pages, fix the heuristic. The 2026-08-06 Tour de France Femmes outage was caused by `parseAthleteDetails` matching only one of three interchangeable Wikipedia template spellings — a per-race workaround would have left the same bug latent on every other page. See `handoff.md` for the parser traps that emerged from it.

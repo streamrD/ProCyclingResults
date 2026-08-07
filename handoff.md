@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-06-22
+Updated: 2026-08-06
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -63,10 +63,15 @@ No `node_modules`, package lockfile, database, build output, or hidden frontend 
 ├── archive/
 │   └── proseries-europe-tour-sections.js
 ├── assets/
+│   ├── favicon.svg
 │   ├── og-image.jpg
 │   └── fonts/
 ├── data/
 │   └── static-stage-race-snapshots.json
+├── design-comps/
+│   ├── favicon-directions.html
+│   ├── marks/
+│   └── README.md
 ├── scripts/
 │   └── benchmark-load.js
 └── test/
@@ -83,6 +88,8 @@ Primary file responsibilities:
 - `scripts/benchmark-load.js`: cold-readiness and warmed endpoint timing checks.
 - `assets/fonts/*`: local Manrope and Barlow Semi Condensed font files.
 - `assets/og-image.jpg`: Open Graph image.
+- `assets/favicon.svg`: site favicon, linked from both document heads. Carries its own `prefers-color-scheme` rule because it has no background plate.
+- `design-comps/`: design explorations kept with the code — the favicon comparison page and all five candidate marks. See its README before swapping the favicon; assets are served immutable for a year, so a replacement at the same path needs a version query.
 - `README.md`: durable architecture and runbook.
 - `AGENTS.md`: fast-start operating guide for agents.
 - `handoff.md`: this cross-reference and audit snapshot.
@@ -194,6 +201,7 @@ Notable official/special providers currently in code:
 - Tour de Romandie
 - La Vuelta Femenina
 - Tour de France (letour.fr official rankings; full stage top five + GC, ASO platform, dedicated `parseLetourOfficialStandings`)
+- Tour de France Femmes (letourfemmes.fr; the same ASO deployment as letour.fr, so it shares every parser through `fetchAsoTourRankingsSnapshot` and differs only in entry point, page title and stage count)
 - Tour Auvergne-Rhône-Alpes
 - Tour of Greece
 - Giro d'Italia
@@ -287,11 +295,25 @@ test/fixtures/
 ├── la-vuelta-femenina-rankings-stage4.html
 ├── la-vuelta-femenina-stage1.wikitext
 ├── la-vuelta-femenina-stage4.html
+├── tour-de-france-femmes-rankings-stage6.html
+├── tour-de-france-femmes-stage6-ite.html
+├── tour-de-france-femmes-stage6-itg.html
+├── tour-de-france-femmes-stage6.wikitext
 ├── tour-de-france-rankings-stage21.html
 ├── tour-de-france-stage21-ite.html
 ├── tour-of-greece-results-2026-stage1.html
 └── youtube-search-tdf-stage21.html
 ```
+
+Harness trap: values returned from the VM sandbox are built with the sandbox's own
+`Object.prototype`, so `assert.deepEqual` fails on them with "same structure but not
+reference-equal" even when the contents match. Either assert scalar fields
+individually, or round-trip through `JSON.parse(JSON.stringify(...))` first — several
+existing tests do the latter.
+
+When capturing an ASO fixture from a live page, collapse runs of whitespace before
+committing it. The real markup is ~90% indentation; the Tour de France Femmes fixtures
+went from ~23KB to ~7KB each with no change in what the parsers see.
 
 Recommended validation for code changes:
 
@@ -310,11 +332,82 @@ For rendering, aggregation, or endpoint behavior, also run the server and check:
 
 Avoid leaving stale local servers running. If using a manual local process, stop it before handing back.
 
+## Parser Traps Learned On 2026-08-06
+
+The 2026 Tour de France Femmes rendered as a live race with zero completed stages, no
+stage result and no GC, for the first six days of the race. Every item below is a
+distinct cause or near-miss found while fixing it. They are recorded because each one
+fails *silently* — the page still renders, it just renders empty.
+
+**Wikipedia rider cells use three interchangeable template spellings.**
+`{{flagathlete}}`, `{{Flagathlete}}` and `{{Flag athlete}}` are all redirects to the
+same template. The spaced form is now the most common on Tour de France pages (200
+occurrences vs 7 on the men's page; the Femmes page uses it exclusively). Matching only
+the unspaced form made every rider parse as an empty string. `parseAthleteDetails` and
+`cleanWikiText` both match these and must be kept in step — they were not, and the
+second was found only by review.
+
+**Grand Tour pages do not use `{{cycling result start}}` blocks.**
+They publish standings as plain wikitables captioned `General classification after
+Stage N`. `extractClassificationTableGcSnapshots` reads these. Smaller races still use
+the template blocks, so both paths matter.
+
+**Do not read the classification-leadership table for GC.**
+It looks like an easy source and is a trap: its columns carry `rowspan`, so on any row
+after the first, cell index 2 is not the GC leader. It reported the wrong rider. Prefer
+the captioned wikitable, which also gives full standings rather than just a leader.
+
+**Sub-minute time cells need padding before the shared normalizers.**
+`normalizeStandingGap`/`normalizeStandingTime` require a two-digit seconds field *and* a
+minutes field. A wiki gap of `+ 4"` normalized to `""`, which renders as level with the
+leader — wrong data, not missing data. `normalizeWikiTimeCell` pads both. Real pages do
+carry single-digit gaps (Tour de Pologne has `+ 2"`, `+ 4"`, `+ 6"`, `+ 8"`).
+
+**The ASO `rankingTable::<TYPE>` marker lives in the rider/team profile anchor.**
+Filtering rows by ranking type is the correct fix for ASO serving the wrong tab's rows,
+but some ASO markup variants render rows with no anchor at all (see the comment above
+`parseLetourOfficialStandings`). An unconditional type filter would drop every row on
+those pages and blank the race. Both filters are therefore gated on the table carrying
+markers at all, falling back to unfiltered parsing when it does not.
+
+**Do not trade a good ASO response for a nested one.**
+The rankings shell often already contains the table *and* advertises a nested subtab.
+Following that subtab unconditionally cost a redundant ~518KB fetch per refresh, and
+would have replaced a valid GC with a "no rank available" stub. `fetchResolvedAsoRankingsAjaxHtml`
+now only follows when the first response has no usable rows, and keeps the original if
+the subtab is empty too.
+
+**letour.fr and letourfemmes.fr are one codebase.**
+They are the same ASO deployment. Both races share `fetchAsoTourRankingsSnapshot` and
+differ only in entry point, expected page title and default stage count. Fix a parser
+bug once, not twice — but note the men's title pattern is anchored so it cannot match a
+Femmes page, and vice versa.
+
+## Process Lessons From The Same Session
+
+- **Local green does not mean the product is fixed.** The fix worked locally for two
+  rounds while the user was looking at the deployed site, which was still on old code.
+  When a user reports the product is wrong, query the deployed instance first;
+  `stageRace.provenance.snapshot` and `git log origin/main..HEAD` settle it in seconds.
+- **Ship when the user has delegated.** Waiting for a second confirmation after being
+  told to proceed cost a full round trip and left production broken during a live race.
+- **An inline SVG's `<style>` is document-scoped, not element-scoped.** Rendering several
+  inlined SVGs on one comparison page let the last `<style>` repaint all of them, which
+  briefly produced a confident but wrong conclusion about a `prefers-color-scheme` rule
+  working. Test icon files loaded through `<img>`, which is also how a browser fetches a
+  favicon. Marks that style via presentation attributes rather than classes are immune.
+- **Review findings need verifying, not applying.** Of six findings from a review pass,
+  three were real, one was overstated (claimed a markup form that appears zero times
+  across four live race pages), one proposed an unsafe fix (splitting table rows on `||`
+  would have corrupted a `{{font colour|white||link=}}` cell), and one needed a guard the
+  review had not considered before it was safe to apply.
+
 ## Known Sharp Edges
 
 - `server.js` is large. Most changes should still be narrow, but cross-file refactors need extra caution because unrelated behavior is co-located.
 - External data drift is the dominant bug source.
 - Wikipedia live race pages often update unevenly; stage results and GC can be out of sync.
+- Wikipedia page *shape* varies as much as page freshness. Grand Tours, smaller stage races, and women's editions of the same race do not all use the same templates or table layouts, and a shape the parsers do not know about yields an empty race rather than an error. See "Parser Traps Learned On 2026-08-06".
 - Official race pages can expose current data under stale metadata or stale URLs.
 - Article scoring is heuristic and division-sensitive; changes can improve one race and hurt another.
 - `BUILD_INFO` is manual and can be stale. Do not treat `/api/build-info` as a guaranteed current Git SHA unless the code was deliberately updated.
@@ -333,6 +426,14 @@ git branch --show-current
 git log --oneline --decorate --max-count=5
 git worktree list --porcelain
 rg --files -g '!node_modules' -g '!.git'
+```
+
+If the report is "the site is wrong" rather than "this code is wrong", establish which
+instance is being described before reading any parser:
+
+```bash
+git log --oneline origin/main..HEAD          # unpushed work means production is behind
+curl -s https://procyclingresults.up.railway.app/api/homepage-data | head -c 200
 ```
 
 Then choose the smallest relevant read path:

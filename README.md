@@ -65,11 +65,17 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 ```text
 .
 ├── assets/
+│   ├── favicon.svg
+│   ├── og-image.jpg
 │   └── fonts/
 ├── archive/
 │   └── proseries-europe-tour-sections.js
 ├── data/
 │   └── static-stage-race-snapshots.json
+├── design-comps/
+│   ├── favicon-directions.html
+│   ├── marks/
+│   └── README.md
 ├── handoff.md
 ├── package.json
 ├── README.md
@@ -514,7 +520,23 @@ There is still no frontend framework and no SPA state model. The browser only fe
 
 ## Static Assets
 
-The only committed static assets are font files under `assets/fonts`.
+Committed static assets are the font files under `assets/fonts`, the Open Graph image
+`assets/og-image.jpg`, and `assets/favicon.svg`.
+
+The favicon is a single SVG (a rider and bike in UCI blue and red) linked from both
+document heads — the main page and `buildWarmupPage`, which is what a cold instance
+serves first. It carries no background plate, so it embeds its own
+`prefers-color-scheme` rule to lift both colours against a dark tab bar; anything
+replacing it either keeps that rule or brings its own background.
+
+Two things to know before swapping it:
+
+- Assets are served `cache-control: max-age=31536000, immutable`, so replacing a file
+  at the same path never reaches anyone holding the old one. Add a version query to the
+  `<link>` (`/assets/favicon.svg?v=2`) when the mark changes.
+- Alternative marks, and the comparison page the current one was chosen from, are kept
+  in `design-comps/`. That page loads the repo's own fonts by relative path, so it only
+  renders correctly from inside that folder.
 
 Static file serving has a basic path traversal guard:
 
