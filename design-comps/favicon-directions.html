@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Favicon directions — Pro Cycling Results</title>
+    <style>
+  @font-face{font-family:"Barlow SC";src:url("../assets/fonts/barlow-semi-condensed-700.ttf") format("truetype");font-weight:700;font-display:block}
+  @font-face{font-family:"Manrope";src:url("../assets/fonts/manrope-500.ttf") format("truetype");font-weight:500;font-display:block}
+  @font-face{font-family:"Manrope";src:url("../assets/fonts/manrope-700.ttf") format("truetype");font-weight:700;font-display:block}
+
+  :root{
+    --ground:#eef3fb; --surface:#ffffff; --edge:#d3e0f4;
+    --ink:#09214c; --muted:#4f6188;
+    --blue:#0033a0; --yellow:#ffcc00; --red:#ef3340;
+    --chip-bg:#e2ecfc; --chip-ink:#0b3f8f;
+    --lite:#ffffff; --dark:#0b1a33;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#060f22; --surface:#0e1c38; --edge:#20325a;
+      --ink:#dfe9fb; --muted:#93a8ce;
+      --chip-bg:#14294f; --chip-ink:#9fc2f5;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#060f22; --surface:#0e1c38; --edge:#20325a;
+    --ink:#dfe9fb; --muted:#93a8ce;
+    --chip-bg:#14294f; --chip-ink:#9fc2f5;
+  }
+  :root[data-theme="light"]{
+    --ground:#eef3fb; --surface:#ffffff; --edge:#d3e0f4;
+    --ink:#09214c; --muted:#4f6188;
+    --chip-bg:#e2ecfc; --chip-ink:#0b3f8f;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:"Manrope",system-ui,sans-serif;font-weight:500;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:44px 22px 72px;display:flex;flex-direction:column;gap:30px}
+
+  .masthead{display:flex;flex-direction:column;gap:12px;
+    border-bottom:2px solid var(--edge);padding-bottom:22px}
+  .eyebrow{font-weight:700;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--blue)}
+  @media (prefers-color-scheme:dark){.eyebrow{color:#7fb0ff}}
+  :root[data-theme="dark"] .eyebrow{color:#7fb0ff}
+  :root[data-theme="light"] .eyebrow{color:var(--blue)}
+  h1{font-family:"Barlow SC",system-ui,sans-serif;font-weight:700;
+    font-size:clamp(2.1rem,5vw,3.1rem);line-height:1.02;margin:0;text-wrap:balance;
+    letter-spacing:-.01em;text-transform:uppercase}
+  .standfirst{margin:0;max-width:63ch;color:var(--muted);font-size:1.02rem}
+
+  .cards{display:flex;flex-direction:column;gap:20px}
+  .card{background:var(--surface);border:1px solid var(--edge);border-radius:10px;overflow:hidden}
+  .card__head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    padding:14px 20px;border-bottom:1px solid var(--edge)}
+  .card__name{font-family:"Barlow SC",system-ui,sans-serif;font-weight:700;text-transform:uppercase;
+    letter-spacing:.02em;font-size:1.5rem;margin:0}
+  .chip{background:var(--chip-bg);color:var(--chip-ink);font-weight:700;font-size:.68rem;
+    letter-spacing:.09em;text-transform:uppercase;padding:5px 11px;border-radius:999px;white-space:nowrap}
+
+  .card__body{display:grid;grid-template-columns:auto 1fr;gap:26px;padding:22px 20px}
+  @media (max-width:720px){.card__body{grid-template-columns:1fr}}
+  .hero{display:flex;align-items:flex-start;justify-content:center;padding-top:2px}
+  .detail{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .note{margin:0;color:var(--muted);max-width:60ch}
+
+  .ladders{display:flex;gap:12px;flex-wrap:wrap}
+  .ladder{flex:1 1 210px;border-radius:8px;padding:11px 13px 13px;display:flex;flex-direction:column;gap:9px;
+    border:1px solid var(--edge)}
+  .ladder--light{background:var(--lite)}
+  .ladder--dark{background:var(--dark);border-color:#1d3057}
+  .ladder__cap,.tabcap{font-weight:700;font-size:.62rem;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  .ladder--light .ladder__cap{color:#6b7fa6}
+  .ladder--dark .ladder__cap{color:#7f96c4}
+  .ladder__row{display:flex;align-items:flex-end;gap:16px}
+  .slot{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .slot__px{font-size:.6rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+  .ladder--light .slot__px{color:#8a9bbd}
+  .ladder--dark .slot__px{color:#6e85b3}
+
+  .tabs{display:flex;flex-direction:column;gap:7px}
+  .tabstrip{display:flex;gap:5px;padding:7px 7px 0;border-radius:8px 8px 0 0;overflow:hidden}
+  .tabstrip--light{background:#dfe6f0}
+  .tabstrip--dark{background:#1c2333}
+  .tab{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:7px 7px 0 0;
+    font-size:.76rem;max-width:210px;min-width:0}
+  .tabstrip--light .tab{color:#5a6a85}
+  .tabstrip--light .tab--on{background:#fff;color:#25324a}
+  .tabstrip--dark .tab{color:#8a99b5}
+  .tabstrip--dark .tab--on{background:#2b3348;color:#e6edfb}
+  .tab__t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tab__dot{width:16px;height:16px;border-radius:50%;background:currentColor;opacity:.28;flex:none}
+
+  .footnote{border-top:2px solid var(--edge);padding-top:20px;display:flex;flex-direction:column;gap:9px}
+  .footnote h3{font-family:"Barlow SC",system-ui,sans-serif;text-transform:uppercase;font-weight:700;
+    font-size:1.15rem;margin:0;letter-spacing:.02em}
+  .footnote p{margin:0;color:var(--muted);max-width:66ch}
+  .footnote code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em;
+    background:var(--chip-bg);color:var(--chip-ink);padding:1px 6px;border-radius:4px}
+</style>
+  </head>
+  <body>
+
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="eyebrow">Favicon directions</span>
+    <h1>Five riders,<br>sixteen pixels</h1>
+    <p class="standfirst">Five marks for Pro Cycling Results, all drawn from the site's existing UCI palette. A favicon lives at 16&nbsp;pixels most of its life, so each is shown at working size on both a light and a dark tab bar &mdash; that, not the big version, is where these are won or lost.</p>
+  </header>
+
+  <div class="cards">
+
+        <article class="card">
+          <div class="card__head">
+            <h2 class="card__name">Maillot Jaune</h2>
+            <span class="chip">Sharpest at 16px</span>
+          </div>
+          <div class="card__body">
+            <div class="hero"><svg width="104" height="104" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></div>
+            <div class="detail">
+              <p class="note">The yellow jersey, straight up. Highest figure/ground contrast of the set, which is exactly why it stays sharp when the tab shrinks.</p>
+              <div class="ladders">
+                <div class="ladder ladder--light">
+                  <span class="ladder__cap">On light</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span>
+                  </div>
+                </div>
+                <div class="ladder ladder--dark">
+                  <span class="ladder__cap">On dark</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tabs" aria-label="Shown in a browser tab">
+                <span class="tabcap">In a tab</span>
+                <div class="tabstrip tabstrip--light">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+                <div class="tabstrip tabstrip--dark">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ffcc00"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#00184d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#00184d"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h2 class="card__name">Rouge</h2>
+            <span class="chip">Loudest in a crowded tab bar</span>
+          </div>
+          <div class="card__body">
+            <div class="hero"><svg width="104" height="104" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></div>
+            <div class="detail">
+              <p class="note">White on UCI red. Reads as cleanly as the yellow but claims a colour the site barely uses, so the tab never blends into the page behind it.</p>
+              <div class="ladders">
+                <div class="ladder ladder--light">
+                  <span class="ladder__cap">On light</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span>
+                  </div>
+                </div>
+                <div class="ladder ladder--dark">
+                  <span class="ladder__cap">On dark</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tabs" aria-label="Shown in a browser tab">
+                <span class="tabcap">In a tab</span>
+                <div class="tabstrip tabstrip--light">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+                <div class="tabstrip tabstrip--dark">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#ef3340"/><g transform="translate(32,32) scale(.82) translate(-32,-32)"><g stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 30 L36 21"/><path d="M36 21 L44 30"/><path d="M22 30 L28 39 L32 47"/><circle cx="14" cy="45" r="9"/><circle cx="50" cy="45" r="9"/></g><circle cx="40" cy="15" r="5.5" fill="#ffffff"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h2 class="card__name">Squircle</h2>
+            <span class="chip">Best as a home-screen icon</span>
+          </div>
+          <div class="card__body">
+            <div class="hero"><svg width="104" height="104" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></div>
+            <div class="detail">
+              <p class="note">The only candidate shaped like an app icon rather than a badge. Worth choosing if a home-screen bookmark or PWA install is ever on the cards.</p>
+              <div class="ladders">
+                <div class="ladder ladder--light">
+                  <span class="ladder__cap">On light</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span>
+                  </div>
+                </div>
+                <div class="ladder ladder--dark">
+                  <span class="ladder__cap">On dark</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tabs" aria-label="Shown in a browser tab">
+                <span class="tabcap">In a tab</span>
+                <div class="tabstrip tabstrip--light">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+                <div class="tabstrip tabstrip--dark">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><rect width="64" height="64" rx="15" fill="#0033a0"/><g transform="translate(32,32) scale(.9) translate(-32,-32)"><g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/></g><g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/></g><circle cx="41" cy="15" r="5.4" fill="#ffcc00"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h2 class="card__name">Roundel</h2>
+            <span class="chip">Most detail at large sizes</span>
+          </div>
+          <div class="card__body">
+            <div class="hero"><svg width="104" height="104" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></div>
+            <div class="detail">
+              <p class="note">The only one that draws the bike as well as the rider — frame, fork and both wheels. Richest at large sizes; softest of the discs at 16px.</p>
+              <div class="ladders">
+                <div class="ladder ladder--light">
+                  <span class="ladder__cap">On light</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span>
+                  </div>
+                </div>
+                <div class="ladder ladder--dark">
+                  <span class="ladder__cap">On dark</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tabs" aria-label="Shown in a browser tab">
+                <span class="tabcap">In a tab</span>
+                <div class="tabstrip tabstrip--light">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+                <div class="tabstrip tabstrip--dark">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#00184d"/><g transform="translate(32,32) scale(.78) translate(-32,-32)"><g stroke="#7aa7e6" stroke-width="3.6" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="45" r="10.5"/><circle cx="49" cy="45" r="10.5"/><path d="M15 45 L32 45 L23 30 M32 45 L42 28"/></g><g stroke="#ffcc00" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 29 L37 20"/><path d="M37 20 L44 29"/><path d="M24 29 L29 38 L32 45"/></g><circle cx="41" cy="14" r="5.2" fill="#ffcc00"/></g></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__head">
+            <h2 class="card__name">Mono</h2>
+            <span class="chip">Quietest — needs a dark-mode rule</span>
+          </div>
+          <div class="card__body">
+            <div class="hero"><svg width="104" height="104" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></div>
+            <div class="detail">
+              <p class="note">No container, so it sits directly on the browser's own chrome. Needs a dark-theme rule baked into the file or the blue frame sinks into a dark tab bar.</p>
+              <div class="ladders">
+                <div class="ladder ladder--light">
+                  <span class="ladder__cap">On light</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span>
+                  </div>
+                </div>
+                <div class="ladder ladder--dark">
+                  <span class="ladder__cap">On dark</span>
+                  <div class="ladder__row">
+                    <span class="slot"><span class="slot__px">48</span><svg width="48" height="48" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span><span class="slot"><span class="slot__px">32</span><svg width="32" height="32" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span><span class="slot"><span class="slot__px">16</span><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg></span>
+                  </div>
+                </div>
+              </div>
+              <div class="tabs" aria-label="Shown in a browser tab">
+                <span class="tabcap">In a tab</span>
+                <div class="tabstrip tabstrip--light">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+                <div class="tabstrip tabstrip--dark">
+                  <span class="tab tab--on"><svg width="16" height="16" viewBox="0 0 64 64" role="img" aria-hidden="true"><g stroke="#0033a0" stroke-width="4.4" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="44" r="11"/><circle cx="50" cy="44" r="11"/><path d="M14 44 L32 44 L22 28 M32 44 L42 26"/></g><g stroke="#ef3340" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M24 26 L37 18"/><path d="M37 18 L45 26"/><path d="M24 26 L30 36 L32 44"/></g><circle cx="41" cy="12" r="5.2" fill="#ef3340"/></svg><span class="tab__t">Pro Cycling Results</span></span>
+                  <span class="tab"><span class="tab__dot"></span><span class="tab__t">letour.fr</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+  </div>
+
+  <section class="footnote">
+    <h3>Picking one</h3>
+    <p>Tell me the name and I'll add it to the site: it ships as a single <code>assets/favicon.svg</code> plus a <code>&lt;link rel="icon"&gt;</code> in the document head, which is the whole change. Every mark is plain SVG, so it stays crisp at any size and costs about a kilobyte.</p>
+    <p>If you pick <strong>Mono</strong>, it needs a <code>prefers-color-scheme</code> rule inside the SVG so the blue frame doesn't disappear against a dark tab bar &mdash; the others carry their own background and are safe either way.</p>
+  </section>
+</div>
+  </body>
+</html>

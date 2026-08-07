@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pro Cycling Results">
+  <rect width="64" height="64" rx="15" fill="#0033a0"/>
+  <g transform="translate(32,32) scale(.9) translate(-32,-32)">
+    <g stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="16" cy="45" r="10"/><circle cx="48" cy="45" r="10"/>
+    </g>
+    <g stroke="#ffcc00" stroke-width="5.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 30 L37 21"/><path d="M37 21 L45 30"/><path d="M23 30 L29 39 L32 45"/>
+    </g>
+    <circle cx="41" cy="15" r="5.4" fill="#ffcc00"/>
+  </g>
+</svg>

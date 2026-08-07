@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pro Cycling Results">
+  <title>Pro Cycling Results</title>
+  <style>
+    .bike { stroke: #0033a0; }
+    .rider { stroke: #ef3340; }
+    .head { fill: #ef3340; }
+    /* The mark has no background plate, so it sits straight on the browser's own
+       chrome. Against a dark tab bar the UCI blue frame would disappear, so lift
+       both colours when the viewer is in a dark theme. */
+    @media (prefers-color-scheme: dark) {
+      .bike { stroke: #8fb4e8; }
+      .rider { stroke: #ff5f6b; }
+      .head { fill: #ff5f6b; }
+    }
+  </style>
+  <g transform="translate(0,1)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g class="bike" stroke-width="4.4">
+      <circle cx="14" cy="44" r="11" />
+      <circle cx="50" cy="44" r="11" />
+      <path d="M14 44 L32 44 L22 28 M32 44 L42 26" />
+    </g>
+    <g class="rider" stroke-width="5.5">
+      <path d="M24 26 L37 18" />
+      <path d="M37 18 L45 26" />
+      <path d="M24 26 L30 36 L32 44" />
+    </g>
+    <circle class="head" cx="41" cy="12" r="5.2" />
+  </g>
+</svg>
