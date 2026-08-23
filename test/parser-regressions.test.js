@@ -21,6 +21,7 @@ function loadParserExports() {
     process,
     URL,
     fetch: global.fetch,
+    URLSearchParams,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -103,6 +104,11 @@ function loadParserExports() {
       BUILD_INFO,
       applyLateOfficialSnapshots,
       mergeLatestStageIntoHistory,
+      parseTeamReference,
+      collectTeamReferences,
+      normalizeSearchText,
+      extractCyclingResultBlocks,
+      parseCyclingResultStandings,
       loadOfficialStageRaceSnapshotWithinBudget,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
@@ -3784,4 +3790,85 @@ test("mergeLatestStageIntoHistory ignores an empty or unnumbered latest stage", 
   assert.equal(mergeLatestStageIntoHistory(history, null).length, 1);
   assert.equal(mergeLatestStageIntoHistory(history, { number: 2, standings: [] }).length, 1);
   assert.equal(mergeLatestStageIntoHistory(history, { standings: [{ place: "1", rider: "X" }] }).length, 1);
+});
+
+function loadTttFixture() {
+  return fs.readFileSync(path.join(__dirname, "fixtures", "tour-de-france-ttt-stage1.wikitext"), "utf8");
+}
+
+test("parseTeamReference reads the team code, edition and flag from a result cell", () => {
+  const { parseTeamReference } = loadParserExports();
+  const reference = parseTeamReference('{{flagicon|NED}} {{UCI team code|TVL men|2026}}');
+
+  assert.equal(reference.code, "TVL men");
+  assert.equal(reference.edition, "2026");
+  assert.equal(reference.countryCode, "NED");
+  assert.equal(parseTeamReference("[[Tadej Pogačar]]"), null);
+});
+
+test("extractCyclingResultBlocks survives a start tag that is not just title=", () => {
+  const { extractCyclingResultBlocks, normalizeSearchText } = loadParserExports();
+  // A team time trial writes {{Cyclingresult start|rider=no|title=...}}. Requiring
+  // title= first dropped every TTT result on every race page.
+  const titles = extractCyclingResultBlocks(loadTttFixture()).map((block) => normalizeSearchText(block.title));
+
+  assert.ok(titles.some((title) => title.startsWith("stage 1 result")));
+});
+
+test("extractCyclingResultBlocks survives a start tag whose citation wraps onto a second line", () => {
+  const { extractCyclingResultBlocks, normalizeSearchText } = loadParserExports();
+  // Stage 2's citation contains a newline, so the closing braces are not on the same
+  // line as the tag; the 2026 Tour lost two stages this way.
+  const titles = extractCyclingResultBlocks(loadTttFixture()).map((block) => normalizeSearchText(block.title));
+
+  assert.ok(titles.some((title) => title.startsWith("stage 2 result")));
+});
+
+test("extractCyclingResultBlocks bounds a block at the next start when its end tag is missing", () => {
+  const { extractCyclingResultBlocks, parseCyclingResultStandings, normalizeSearchText } = loadParserExports();
+  // The GC block after stage 2 in the fixture has no {{Cyclingresult end}}, exactly as
+  // the live page does. Running it into the following block would serve stage 3's rows
+  // under a general-classification title.
+  const blocks = extractCyclingResultBlocks(loadTttFixture());
+  const gc = blocks.find((block) => normalizeSearchText(block.title).startsWith("general classification after stage 2"));
+  const standings = parseCyclingResultStandings(gc.body);
+
+  assert.equal(standings.length, 2);
+  assert.equal(standings[0].rider, "Jonas Vingegaard");
+  // ...and stage 3 still parses as its own block rather than being swallowed.
+  const stageThree = blocks.find((block) => normalizeSearchText(block.title).startsWith("stage 3 result"));
+  assert.equal(parseCyclingResultStandings(stageThree.body)[0].rider, "Tadej Pogačar");
+});
+
+test("collectTeamReferences finds only teams that can actually be rendered", () => {
+  const { collectTeamReferences } = loadParserExports();
+  const references = collectTeamReferences(loadTttFixture());
+  const codes = references.map((reference) => reference.code);
+
+  assert.deepEqual(JSON.parse(JSON.stringify([...new Set(codes)].sort())), ["NCI", "TVL men", "UEX"]);
+});
+
+test("a team time trial renders team names once they are resolved, and is skipped when they are not", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  const rawText = loadTttFixture();
+  const teamNames = new Map([
+    ["TVL men|2026", "Visma–Lease a Bike"],
+    ["NCI|2026b", "Netcompany INEOS"],
+    ["UEX|2026", "UAE Team Emirates XRG"],
+  ]);
+
+  const resolved = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText, [], teamNames)));
+  const stageOne = resolved.stages.find((stage) => stage.number === 1);
+  assert.deepEqual(stageOne.standings.map((entry) => entry.rider), [
+    "Visma–Lease a Bike",
+    "Netcompany INEOS",
+    "UAE Team Emirates XRG",
+  ]);
+  assert.equal(stageOne.standings[0].countryCode, "NED");
+  assert.equal(stageOne.standings[0].time, "21:47");
+  assert.equal(stageOne.standings[1].gap, "+00:08");
+
+  // Without resolved names there is only a team code, which is not worth rendering.
+  const unresolved = extractStageRaceSnapshot(rawText);
+  assert.equal(unresolved.stages.some((stage) => stage.number === 1), false);
 });

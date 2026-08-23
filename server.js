@@ -160,6 +160,9 @@ const TOP_TIER_PUBLISHERS = [
 // Cap the lookups so a malformed route table can never fan out into many fetches
 // against a rate-limited upstream.
 const MAX_STAGE_ARTICLES = 3;
+// Arbitrary token that survives template expansion so a batched request can be split
+// back apart; anything wiki-meaningful would be mangled or expanded itself.
+const TEAM_NAME_SEPARATOR = "@@PCR@@";
 
 const SEASONS = [
   {
@@ -1512,6 +1515,71 @@ function splitWikiTemplateArgs(templateText) {
 // A {{cyclingresult}} time cell is a bare clock value: an elapsed time ("4h 47' 47\"",
 // "10' 57\"") for the leader and a gap ("+ 9\"", "+ 1' 23\"") for everyone below. Anything
 // carrying wiki markup is a team, jersey or reference argument rather than a time.
+// A team time trial classifies teams, not riders, and the wikitext only ever carries a
+// team *code* — `{{UCI team code|TVL men|2026}}` — in the result row, the route table
+// and even the article's own Teams section. No display name appears anywhere on the
+// page, which is why these stages used to render as an unraced chip.
+function parseTeamReference(cell) {
+  const text = String(cell || "");
+  const match = text.match(/\{\{\s*UCI team code\s*\|\s*([^|}]+?)\s*(?:\|\s*([^|}]+?)\s*)?(?:\|[^}]*)?\}\}/i);
+  if (!match) {
+    return null;
+  }
+
+  const flagCode = text.match(/\{\{\s*flagicon\s*\|\s*([A-Za-z]{2,3})\s*\}\}/i)?.[1] || "";
+  return {
+    code: match[1],
+    edition: match[2] || "",
+    countryCode: normalizeCountryCode(flagCode.toUpperCase()),
+  };
+}
+
+function getTeamReferenceKey(reference) {
+  return `${reference.code}|${reference.edition}`;
+}
+
+const teamNameCache = new Map();
+
+// Wikipedia expands the template for us, so the names stay correct across seasons
+// instead of drifting out of a hardcoded table. Codes are resolved in one batched
+// request and cached for the process lifetime — a team's rendered name does not change.
+async function resolveTeamNames(references) {
+  const wanted = [...new Map(references.map((reference) => [getTeamReferenceKey(reference), reference])).values()].filter(
+    (reference) => !teamNameCache.has(getTeamReferenceKey(reference)),
+  );
+
+  if (wanted.length > 0) {
+    try {
+      const params = new URLSearchParams({
+        action: "expandtemplates",
+        format: "json",
+        formatversion: "2",
+        prop: "wikitext",
+        text: wanted
+          .map((reference) => `{{UCI team code|${reference.code}${reference.edition ? `|${reference.edition}` : ""}}}`)
+          .join(TEAM_NAME_SEPARATOR),
+      });
+      const payload = await fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`);
+      const expanded = String(payload?.expandtemplates?.wikitext || "").split(TEAM_NAME_SEPARATOR);
+
+      wanted.forEach((reference, index) => {
+        // The template expands to a wikilink; the display half is the readable name.
+        const link = expanded[index]?.match(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/);
+        const name = cleanWikiText(link?.[2] || link?.[1] || "");
+        teamNameCache.set(getTeamReferenceKey(reference), isPlausibleRiderName(name) ? name : "");
+      });
+    } catch {
+      // Leave the codes unresolved; the stage renders as it did before.
+    }
+  }
+
+  return new Map(
+    references
+      .map((reference) => [getTeamReferenceKey(reference), teamNameCache.get(getTeamReferenceKey(reference)) || ""])
+      .filter(([, name]) => name),
+  );
+}
+
 function isWikiResultTimeCell(value) {
   const cleaned = String(value || "").trim();
   if (!cleaned || /[[\]{}<>]/.test(cleaned)) {
@@ -1524,7 +1592,7 @@ function isWikiResultTimeCell(value) {
   );
 }
 
-function parseCyclingResultLine(line) {
+function parseCyclingResultLine(line, teamNames = new Map()) {
   const trimmed = String(line || "").trim();
   if (!/^\{\{\s*cycling\s*result\s*\|/i.test(trimmed)) {
     return null;
@@ -1543,6 +1611,26 @@ function parseCyclingResultLine(line) {
   // dropped every flag *and* every time on Grand Tour stage articles.
   const athlete = parseAthleteDetails(args[2]);
   const trailingArgs = args.slice(3);
+  // A team time trial row leaves the rider and country arguments empty and carries a
+  // {{UCI team code}} where the team cell would be: {{cyclingresult|1|||{{flagicon|NED}}
+  // {{UCI team code|TVL men|2026}}|21' 47"}}. Without a resolved name there is nothing
+  // readable to show, so the row is skipped exactly as it was before.
+  if (!athlete.rider) {
+    const teamReference = trailingArgs.map(parseTeamReference).find(Boolean);
+    const teamName = teamReference ? teamNames.get(getTeamReferenceKey(teamReference)) : "";
+    if (!teamName) {
+      return null;
+    }
+
+    const teamTimeCell = trailingArgs.find(isWikiResultTimeCell) || "";
+    return buildStandingEntry(cleanWikiText(args[1]), {
+      rider: teamName,
+      countryCode: teamReference.countryCode,
+      gap: teamTimeCell.startsWith("+") ? teamTimeCell : "",
+      time: teamTimeCell.startsWith("+") ? "" : teamTimeCell,
+    });
+  }
+
   // Team and jersey cells are templates, so the country is the only bare alpha token
   // among them and the time the only clock-shaped one; matching by shape rather than
   // by position tolerates the optional jersey and team arguments being absent.
@@ -1557,19 +1645,41 @@ function parseCyclingResultLine(line) {
   });
 }
 
+// Two things this has to survive, both seen on the 2026 Tour's stage articles.
+//
+// The start tag's parameters are not always just `title=`: a team time trial writes
+// `{{Cyclingresult start|rider=no|title=Stage 1 result}}`, and requiring `title=` to
+// come first silently dropped the block — every TTT result on every race page.
+//
+// And the closing `{{Cyclingresult end}}` is sometimes simply missing. Pairing a start
+// with the next `end` then runs one block's title into a later block's body, which is
+// worse than dropping it: the 2026 Tour's stage 3 and 4 results disappeared while their
+// rows were served under a general-classification title. Each block therefore ends at
+// its own `end` tag *or* at the next start tag, whichever comes first, so a missing end
+// costs nothing.
 function extractCyclingResultBlocks(rawText) {
-  return [...String(rawText || "").matchAll(/\{\{\s*cycling\s*result\s*start(?:\|title=([\s\S]*?))?\}\}([\s\S]*?)\{\{\s*cycling\s*result\s*end(?:[\s\S]*?)\}\}/gi)].map(
-    (match) => ({
-      title: cleanWikiText(match[1] || ""),
-      body: match[2],
-    }),
-  );
+  const text = String(rawText || "");
+  // The parameter list can span lines: a citation inside `title=` often wraps, which is
+  // why this cannot be anchored to a single line.
+  const starts = [...text.matchAll(/\{\{\s*cycling\s*result\s*start((?:\|[\s\S]*?)?)\}\}/gi)];
+
+  return starts.map((match, index) => {
+    const bodyStart = match.index + match[0].length;
+    const bodyLimit = index + 1 < starts.length ? starts[index + 1].index : text.length;
+    const body = text.slice(bodyStart, bodyLimit);
+    const endIndex = body.search(/\{\{\s*cycling\s*result\s*end/i);
+
+    return {
+      title: cleanWikiText(match[1]?.match(/(?:^|\|)\s*title\s*=([\s\S]*)$/)?.[1] || ""),
+      body: endIndex >= 0 ? body.slice(0, endIndex) : body,
+    };
+  });
 }
 
-function parseCyclingResultStandings(blockBody, maxRiders = MAX_RESULT_RIDERS) {
+function parseCyclingResultStandings(blockBody, maxRiders = MAX_RESULT_RIDERS, teamNames = new Map()) {
   return String(blockBody || "")
     .split("\n")
-    .map((line) => parseCyclingResultLine(line))
+    .map((line) => parseCyclingResultLine(line, teamNames))
     .filter((entry) => entry && /^\d+$/.test(entry.place) && Number(entry.place) <= maxRiders && entry.rider)
     .sort((left, right) => Number(left.place) - Number(right.place));
 }
@@ -1624,7 +1734,7 @@ function isPlausibleRiderName(rider) {
   return value.length > 0 && !/[=|{}]|colspan|rowspan/i.test(value);
 }
 
-function extractRouteStageWinners(rawText) {
+function extractRouteStageWinners(rawText, teamNames = new Map()) {
   const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
   if (!routeTable) {
     return [];
@@ -1651,7 +1761,14 @@ function extractRouteStageWinners(rawText) {
       }
 
       const stageInfo = parseStageSequence(cells[0]);
-      const winner = parseAthleteDetails(cells[cells.length - 1]);
+      const winnerCell = cells[cells.length - 1];
+      const teamReference = parseTeamReference(winnerCell);
+      const teamName = teamReference ? teamNames.get(getTeamReferenceKey(teamReference)) : "";
+      // A team time trial's winner cell holds a team code rather than a rider, and
+      // parseAthleteDetails cleans it away to an empty string.
+      const winner = teamName
+        ? { rider: teamName, countryCode: teamReference.countryCode }
+        : parseAthleteDetails(winnerCell);
       // The route table is Stage | Date | Course | Distance | Type | Winner, so the
       // date and course cells give a stage its label without a second fetch. They are
       // best-effort: a race whose table omits them just renders the stage number.
@@ -1859,7 +1976,41 @@ function parseTotalStages(rawText) {
 // `stageArticleTexts` carries those pages so a stage-by-stage history can be built;
 // `overallResult` is still read from `rawText` alone, because a stage article's first
 // "Stage 1 Result" block would otherwise be mistaken for the race's overall result.
-function extractStageRaceSnapshot(rawText, stageArticleTexts = []) {
+// Scoped to places a team can actually be rendered — {{cyclingresult}} rows and the
+// route table's winner column — so an article that merely lists its teams never
+// triggers a lookup.
+function collectTeamReferences(rawText, stageArticleTexts = []) {
+  const texts = [rawText, ...(Array.isArray(stageArticleTexts) ? stageArticleTexts : [stageArticleTexts])];
+  const references = [];
+
+  texts.forEach((text) => {
+    [...String(text || "").matchAll(/^\{\{\s*cycling\s*result\s*\|[^\n]*$/gim)].forEach((match) => {
+      const reference = parseTeamReference(match[0]);
+      if (reference) {
+        references.push(reference);
+      }
+    });
+  });
+
+  const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
+  [...routeTable.matchAll(/\{\{\s*UCI team code[^}]*\}\}[^\n]*/gi)].forEach((match) => {
+    const reference = parseTeamReference(match[0]);
+    if (reference) {
+      references.push(reference);
+    }
+  });
+
+  return references;
+}
+
+// Resolves every team a race's stage results could need, in one batched request.
+// Returns an empty map when the race has no team rows at all, which is almost always.
+async function loadStageRaceTeamNames(rawText, stageArticleTexts = []) {
+  const references = collectTeamReferences(rawText, stageArticleTexts);
+  return references.length > 0 ? resolveTeamNames(references) : new Map();
+}
+
+function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = new Map()) {
   const blocks = extractCyclingResultBlocks(rawText);
   const stageArticleBlocks = (Array.isArray(stageArticleTexts) ? stageArticleTexts : [stageArticleTexts])
     .flatMap((text) => extractCyclingResultBlocks(text));
@@ -1870,7 +2021,7 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = []) {
     const title = normalizeSearchText(block.title);
     const stageMatch = title.match(/\bstage\s+(\d+)\s+result\b/);
     const gcMatch = title.match(/\bgeneral classification after stage\s+(\d+)\b/);
-    const standings = parseCyclingResultStandings(block.body);
+    const standings = parseCyclingResultStandings(block.body, MAX_RESULT_RIDERS, teamNames);
 
     if (stageMatch && standings.length > 0) {
       stageResults.push({
@@ -1895,7 +2046,7 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = []) {
   // rendered beneath it.
   stageArticleBlocks.forEach((block) => readResultBlock(block, false));
 
-  const routeStageWinners = extractRouteStageWinners(rawText);
+  const routeStageWinners = extractRouteStageWinners(rawText, teamNames);
   const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
   const stages = buildStageHistory(routeStageWinners, stageResults);
@@ -4327,8 +4478,9 @@ async function loadRequestedStageHistory(race) {
   const loadWikiRaw = createWikiRawLoader();
   const raw = await loadWikiRaw(race.pageTitle);
   const stageArticleTexts = await loadStageArticleTexts(raw, loadWikiRaw);
+  const teamNames = stageArticleTexts.length > 0 ? await loadStageRaceTeamNames(raw, stageArticleTexts) : new Map();
   const stages =
-    stageArticleTexts.length > 0 ? extractStageRaceSnapshot(raw, stageArticleTexts).stages || [] : [];
+    stageArticleTexts.length > 0 ? extractStageRaceSnapshot(raw, stageArticleTexts, teamNames).stages || [] : [];
 
   if (stageHistoryCache.size >= MAX_STAGE_HISTORY_CACHE_ENTRIES) {
     stageHistoryCache.delete(stageHistoryCache.keys().next().value);
@@ -4363,8 +4515,9 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const raw = await loadWikiRaw(race.pageTitle);
         const stageArticleTexts = await loadStageArticleTexts(raw, loadWikiRaw);
+        const teamNames = await loadStageRaceTeamNames(raw, stageArticleTexts);
         const parsedSnapshot = annotateStageRaceSnapshotSource(
-          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts)),
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts, teamNames)),
           "wikipedia-raw",
         );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
@@ -4480,8 +4633,9 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw, op
         // render its stage podiums without anyone pressing a button. /api/race-stages
         // stays as the fallback for whatever this misses.
         const stageArticleTexts = isStageRace ? await loadStageArticleTexts(raw, loadWikiRaw) : [];
+        const teamNames = isStageRace ? await loadStageRaceTeamNames(raw, stageArticleTexts) : new Map();
         const parsedSnapshot = annotateStageRaceSnapshotSource(
-          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts)),
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts, teamNames)),
           "wikipedia-raw",
         );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);

@@ -424,6 +424,8 @@ here first.
   `/api/race-stages` or revealed by "Load more races" works without rebinding.
 - The strip renders `stageRace.stages` and nothing else, so anything the card should
   show has to be *in* that array. `latestStage` is not consulted separately.
+- A team time trial occupies the rider slot with the team's name, so it renders through
+  the same podium markup with the team's flag. Nothing downstream needs to know.
 
 ## Open Threads
 
@@ -619,6 +621,27 @@ as the current one. Two traps: the subject must drop `finishVideoUrl`, or
 `shouldSearchFinishVideo` sees the race's headline video and suppresses the search; and
 `isFinalizedStageRace` on a subject compares that stage against the total, so a
 finished race's early stages read as live — gate on the real race, not the subject.
+
+**A team time trial names teams the wikitext never spells out.**
+`{{UCI team code|TVL men|2026}}` is all a race page ever carries — the result row, the
+route table and the article's own Teams section are codes end to end, and `cleanWikiText`
+reduces them to an empty string, which is why those stages rendered as an unraced chip.
+Rather than hardcode a table that goes stale every season, `resolveTeamNames` asks
+Wikipedia's `action=expandtemplates` API to expand the codes in one batched request and
+caches the answers. Collection is scoped to `{{cyclingresult}}` rows and the route
+table's winner column, so a race that merely lists its teams never triggers a lookup.
+
+**Two block-extraction traps found underneath that, both silent.**
+`extractCyclingResultBlocks` assumed `title=` was the first parameter of the start tag
+and that the tag sat on one line. A team time trial writes
+`{{Cyclingresult start|rider=no|title=…}}`, and a wrapped citation puts the closing
+braces on the next line. Each failure dropped a start tag, and a dropped start is worse
+than a dropped block: the next block's title then paired with a later block's body, so
+the 2026 Tour's stage 3 and 4 results vanished while their rows were served under a
+general-classification title. Blocks now end at their own `end` tag *or* at the next
+start, whichever comes first, so a missing `end` — which the live page also has — costs
+nothing. If stage results ever go missing in a band rather than individually, suspect
+this pairing.
 
 **A stage strip is the shape that survives a three-week race.**
 `stageRace.stages` holds one entry per raced stage and the card renders a numbered

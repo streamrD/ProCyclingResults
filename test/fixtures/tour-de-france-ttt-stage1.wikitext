@@ -1,0 +1,40 @@
+== Stage 1 ==
+;4 July 2026 – [[Barcelona]] to Barcelona, {{convert|19.6|km|abbr=on}} (TTT)
+
+{|
+|-
+||
+{{Cyclingresult start|rider=no|title=Stage 1 result<ref name="CN-1">{{cite news|url=https://www.cyclingnews.com/pro-cycling/racing/tour-de-france-visma-lease-a-bike-sweep-to-stage-1-team-time-trial-victory-in-barcelona/|title=Tour de France: Visma-Lease a Bike sweep to stage 1 team time trial victory in Barcelona|website=[[Cyclingnews.com]]|first=Laura|last=Weislo|date=4 July 2026|access-date=4 July 2026}}</ref>}}
+{{Cyclingresult|1|||{{flagicon|NED}} {{UCI team code|TVL men|2026}}|21' 47"}}
+{{Cyclingresult|2|||{{flagicon|GBR}} {{UCI team code|NCI|2026b}}|+ 8"}}
+{{Cyclingresult|3|||{{flagicon|UAE}} {{UCI team code|UEX|2026}}|+ 12"}}
+{{Cyclingresult end}}
+|}
+
+== Stage 2 ==
+;5 July 2026 – [[Tarragona]] to Barcelona, {{convert|168.5|km|abbr=on}}
+{|
+|-
+||
+{{Cyclingresult start|title=Stage 2 result<ref name="CN-2">{{cite news|url=https://www.cyclingnews.com/pro-cycling/racing/tour-de-france-stage-2/
+|title=Tour de France stage 2: Isaac del Toro takes the win|website=[[Cyclingnews.com]]|first=Alasdair|last=Fotheringham|date=5 July 2026|access-date=5 July 2026}}</ref>}}
+{{Cyclingresult|1|[[Isaac del Toro]]|MEX|{{UCI team code|UEX|2026}}|3h 52' 04"}}
+{{Cyclingresult|2|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|+ 0"}}
+{{Cyclingresult end}}
+||
+||
+{{Cyclingresult start|title=General classification after stage 2<ref name="CN-2" />}}
+{{Cyclingresult|1|[[Jonas Vingegaard]]|DEN|{{UCI team code|TVL men|2026}}|4h 13' 51"}}
+{{Cyclingresult|2|[[Isaac del Toro]]|MEX|{{UCI team code|UEX|2026}}|+ 4"}}
+|}
+
+== Stage 3 ==
+;6 July 2026 – [[Granollers]] to [[Les Angles, Pyrénées-Orientales|Les Angles]], {{convert|191.4|km|abbr=on}}
+{|
+|-
+||
+{{Cyclingresult start|title=Stage 3 result<ref name="CN-3" />}}
+{{Cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|4h 45' 11"}}
+{{Cyclingresult|2|[[Jonas Vingegaard]]|DEN|{{UCI team code|TVL men|2026}}|+ 2"}}
+{{Cyclingresult end}}
+|}
