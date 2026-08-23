@@ -2796,6 +2796,44 @@ function getStageRaceFieldSourceId(field, primaryField, primarySnapshot, seconda
   return "";
 }
 
+// An official provider reports only the current stage, but usually reports it far
+// better than the route table does: deeper standings, and sometimes a stage the route
+// table omits altogether — the 2026 Tour's final stage is absent from its route table
+// yet letour.fr has it five deep. Folding it in keeps the stage strip from contradicting
+// the card's own headline stage, which is what it did when the strip rendered only the
+// Wikipedia history.
+function mergeLatestStageIntoHistory(stages, latestStage) {
+  const history = Array.isArray(stages) ? stages : [];
+  const number = Number(latestStage?.number);
+  const standings = Array.isArray(latestStage?.standings) ? latestStage.standings : [];
+  if (!Number.isFinite(number) || standings.length === 0) {
+    return history;
+  }
+
+  const existing = history.find((stage) => stage.number === number) || null;
+  if (existing && existing.standings.length >= standings.length) {
+    return history;
+  }
+
+  // Spread the existing entry first so the route table's date and course survive, along
+  // with any finish video already resolved for that stage.
+  const merged = {
+    ...(existing || {}),
+    number,
+    order: existing?.order ?? number,
+    label: existing?.label || latestStage.label || `Stage ${number}`,
+    standings,
+    ...getWinnerDetails(standings),
+    ...(existing?.finishVideoUrl || latestStage.finishVideoUrl
+      ? { finishVideoUrl: existing?.finishVideoUrl || latestStage.finishVideoUrl }
+      : {}),
+  };
+
+  return [...history.filter((stage) => stage.number !== number), merged].sort(
+    (left, right) => left.order - right.order,
+  );
+}
+
 function getStageHistoryQuality(stages) {
   const entries = Array.isArray(stages) ? stages : [];
 
@@ -2904,7 +2942,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
         totalStages: resolvedTotalStages,
-        stages: Array.isArray(stages) ? stages : [],
+        stages: mergeLatestStageIntoHistory(stages, latestStage),
         completedStages,
         latestStage: latestStage
           ? {
@@ -4436,14 +4474,14 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw, op
         }
 
         const raw = await loadWikiRaw(race.pageTitle);
-        // Deliberately no companion stage articles here. Reading them for every recent
-        // race cost ~2s of a ~20s cold start, and a finished race's deep stage podiums
-        // are not what the homepage is waiting on. The route table still yields a
-        // winner-per-stage history, and /api/race-stages fills in the podiums for one
-        // race on request. Live races still read them at build time, in
-        // enrichStageRaceSnapshots, because that is the race people are watching.
+        // Companion stage articles are read here again. They were moved off this path
+        // when the cold start was ~20s and their ~2s mattered; budgeting the official
+        // providers took the build to ~5.7s, so a finished Grand Tour can afford to
+        // render its stage podiums without anyone pressing a button. /api/race-stages
+        // stays as the fallback for whatever this misses.
+        const stageArticleTexts = isStageRace ? await loadStageArticleTexts(raw, loadWikiRaw) : [];
         const parsedSnapshot = annotateStageRaceSnapshotSource(
-          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts)),
           "wikipedia-raw",
         );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);

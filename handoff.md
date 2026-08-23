@@ -389,13 +389,23 @@ the 2026 Vuelta the stage 2 GC block still carried the stage 1 leader time. They
 also kept away from `findOverallRaceResult`, or a `Stage 1 Result` block gets read as
 the race's overall result.
 
-**3. Live at build time, finished on demand.** `enrichStageRaceSnapshots` (live races)
-reads companion articles; `enrichRecentResultStandings` (recent races) deliberately
-does not. Reading them everywhere cost ~2s of a ~20s cold start. Finished cards render
-the winner-per-stage history plus a "Load full stage results" button calling
-`/api/race-stages`, cached six hours in `stageHistoryCache` and written back onto the
-cached race so the next page render already has it. The control never appears on a
-live card, whose companion articles were already read.
+**3. Companion articles are read for live and finished races alike.** They were moved
+off the finished-race path when the cold start was ~20s and their ~2s mattered;
+budgeting the official providers took the build to ~6s, so that trade no longer applies
+and finished Grand Tours render their stage podiums without anyone pressing a button.
+`/api/race-stages` remains as the on-demand fallback for whatever this misses, cached
+six hours in `stageHistoryCache` and written back onto the cached race. Its "Load full
+stage results" control only surfaces when a card's history is still winner-only, which
+in practice now means a race whose page has no companion article at all.
+
+**3a. An official provider's current stage has to be folded into the history.**
+`mergeLatestStageIntoHistory` does this in `mergeStageRaceSnapshots`, and it is not
+optional. Providers report only the current stage, but report it better than the route
+table: the 2026 Tour's route table stops at stage 20 while letour.fr has stage 21 five
+deep. Without the fold, the strip rendered the Wikipedia history alone and silently
+discarded data the build had already paid to fetch — the card's headline stage and its
+own strip disagreed. If a stage race's final stage goes missing from the strip, look
+here first.
 
 **4. Per-stage finish videos.** See "Per-stage finish videos" above.
 
@@ -412,6 +422,8 @@ live card, whose companion articles were already read.
   oversight — revisit it only if asked.
 - Both click handlers are delegated at `document`, so markup swapped in by
   `/api/race-stages` or revealed by "Load more races" works without rebinding.
+- The strip renders `stageRace.stages` and nothing else, so anything the card should
+  show has to be *in* that array. `latestStage` is not consulted separately.
 
 ## Open Threads
 
@@ -422,10 +434,6 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   nothing to parse; this is not caused by the stage-results work. Same shape as the
   Femmes outage, so if the page is still bare well into the race, check whether an
   official provider exists for it before touching shared parsers.
-- **A finished race needs one click for deep stages.** If the cold-start budget ever
-  improves, the cheapest win is to read companion articles for recent races at build
-  time again and drop the button. The split is a cost decision, not an architectural
-  one. See "Where Cold Start Actually Goes" for the budget it is competing with.
 
 - **One provider still needs ~11s, it just no longer blocks.** The Giro d'Italia Women
   lookup trips the blocking budget on every build and is applied late. A per-race cache

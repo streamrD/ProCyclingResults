@@ -102,6 +102,7 @@ function loadParserExports() {
       enrichStageFinishVideos,
       BUILD_INFO,
       applyLateOfficialSnapshots,
+      mergeLatestStageIntoHistory,
       loadOfficialStageRaceSnapshotWithinBudget,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
@@ -3696,4 +3697,91 @@ test("applyLateOfficialSnapshots swallows a rejected lookup", async () => {
   // An unhandled rejection here would take the process down, since nothing awaits it.
   assert.doesNotThrow(() => applyLateOfficialSnapshots([{ race, pending: Promise.reject(new Error("upstream down")) }]));
   await new Promise((resolve) => setImmediate(resolve));
+});
+
+test("mergeLatestStageIntoHistory adds a stage the route table never listed", () => {
+  const { mergeLatestStageIntoHistory } = loadParserExports();
+  // The 2026 Tour's route table stops at stage 20, but letour.fr reports stage 21 five
+  // deep. Without this the card's strip contradicted its own headline stage: the
+  // provider's data was fetched, then dropped on the floor.
+  const history = [
+    { number: 19, order: 19, label: "Stage 19", standings: [{ place: "1", rider: "Thymen Arensman" }] },
+    { number: 20, order: 20, label: "Stage 20", standings: [{ place: "1", rider: "Richard Carapaz" }] },
+  ];
+  const latestStage = {
+    number: 21,
+    label: "Stage 21",
+    standings: [
+      { place: "1", rider: "Mathieu van der Poel", time: "1:58:49" },
+      { place: "2", rider: "Jasper Philipsen" },
+    ],
+  };
+
+  const merged = mergeLatestStageIntoHistory(history, latestStage);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(merged.map((stage) => stage.number))), [19, 20, 21]);
+  assert.equal(merged[2].standings.length, 2);
+  assert.equal(merged[2].winner, "Mathieu van der Poel");
+});
+
+test("mergeLatestStageIntoHistory deepens a stage the route table only had a winner for", () => {
+  const { mergeLatestStageIntoHistory } = loadParserExports();
+  const history = [
+    {
+      number: 21,
+      order: 21,
+      label: "Stage 21",
+      date: "26 July",
+      course: "Thoiry to Paris",
+      standings: [{ place: "1", rider: "Mathieu van der Poel" }],
+    },
+  ];
+  const latestStage = {
+    number: 21,
+    standings: [
+      { place: "1", rider: "Mathieu van der Poel", time: "1:58:49" },
+      { place: "2", rider: "Jasper Philipsen" },
+      { place: "3", rider: "Mads Pedersen" },
+    ],
+  };
+
+  const [stage] = mergeLatestStageIntoHistory(history, latestStage);
+
+  assert.equal(stage.standings.length, 3);
+  // The route table's date and course are the only source for those, so they survive.
+  assert.equal(stage.date, "26 July");
+  assert.equal(stage.course, "Thoiry to Paris");
+});
+
+test("mergeLatestStageIntoHistory leaves a richer history entry alone", () => {
+  const { mergeLatestStageIntoHistory } = loadParserExports();
+  const history = [
+    {
+      number: 2,
+      order: 2,
+      label: "Stage 2",
+      standings: [
+        { place: "1", rider: "Matthew Brennan" },
+        { place: "2", rider: "Pau Miquel" },
+        { place: "3", rider: "Tadej Pogačar" },
+      ],
+    },
+  ];
+
+  // A thinner latestStage must not overwrite a companion-article podium.
+  const merged = mergeLatestStageIntoHistory(history, {
+    number: 2,
+    standings: [{ place: "1", rider: "Matthew Brennan" }],
+  });
+
+  assert.equal(merged[0].standings.length, 3);
+});
+
+test("mergeLatestStageIntoHistory ignores an empty or unnumbered latest stage", () => {
+  const { mergeLatestStageIntoHistory } = loadParserExports();
+  const history = [{ number: 1, order: 1, label: "Stage 1", standings: [{ place: "1", rider: "Tadej Pogačar" }] }];
+
+  assert.equal(mergeLatestStageIntoHistory(history, null).length, 1);
+  assert.equal(mergeLatestStageIntoHistory(history, { number: 2, standings: [] }).length, 1);
+  assert.equal(mergeLatestStageIntoHistory(history, { standings: [{ place: "1", rider: "X" }] }).length, 1);
 });
