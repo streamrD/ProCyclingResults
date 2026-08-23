@@ -431,6 +431,15 @@ payload, so a race id cannot be turned into an arbitrary Wikipedia fetch. Worth 
 before optimizing further: many shorter stage races publish podiums inline on the main
 article and were already deep without any companion fetch at all.
 
+**Per-stage finish videos fall out of the stage subject, not a refactor.**
+The finish-video pipeline reads the stage off the race object in four places. Rather
+than thread a stage argument through the query builder, the cache key, the curated-map
+lookup and the title matcher, `buildStageFinishVideoSubject` presents an earlier stage
+as the current one. Two traps: the subject must drop `finishVideoUrl`, or
+`shouldSearchFinishVideo` sees the race's headline video and suppresses the search; and
+`isFinalizedStageRace` on a subject compares that stage against the total, so a
+finished race's early stages read as live — gate on the real race, not the subject.
+
 **A stage strip is the shape that survives a three-week race.**
 `stageRace.stages` holds one entry per raced stage and the card renders a numbered
 strip over the whole route with future stages disabled, swapping one panel in place.

@@ -88,6 +88,8 @@ function loadParserExports() {
       buildStageSwitcherMarkup,
       mergeStageRaceSnapshots,
       findStageRaceById,
+      getStageFinishVideoUrl,
+      enrichStageFinishVideos,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -3470,4 +3472,91 @@ test("findStageRaceById only resolves races already on the page", () => {
   assert.equal(findStageRaceById(data, ""), null);
   // A one-day race carries no stage history to deepen.
   assert.equal(findStageRaceById(data, "2026 Hamburg Cyclassics"), null);
+});
+
+test("getStageFinishVideoUrl keeps a whole-race video off earlier stages", () => {
+  const { getStageFinishVideoUrl } = loadParserExports();
+  // "2026 La Vuelta Femenina" is mapped to a single string: the video of the race
+  // finishing, which belongs to the final stage and not to stage 1.
+  const race = { pageTitle: "2026 La Vuelta Femenina" };
+
+  assert.equal(getStageFinishVideoUrl(race, { number: 1 }), "");
+  assert.equal(
+    getStageFinishVideoUrl(race, { number: 1, finishVideoUrl: "https://www.youtube.com/watch?v=stage1" }),
+    "https://www.youtube.com/watch?v=stage1",
+  );
+});
+
+test("getStageFinishVideoUrl prefers a curated per-stage entry over a searched one", () => {
+  const { getStageFinishVideoUrl } = loadParserExports();
+  // The 2026 Tour de France pins a stage 1 video, because its team time trial is
+  // the kind of stage the automatic search gets wrong.
+  const race = { pageTitle: "2026 Tour de France" };
+
+  assert.equal(
+    getStageFinishVideoUrl(race, { number: 1, finishVideoUrl: "https://www.youtube.com/watch?v=searched" }),
+    "https://www.youtube.com/watch?v=U5br6kI5ha8",
+  );
+});
+
+test("buildStageSwitcherMarkup links each stage to its own finish video", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const html = buildStageSwitcherMarkup({
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    stageRace: {
+      totalStages: 21,
+      completedStages: 2,
+      latestStage: { number: 2, standings: [{ place: "1", rider: "Matthew Brennan" }] },
+      stages: [
+        {
+          number: 1,
+          order: 1,
+          label: "Stage 1",
+          winner: "Tadej Pogačar",
+          finishVideoUrl: "https://www.youtube.com/watch?v=stage1",
+          standings: [{ place: "1", rider: "Tadej Pogačar" }, { place: "2", rider: "Ethan Hayter" }],
+        },
+        {
+          number: 2,
+          order: 2,
+          label: "Stage 2",
+          winner: "Matthew Brennan",
+          finishVideoUrl: "https://www.youtube.com/watch?v=stage2",
+          standings: [{ place: "1", rider: "Matthew Brennan" }, { place: "2", rider: "Pau Miquel" }],
+        },
+      ],
+    },
+  });
+
+  const [, stageOnePanel = "", stageTwoPanel = ""] = html.split(/id="2026-vuelta-a-espana-stage-\d"/);
+  assert.match(stageOnePanel, /watch\?v=stage1/);
+  assert.doesNotMatch(stageOnePanel, /watch\?v=stage2/);
+  assert.match(stageTwoPanel, /watch\?v=stage2/);
+  assert.equal((html.match(/race-finish-link/g) || []).length, 2);
+});
+
+test("enrichStageFinishVideos leaves finished races alone and fills curated stages without a search", async () => {
+  const { enrichStageFinishVideos } = loadParserExports();
+  const buildRace = (completedStages) => ({
+    pageTitle: "2026 Tour de France",
+    startDate: new Date("2026-07-04T00:00:00.000Z"),
+    endDate: new Date("2026-07-26T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 21,
+      completedStages,
+      stages: [{ number: 1, order: 1, label: "Stage 1", standings: [{ place: "1", rider: "Team Visma" }] }],
+    },
+  });
+
+  // Finished: skipped entirely, the way companion stage articles are.
+  const finished = buildRace(21);
+  await enrichStageFinishVideos([finished], new Date("2026-07-27T12:00:00.000Z"));
+  assert.equal(finished.stageRace.stages[0].finishVideoUrl, undefined);
+
+  // Live: the curated stage 1 entry resolves with no network call at all.
+  const live = buildRace(1);
+  await enrichStageFinishVideos([live], new Date("2026-07-05T12:00:00.000Z"));
+  assert.equal(live.stageRace.stages[0].finishVideoUrl, "https://www.youtube.com/watch?v=U5br6kI5ha8");
 });

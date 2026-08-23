@@ -33,6 +33,8 @@ const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
 const FINISH_VIDEO_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FINISH_VIDEO_MISS_CACHE_TTL_MS = 20 * 60 * 1000;
 const FINISH_VIDEO_LOOKUP_LIMIT = 6;
+// Earlier stages of a live race are resolved a few per refresh rather than all at once.
+const STAGE_FINISH_VIDEO_LOOKUP_LIMIT = 4;
 const FINISH_VIDEO_MAX_AGE_DAYS = 6;
 // A plausible highlights runtime: long enough to be real coverage rather than a
 // clip/Short, short enough to exclude full-stage replays and livestream VODs.
@@ -5247,6 +5249,7 @@ async function buildRaceData(metadata, options = {}) {
   // curated/official sources have had their say. Bounded + cached so it does not
   // dominate cold-start latency; failures degrade silently to no link.
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
+  await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -6055,6 +6058,83 @@ async function enrichFinishVideos(races, now = new Date()) {
   );
 }
 
+// The whole-race entry in RACE_FINISH_VIDEO_URLS is the video for a race's finish, so
+// it belongs to the final stage only; an earlier stage takes a per-stage map entry or
+// whatever the per-stage search stored on the stage itself.
+// Every finish-video helper — the query builder, the cache key, the curated-map
+// lookup, the title matcher — reads the stage off the race object. Asking about an
+// earlier stage is therefore a matter of presenting that stage as the current one,
+// rather than threading a stage argument through all of them. finishVideoUrl is
+// dropped so the subject is judged on the stage's own state and not the race's
+// headline video, which would otherwise suppress the search.
+function buildStageFinishVideoSubject(race, stage) {
+  const { finishVideoUrl, ...raceWithoutVideo } = race;
+
+  return {
+    ...raceWithoutVideo,
+    stageRace: {
+      ...race.stageRace,
+      completedStages: stage.number,
+      latestStage: { number: stage.number, label: stage.label, standings: stage.standings },
+    },
+  };
+}
+
+// Earlier stages get their own bounded pass so they never compete with other races'
+// current stages for FINISH_VIDEO_LOOKUP_LIMIT. Restricted to live races for the same
+// reason companion stage articles are: a three-week race would otherwise fire twenty
+// searches on one cold start. Results cache per (race, stage), so the backlog fills in
+// over successive refreshes instead of all at once, newest stage first.
+async function enrichStageFinishVideos(races, now = new Date()) {
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const pending = [];
+
+  for (const race of races || []) {
+    if (!isMultiDayRace(race) || isFinalizedStageRace(race) || !Array.isArray(race.stageRace?.stages)) {
+      continue;
+    }
+
+    for (const stage of [...race.stageRace.stages].reverse()) {
+      if (pending.length >= STAGE_FINISH_VIDEO_LOOKUP_LIMIT) {
+        break;
+      }
+      if (stage.finishVideoUrl || (stage.standings?.length || 0) === 0) {
+        continue;
+      }
+
+      const subject = buildStageFinishVideoSubject(race, stage);
+      // A curated entry for this stage settles it without a search.
+      if (hasCuratedFinishVideo(subject)) {
+        stage.finishVideoUrl = getRaceFinishVideoUrl(subject);
+        continue;
+      }
+      if (shouldSearchFinishVideo(subject, todayUtc)) {
+        pending.push({ stage, subject });
+      }
+    }
+  }
+
+  await Promise.all(
+    pending.map(async ({ stage, subject }) => {
+      const url = await resolveRaceFinishVideoUrl(subject);
+      if (url) {
+        stage.finishVideoUrl = url;
+      }
+    }),
+  );
+
+  return races;
+}
+
+function getStageFinishVideoUrl(race, stage) {
+  const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
+  if (mapped && typeof mapped === "object" && mapped[stage?.number]) {
+    return mapped[stage.number];
+  }
+
+  return cleanFeedText(stage?.finishVideoUrl || "");
+}
+
 function getRaceFinishVideoUrl(race) {
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
   const stageNumber = Number(race?.stageRace?.completedStages || race?.stageRace?.latestStage?.number || 0);
@@ -6069,6 +6149,22 @@ function getRaceFinishVideoUrl(race) {
   }
 
   return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || race?.finishVideoUrl || "");
+}
+
+function buildStageFinishLink(race, stage, isCurrentStage) {
+  // The current stage can also answer to the race-level video, which covers curated
+  // whole-race entries and provider-supplied URLs that never carried a stage number.
+  const url = isCurrentStage
+    ? getRaceFinishVideoUrl(race) || getStageFinishVideoUrl(race, stage)
+    : getStageFinishVideoUrl(race, stage);
+  if (!url) {
+    return "";
+  }
+
+  return `
+    <a class="race-finish-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
+      Watch the stage finish
+    </a>`;
 }
 
 function buildRaceFinishLink(race) {
@@ -6125,7 +6221,7 @@ function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
           { metricContext: "stage" },
         )}</div>
         ${buildPodiumMarkup(standings, { metricContext: "stage" })}
-        ${isCurrentStage ? buildRaceFinishLink(race) : ""}
+        ${buildStageFinishLink(race, stage, isCurrentStage)}
       </div>`;
 }
 
@@ -7752,7 +7848,7 @@ function buildHtmlPage(data, view) {
         display: flex;
         flex-wrap: wrap;
         gap: 0.3rem;
-        margin: 0.55rem 0 0.2rem;
+        margin: 0.55rem 0 0.95rem;
       }
 
       .stage-chip {
