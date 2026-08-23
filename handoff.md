@@ -427,9 +427,10 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   time again and drop the button. The split is a cost decision, not an architectural
   one. See "Where Cold Start Actually Goes" for the budget it is competing with.
 
-- **The homepage waits ~11s on one finished race's official provider.** Profiled
-  2026-08-23; see below. Not fixed, because the fix is a behaviour decision rather than
-  a bug fix.
+- **One provider still needs ~11s, it just no longer blocks.** The Giro d'Italia Women
+  lookup trips the blocking budget on every build and is applied late. A per-race cache
+  for settled races' official snapshots would stop re-fetching it every refresh; not
+  done, because it does not help the cold start that motivated the work.
 - **Per-stage video backlog fills 4 per refresh.** Invisible during a race, since one
   stage arrives per day. Only noticeable if the process restarts late in a Grand Tour
   with a cold `finishVideoCache`.
@@ -474,15 +475,34 @@ makes three *sequential* requests to it — rankings (5.7s), stage rankings (2.4
 404s), video hub (3.1s). That race finished on 7 June 2026 and its result has not
 changed since, yet every cold start pays for it again.
 
-**Why this was not fixed here.** The obvious move — skip official providers for
-long-settled races — collides with a deliberate existing decision, pinned by the test
-`fetchGiroDItaliaOfficialSnapshot still uses the official Giro source after the race end
-date`. The better shape is probably to keep the source but take it off the blocking
-path: enrich finished races' official snapshots in the background the way
-`enrichLocationsInBackground` already does, so Wikipedia data renders immediately and
-the official refinement lands on a later build. That preserves the contract and removes
-the 11s from first paint. It is a behaviour change, so it wants an explicit decision
-rather than being folded into unrelated work.
+**How it was fixed, and why the obvious fix was wrong.** The first attempt was the one
+recommended in an earlier revision of this section: skip the official provider for
+long-settled races and enrich them in the background, the way
+`enrichLocationsInBackground` works. It was measured and rejected. Official providers
+are *not* merely a refinement for a finished race — Wikipedia alone leaves several
+Grand Tours one to three riders deep (Tour de France's final GC dropped from five names
+to three and its stage result to nothing), and Tour de Romandie fell out of
+`finalizedStageRaces` entirely, which is the exact silent-disappearance failure the
+comment above `homepageRecentEnrichTargets` warns about. Fourteen of sixteen races
+degraded on first paint.
+
+What works instead is a **time budget**, `OFFICIAL_SNAPSHOT_BLOCKING_BUDGET_MS` (2500).
+Providers stay on the blocking path; one that overruns stops blocking and is applied by
+`applyLateOfficialSnapshots` when it lands. Because the overrunning lookup is handed
+back rather than re-issued, a slow origin is still asked only once per build. Only the
+Giro d'Italia Women lookup trips the budget, so exactly one card is briefly thin instead
+of fourteen, and it repairs itself within seconds.
+
+Measured: homepage readiness went from ~18.7s to ~5.7s (median of three runs each),
+`recentStandingsMs` from 14413ms to ~2700ms. A full `/api/races` diff of the converged
+state against the pre-change baseline is byte-identical, times and gaps included.
+
+Two things to preserve if you touch this. `OFFICIAL_SNAPSHOT_TIMED_OUT` is a distinct
+sentinel because most races have no provider and resolve to `null` instantly — using
+`null` for both would put every such race on the late list and make the budget look
+like it was tripping constantly. And `applyLateOfficialSnapshots` merges through
+`selectPreferredStageRaceSnapshot` rather than assigning, so a late result never
+overwrites something better that Wikipedia already supplied.
 
 ## Parser Traps Learned On 2026-08-06
 

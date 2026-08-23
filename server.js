@@ -4350,13 +4350,85 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
   return races;
 }
 
-async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw) {
+// Official providers are not merely a refinement for a finished race: Wikipedia alone
+// leaves several Grand Tours one to three riders deep, and Tour de Romandie drops out of
+// the finalized grid without one. So they stay on the blocking path — but with a time
+// budget, because one provider is pathologically slow. giroditaliawomen.it takes ~11s of
+// sequential requests for a race that finished in June, while every other provider
+// measured under 1.3s. A lookup that overruns stops blocking first paint and is applied
+// when it lands instead.
+const OFFICIAL_SNAPSHOT_BLOCKING_BUDGET_MS = 2500;
+
+// A distinct sentinel, so "the budget elapsed" is never confused with "this race has no
+// official provider" — most races resolve to null instantly and must not be treated as
+// slow lookups still in flight.
+const OFFICIAL_SNAPSHOT_TIMED_OUT = Symbol("official-snapshot-timed-out");
+
+// `settled` resolves to the provider result if it arrives inside the budget, or to
+// OFFICIAL_SNAPSHOT_TIMED_OUT if it does not. `pending` is the same in-flight lookup,
+// handed back so a late result can be applied without re-requesting it — a slow origin
+// is still asked only once per build.
+function loadOfficialStageRaceSnapshotWithinBudget(race, budgetMs) {
+  const pending = loadOfficialStageRaceSnapshot(race).catch(() => null);
+  if (!budgetMs) {
+    return { pending, settled: pending };
+  }
+
+  let timer;
+  const budget = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(OFFICIAL_SNAPSHOT_TIMED_OUT), budgetMs);
+  });
+
+  return {
+    pending,
+    settled: Promise.race([pending.finally(() => clearTimeout(timer)), budget]),
+  };
+}
+
+// Applies a provider result that missed the blocking budget. These are the same race
+// objects the caller cached, so the refinement appears on the next render without
+// another build. It merges through the same path the inline case uses, so a late
+// snapshot never wins where it is worse than what Wikipedia already gave.
+function applyLateOfficialSnapshots(lateLookups) {
+  lateLookups.forEach(({ race, pending }) => {
+    pending
+      .then((officialSnapshot) => {
+        if (!officialSnapshot) {
+          return;
+        }
+
+        const merged = selectPreferredStageRaceSnapshot(officialSnapshot, race.stageRace, race);
+        if (merged && ((merged.totalStages || 0) > 1 || (merged.completedStages || 0) > 0)) {
+          race.stageRace = merged;
+          race.resultStandings = selectStandings(merged.generalClassification?.standings, merged.overallResult);
+        }
+      })
+      .catch(() => {
+        // Keep the Wikipedia-derived standings already rendering.
+      });
+  });
+}
+
+// `options.officialSnapshotBudgetMs` caps how long the official stage-race provider may
+// block. Lookups that overrun are collected into `options.lateLookups` for the caller to
+// apply once they land. The one-day lookup is left unbudgeted: it measured at ~0ms and
+// is the only source for some one-day races.
+async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw, options = {}) {
+  const budgetMs = options.officialSnapshotBudgetMs || 0;
+  const lateLookups = options.lateLookups || null;
+
   await Promise.all(
     races.map(async (race) => {
       const isStageRace = isMultiDayRace(race);
 
       try {
-        const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
+        const officialLookup = loadOfficialStageRaceSnapshotWithinBudget(race, budgetMs);
+        const settledSnapshot = await officialLookup.settled;
+        const timedOut = settledSnapshot === OFFICIAL_SNAPSHOT_TIMED_OUT;
+        const officialSnapshot = timedOut ? null : settledSnapshot;
+        if (timedOut && lateLookups) {
+          lateLookups.push({ race, pending: officialLookup.pending });
+        }
         const officialOneDayStandings = await loadOfficialOneDayResultStandings(race);
         if (officialOneDayStandings.length > 0) {
           race.resultStandings = officialOneDayStandings;
@@ -5207,7 +5279,14 @@ async function buildRaceData(metadata, options = {}) {
         ...homepageRecentStandingsTargets,
         ...homepageWorldTourRecentCandidates.filter(isMultiDayRace),
       ]);
-  await enrichRecentResultStandings(homepageRecentEnrichTargets, wikiRawLoader);
+  // Providers stay on the blocking path but only for as long as the budget allows;
+  // whatever overruns is applied when it lands. This is what keeps one slow origin off
+  // first paint without giving up the depth the providers supply.
+  const lateOfficialLookups = [];
+  await enrichRecentResultStandings(homepageRecentEnrichTargets, wikiRawLoader, {
+    officialSnapshotBudgetMs: OFFICIAL_SNAPSHOT_BLOCKING_BUDGET_MS,
+    lateLookups: lateOfficialLookups,
+  });
   let recentStandingsMs = Date.now() - recentStandingsStartedAt;
   let finalizedStageStandingsMs = 0;
   if (includeDeferred) {
@@ -5264,6 +5343,9 @@ async function buildRaceData(metadata, options = {}) {
   // dominate cold-start latency; failures degrade silently to no link.
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
+  // Fire-and-forget: these races already render from Wikipedia, and their provider is
+  // still in flight rather than re-requested.
+  applyLateOfficialSnapshots(lateOfficialLookups);
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -5283,7 +5365,8 @@ async function buildRaceData(metadata, options = {}) {
       stageSnapshotsMs,
       nationalChampionshipsMs,
       recentResultCount: includeDeferred ? selectedRecentOneDayResults.length : selectedHomepageRecentCandidates.length,
-      recentStandingsTargetCount: includeDeferred ? selectedRecentOneDayResults.length : homepageRecentStandingsTargets.length,
+      recentStandingsTargetCount: homepageRecentEnrichTargets.length,
+      lateOfficialSnapshotCount: lateOfficialLookups.length,
       finalizedStageCandidateCount: selectedFinalizedStageCandidates.length,
       liveStageCandidateCount: selectedLiveStageCandidates.length,
       stageRaceDisplayCount: stageRaceDisplays.length,

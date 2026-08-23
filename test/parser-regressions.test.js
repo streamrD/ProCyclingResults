@@ -12,12 +12,22 @@ function loadParserExports() {
     ? serverSource.slice(0, serverSource.indexOf(listenMarker))
     : serverSource;
 
+  // The sandbox has to carry the timer globals: server.js uses them for fetch retry
+  // backoff and for the official-snapshot blocking budget, and a missing setTimeout
+  // surfaces as a ReferenceError from inside the VM rather than anything obvious.
   const sandbox = {
     require,
     console,
     process,
     URL,
     fetch: global.fetch,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    setImmediate,
+    AbortController,
+    AbortSignal,
   };
 
   vm.createContext(sandbox);
@@ -91,6 +101,8 @@ function loadParserExports() {
       getStageFinishVideoUrl,
       enrichStageFinishVideos,
       BUILD_INFO,
+      applyLateOfficialSnapshots,
+      loadOfficialStageRaceSnapshotWithinBudget,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -3593,4 +3605,95 @@ test("BUILD_INFO admits when it is falling back to the hardcoded marker", () => 
   } finally {
     process.env = previous;
   }
+});
+
+test("a race with no official provider is not mistaken for a slow lookup", async () => {
+  const { loadOfficialStageRaceSnapshotWithinBudget } = loadParserExports();
+  // Most races have no provider and resolve to null immediately. Recording those as
+  // late lookups would make the budget look like it was tripping constantly.
+  const lookup = loadOfficialStageRaceSnapshotWithinBudget(
+    { pageTitle: "2026 Hamburg Cyclassics", startDate: new Date("2026-08-16"), endDate: new Date("2026-08-16") },
+    2500,
+  );
+
+  const settled = await lookup.settled;
+  assert.equal(settled, null);
+  // Specifically not the timed-out sentinel, which is what would put it on the late list.
+  assert.equal(typeof settled, "object");
+  assert.equal(await lookup.pending, null);
+});
+
+test("applyLateOfficialSnapshots upgrades a race whose provider missed the budget", async () => {
+  const { applyLateOfficialSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Giro d'Italia Women",
+    startDate: new Date("2026-05-30T00:00:00.000Z"),
+    endDate: new Date("2026-06-07T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 9,
+      completedStages: 9,
+      generalClassification: { stageNumber: 9, standings: [{ place: "1", rider: "Demi Vollering" }] },
+      overallResult: [],
+    },
+    resultStandings: [{ place: "1", rider: "Demi Vollering" }],
+  };
+  const officialSnapshot = {
+    totalStages: 9,
+    completedStages: 9,
+    generalClassification: {
+      stageNumber: 9,
+      standings: [
+        { place: "1", rider: "Demi Vollering" },
+        { place: "2", rider: "Antonia Niedermaier" },
+        { place: "3", rider: "Anna van der Breggen" },
+      ],
+    },
+    overallResult: [],
+  };
+
+  applyLateOfficialSnapshots([{ race, pending: Promise.resolve(officialSnapshot) }]);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(race.stageRace.generalClassification.standings.length, 3);
+  assert.equal(race.resultStandings.length, 3);
+});
+
+test("applyLateOfficialSnapshots leaves a race alone when the late result is not better", async () => {
+  const { applyLateOfficialSnapshots } = loadParserExports();
+  const richStandings = [
+    { place: "1", rider: "Demi Vollering" },
+    { place: "2", rider: "Antonia Niedermaier" },
+    { place: "3", rider: "Anna van der Breggen" },
+  ];
+  const race = {
+    pageTitle: "2026 Giro d'Italia Women",
+    startDate: new Date("2026-05-30T00:00:00.000Z"),
+    endDate: new Date("2026-06-07T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 9,
+      completedStages: 9,
+      generalClassification: { stageNumber: 9, standings: richStandings },
+      overallResult: [],
+    },
+  };
+
+  // A null result (provider failed after the budget elapsed) must not clear the card.
+  applyLateOfficialSnapshots([{ race, pending: Promise.resolve(null) }]);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(race.stageRace.generalClassification.standings.length, 3);
+});
+
+test("applyLateOfficialSnapshots swallows a rejected lookup", async () => {
+  const { applyLateOfficialSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Giro d'Italia Women",
+    startDate: new Date("2026-05-30T00:00:00.000Z"),
+    endDate: new Date("2026-06-07T00:00:00.000Z"),
+    stageRace: { totalStages: 9, completedStages: 9, generalClassification: { stageNumber: 9, standings: [] }, overallResult: [] },
+  };
+
+  // An unhandled rejection here would take the process down, since nothing awaits it.
+  assert.doesNotThrow(() => applyLateOfficialSnapshots([{ race, pending: Promise.reject(new Error("upstream down")) }]));
+  await new Promise((resolve) => setImmediate(resolve));
 });
