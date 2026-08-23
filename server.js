@@ -5,9 +5,16 @@ const { URL } = require("url");
 const STATIC_STAGE_RACE_SNAPSHOT_DATA = require(path.join(process.cwd(), "data", "static-stage-race-snapshots.json"));
 
 const PORT = process.env.PORT || 3000;
+// Railway injects the deployed commit, so /api/build-info can answer "what is live?"
+// without anyone remembering to bump a constant. The hardcoded values remain as the
+// local/dev fallback; `source` says which one you are looking at, because a stale
+// marker that looks authoritative is worse than one that admits it is a fallback.
 const BUILD_INFO = {
-  marker: "2026-06-02-giro-post-race-fix",
-  commit: "fefa813",
+  marker: cleanFeedText(process.env.RAILWAY_GIT_COMMIT_MESSAGE || "").slice(0, 120) || "2026-06-02-giro-post-race-fix",
+  commit: (process.env.RAILWAY_GIT_COMMIT_SHA || "fefa813").slice(0, 7),
+  branch: process.env.RAILWAY_GIT_BRANCH || "",
+  deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || "",
+  source: process.env.RAILWAY_GIT_COMMIT_SHA ? "railway-env" : "hardcoded-fallback",
 };
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";
@@ -5172,8 +5179,16 @@ async function buildRaceData(metadata, options = {}) {
   const selectedEuropeTourLiveStageRaces = includeDeferred ? europeTourLiveStageRaces : [];
   const selectedEuropeTourUpcomingRaces = includeDeferred ? europeTourUpcomingRaces : [];
 
+  // Timed on settle rather than on await: this promise is started early and awaited
+  // last, so measuring at the await reports how long the *other* work took. It read
+  // 14462ms against a 14461ms critical path while the fetch itself takes under 250ms,
+  // which pointed cold-start work at the wrong subsystem entirely.
   const nationalChampionshipsStartedAt = Date.now();
-  const nationalChampionshipsPromise = loadNationalChampionships();
+  let nationalChampionshipsMs = 0;
+  const nationalChampionshipsPromise = loadNationalChampionships().then((result) => {
+    nationalChampionshipsMs = Date.now() - nationalChampionshipsStartedAt;
+    return result;
+  });
   const stageRaceDisplays = [
     ...selectedLiveStageCandidates,
     ...selectedEuropeTourRecentResults,
@@ -5204,7 +5219,6 @@ async function buildRaceData(metadata, options = {}) {
   await enrichStageRaceSnapshots(stageRaceDisplays, wikiRawLoader);
   const stageSnapshotsMs = Date.now() - stageSnapshotsStartedAt;
   const nationalChampionships = await nationalChampionshipsPromise;
-  const nationalChampionshipsMs = Date.now() - nationalChampionshipsStartedAt;
 
   const finalizedStageRaces = (
     includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates

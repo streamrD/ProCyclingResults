@@ -423,9 +423,13 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   Femmes outage, so if the page is still bare well into the race, check whether an
   official provider exists for it before touching shared parsers.
 - **A finished race needs one click for deep stages.** If the cold-start budget ever
-  improves — the ~20s is dominated by `loadNationalChampionships`, not by this — the
-  cheapest win is to read companion articles for recent races at build time again and
-  drop the button. The split is a cost decision, not an architectural one.
+  improves, the cheapest win is to read companion articles for recent races at build
+  time again and drop the button. The split is a cost decision, not an architectural
+  one. See "Where Cold Start Actually Goes" for the budget it is competing with.
+
+- **The homepage waits ~11s on one finished race's official provider.** Profiled
+  2026-08-23; see below. Not fixed, because the fix is a behaviour decision rather than
+  a bug fix.
 - **Per-stage video backlog fills 4 per refresh.** Invisible during a race, since one
   stage arrives per day. Only noticeable if the process restarts late in a Grand Tour
   with a cold `finishVideoCache`.
@@ -433,6 +437,52 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   to live races. `/api/race-stages` could resolve them on demand too, at the cost of
   endpoint latency; not done because nobody asked.
 - **`BUILD_INFO` was not touched** by this work and remains manual.
+
+## Where Cold Start Actually Goes
+
+Profiled 2026-08-23. Read this before optimizing anything on the warm-up path — the
+numbers in `/api/races?debug=1` were misleading until this session, and the previous
+revision of this file repeated one of them as fact.
+
+**`nationalChampionshipsMs` used to be meaningless.** The promise is started early and
+awaited last, and the elapsed time was taken *after* the await, so it reported how long
+the rest of the build took rather than its own work. It read `14462ms` against a
+`13112 + 1349 = 14461ms` critical path. `loadNationalChampionships` actually completes
+in **35-207ms**; the Cyclingnews page it fetches returns in under 0.5s. It is now timed
+on settle and reports the truth. If you see a suspiciously round agreement between a
+timing field and the sum of the others, suspect the same pattern.
+
+**`recentStandingsTargetCount` undercounts.** It reports
+`homepageRecentStandingsTargets.length` (6), but the work runs over
+`homepageRecentEnrichTargets`, which also includes every multi-day recent candidate —
+14 races in practice.
+
+**The real cost is official-provider lookups on finished races.** Timing
+`loadOfficialStageRaceSnapshot` across those 14 races, serially:
+
+```text
+  11037ms  2026 Giro d'Italia Women
+   1279ms  2026 Giro d'Italia
+    660ms  2026 Tour Auvergne-Rhône-Alpes
+    565ms  2026 Tour de France
+    400ms  2026 Tour de France Femmes
+     <2ms  the other nine
+```
+
+One race is 79% of it. `giroditaliawomen.it` is simply a slow origin, and the provider
+makes three *sequential* requests to it — rankings (5.7s), stage rankings (2.4s, and it
+404s), video hub (3.1s). That race finished on 7 June 2026 and its result has not
+changed since, yet every cold start pays for it again.
+
+**Why this was not fixed here.** The obvious move — skip official providers for
+long-settled races — collides with a deliberate existing decision, pinned by the test
+`fetchGiroDItaliaOfficialSnapshot still uses the official Giro source after the race end
+date`. The better shape is probably to keep the source but take it off the blocking
+path: enrich finished races' official snapshots in the background the way
+`enrichLocationsInBackground` already does, so Wikipedia data renders immediately and
+the official refinement lands on a later build. That preserves the contract and removes
+the 11s from first paint. It is a behaviour change, so it wants an explicit decision
+rather than being folded into unrelated work.
 
 ## Parser Traps Learned On 2026-08-06
 
@@ -603,7 +653,7 @@ stage that has not happened, so the two carry different titles.
 - Companion stage articles and per-stage finish videos are fetched at build time for live races only. A finished race looking shallow is the design, not a regression — see "Stage Results Feature Map".
 - Official race pages can expose current data under stale metadata or stale URLs.
 - Article scoring is heuristic and division-sensitive; changes can improve one race and hurt another.
-- `BUILD_INFO` is manual and can be stale. Do not treat `/api/build-info` as a guaranteed current Git SHA unless the code was deliberately updated.
+- `BUILD_INFO` now reads Railway's `RAILWAY_GIT_COMMIT_SHA` when present and falls back to a hardcoded marker otherwise. Check `source` in the payload: `railway-env` is the live commit, `hardcoded-fallback` means you are looking at a local run or the env var went missing.
 - Retired section support still exists as hooks and archived config, but there are no active deferred groups.
 - YouTube finish-video search and official providers (e.g. letour.fr) depend on third-party page structure; expect occasional parser drift there too.
 - There is no schema validation for upstream payloads.

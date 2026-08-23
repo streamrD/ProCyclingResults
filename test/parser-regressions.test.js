@@ -90,6 +90,7 @@ function loadParserExports() {
       findStageRaceById,
       getStageFinishVideoUrl,
       enrichStageFinishVideos,
+      BUILD_INFO,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -3559,4 +3560,37 @@ test("enrichStageFinishVideos leaves finished races alone and fills curated stag
   const live = buildRace(1);
   await enrichStageFinishVideos([live], new Date("2026-07-05T12:00:00.000Z"));
   assert.equal(live.stageRace.stages[0].finishVideoUrl, "https://www.youtube.com/watch?v=U5br6kI5ha8");
+});
+
+test("BUILD_INFO reports the deployed commit when the platform provides one", () => {
+  const previous = { ...process.env };
+  try {
+    process.env.RAILWAY_GIT_COMMIT_SHA = "8513703aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    process.env.RAILWAY_GIT_COMMIT_MESSAGE = "Bring the handoff docs up to date";
+    process.env.RAILWAY_GIT_BRANCH = "main";
+    const { BUILD_INFO } = loadParserExports();
+
+    assert.equal(BUILD_INFO.commit, "8513703");
+    assert.equal(BUILD_INFO.branch, "main");
+    assert.equal(BUILD_INFO.marker, "Bring the handoff docs up to date");
+    // The caller has to be able to tell a real marker from the fallback.
+    assert.equal(BUILD_INFO.source, "railway-env");
+  } finally {
+    process.env = previous;
+  }
+});
+
+test("BUILD_INFO admits when it is falling back to the hardcoded marker", () => {
+  const previous = { ...process.env };
+  try {
+    delete process.env.RAILWAY_GIT_COMMIT_SHA;
+    delete process.env.RAILWAY_GIT_COMMIT_MESSAGE;
+    delete process.env.RAILWAY_GIT_BRANCH;
+    const { BUILD_INFO } = loadParserExports();
+
+    assert.equal(BUILD_INFO.source, "hardcoded-fallback");
+    assert.equal(BUILD_INFO.commit, "fefa813");
+  } finally {
+    process.env = previous;
+  }
 });
