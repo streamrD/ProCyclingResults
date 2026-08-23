@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-08-06
+Updated: 2026-08-23
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -32,8 +32,12 @@ The retired ProSeries and Europe Tour sections were implemented previously and r
 Observed local path:
 
 ```text
-/Users/tcs16/Desktop/AgenticAI/FullStackApp/ProCyclingResults
+/Users/tcs16/AgenticAI/FullStackApp/ProCyclingResults
 ```
+
+Earlier revisions of this file recorded the path with a `Desktop/` segment that does
+not exist. If a handoff prompt fails at `cd`, this is why — check the real location
+before assuming the checkout is missing.
 
 Observed remote:
 
@@ -135,6 +139,7 @@ npm run benchmark:load -- --runs=5 --include-coverage
 - `/api/build-info`: manual `BUILD_INFO` payload from `server.js`. It is not automatically tied to the current commit.
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
 - `/api/competition-coverage?group=<id>`: lazy article coverage for active groups. Retired groups return `410`.
+- `/api/race-stages?race=<race id>`: reads a finished stage race's companion stage articles on request and returns `{ raceId, html }` with a re-rendered stage switcher. The id must resolve through `findStageRaceById` against the current homepage payload, so it cannot be pointed at an arbitrary Wikipedia page; anything else returns `404`.
 - `/assets/*`: static asset serving from `assets/`.
 
 ## Server.js Landmarks
@@ -153,6 +158,8 @@ Major areas (anchored to symbols rather than line numbers, which drift on every 
 - Season table parsing and upstream fetch helpers: `parseSeasonRows`, `fetchText`, `fetchWikiRaw`
 - National Championships parser and event expansion: `parseNationalChampionshipsIndex`, `buildNationalChampionshipEventRecords`
 - Wiki stage-race extraction: `extractStageRaceSnapshot`
+- Per-stage history and companion stage articles: `buildStageHistory`, `extractStageArticleTitles`, `loadStageArticleTexts`, `loadRequestedStageHistory`, `findStageRaceById`
+- Stage strip rendering: `buildStageSwitcherMarkup`, `buildStagePanelMarkup`, `.stage-strip` / `.stage-chip` / `.stage-panel` CSS, and the delegated `[data-stage-target]` and `[data-load-stage-results]` click handlers in the inline script
 - Freshness and cache TTL helpers: `hasFreshnessSensitiveRaceData`, `getRaceDataCacheTtlMs`
 - Official race providers and parsers: `OFFICIAL_STAGE_RACE_PROVIDERS`, `parseAsoOfficialStandings`, `parseLetourOfficialStandings`, `fetchTourDeFranceOfficialSnapshot`
 - Static snapshot hydration: `getStaticStageRaceSnapshot`
@@ -161,7 +168,7 @@ Major areas (anchored to symbols rather than line numbers, which drift on every 
 - Metadata and data cache loaders: `loadRaceMetadata`, `loadRaceData`, `refreshRaceDataInBackground`
 - API/debug payload builders: `buildRaceDataDebugPayload`, `buildHomepageDataPayload`
 - Race cards, standings, and rendering: `buildRaceCard`, `buildStageRaceCard`
-- Finish-video resolution and YouTube search: `getRaceFinishVideoUrl`, `enrichFinishVideos`, `parseYouTubeSearchVideos`, `selectFinishVideo`
+- Finish-video resolution and YouTube search: `getRaceFinishVideoUrl`, `getStageFinishVideoUrl`, `enrichFinishVideos`, `enrichStageFinishVideos`, `buildStageFinishVideoSubject`, `parseYouTubeSearchVideos`, `selectFinishVideo`
 - Recent-results row reveal: `buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script — shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (12) and then removes itself once all rows are shown; revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync. Finished stage races are enriched even when not in the most-recent few and are never dropped for lacking a snapshot, so Grand Tours like the Giro stay in the grid. Note: both `.recent-race-slot` and `.load-more-races` set `display` in CSS, so each needs an explicit `[hidden]` rule for the JS `hidden` toggle to take effect
 - National Championships rendering and header flags: `buildNationalChampionshipsSection`, `getCountryFlagEmojiByName`
 - Competition group definitions: `getCompetitionGroups`
@@ -257,6 +264,7 @@ Known current static stage links include:
 - 2026 Giro d'Italia stages 1, 2, 3, 4, 5, 9, 13, 19
 - 2026 Tour de Suisse stage 5: `https://www.youtube.com/watch?v=f61NRl63jFg`
 - 2026 Tour Auvergne-Rhône-Alpes stage 5: `https://www.youtube.com/watch?v=4VSnvDeUO4E`
+- 2026 Tour de France stage 1: `https://www.youtube.com/watch?v=U5br6kI5ha8` (a team time trial, which the automatic search gets wrong)
 
 Giro d'Italia links prefer official livefeed-derived `Last Km` URLs before falling back to the static map.
 
@@ -281,6 +289,23 @@ attaches the best match. Key pieces:
 This is gated behind the curated map and official providers, so it never overrides a
 hand-picked or official link, and it degrades silently to no link on failure.
 
+### Per-stage finish videos
+
+Each stage of a live stage race can carry its own video on `stage.finishVideoUrl`, so
+clicking back to stage 1 of a Grand Tour offers that stage's finish.
+
+- `buildStageFinishVideoSubject()` presents an earlier stage as the race's current one.
+  Every helper above reads the stage off the race object, so this is what lets them be
+  reused unchanged instead of taking a stage argument.
+- `enrichStageFinishVideos()` is a separate bounded pass (`STAGE_FINISH_VIDEO_LOOKUP_LIMIT`,
+  4) so earlier stages never consume `FINISH_VIDEO_LOOKUP_LIMIT` (6) and starve another
+  race's current stage. It is restricted to live races: a three-week race would otherwise
+  fire twenty searches on one cold start. Results cache per `(race, stage)`, so a backlog
+  fills in over successive refreshes, newest stage first.
+- `getStageFinishVideoUrl()` ignores a whole-race string entry in `RACE_FINISH_VIDEO_URLS`.
+  That entry is the video of the *race* finishing and belongs to the final stage; a
+  per-stage map entry still outranks a searched one.
+
 ## Testing Cross-Reference
 
 The test harness reads `server.js`, strips the `server.listen(...)` block, runs the rest in a VM, and exposes selected internals on `globalThis.__PCR_TEST__`.
@@ -302,6 +327,8 @@ test/fixtures/
 ├── tour-de-france-rankings-stage21.html
 ├── tour-de-france-stage21-ite.html
 ├── tour-of-greece-results-2026-stage1.html
+├── vuelta-a-espana-stage2.wikitext
+├── vuelta-a-espana-stages-1-11.wikitext
 └── youtube-search-tdf-stage21.html
 ```
 
@@ -331,6 +358,81 @@ For rendering, aggregation, or endpoint behavior, also run the server and check:
 ```
 
 Avoid leaving stale local servers running. If using a manual local process, stop it before handing back.
+
+## Stage Results Feature Map
+
+Added 2026-08-23. Stage races render a numbered strip that swaps one stage panel in
+place, so a 21-stage card stays the height of a 5-stage one. Four pieces, in the order
+data flows through them.
+
+**1. Where per-stage results come from.** `extractStageRaceSnapshot(rawText, stageArticleTexts)`
+builds `stageRace.stages`: one entry per raced stage with `number`, `order`, `label`,
+optional `date` / `course` from the route table, and `standings`. `buildStageHistory`
+prefers a `{{cyclingresult}}` podium and falls back to the route table's winner-only
+row, so a race with neither still renders as it did before. `latestStage` is just the
+last entry, which is what keeps the card's headline stage and its strip from
+disagreeing.
+
+**2. Companion stage articles.** Longer races publish only a winner column on the main
+article and keep real podiums on `<race>, Stage 1 to Stage 11` pages. The route table
+links them, so `extractStageArticleTitles` reads the titles off the page instead of
+guessing a naming convention, and `loadStageArticleTexts` fetches them (capped by
+`MAX_STAGE_ARTICLES`; failures degrade to the main article alone). Not a Grand Tour
+convention — La Vuelta Femenina links them too, while Pologne, Suisse, Auvergne and
+Itzulia publish inline and are already deep with no companion fetch. Romandie is deep
+for stages 1-5 and winner-only for its prologue, which is the usual shape when a page
+publishes most stages inline but not all.
+
+Companion articles feed **stage results only**. They repeat a
+`General classification after Stage N` block, but those are hand-copied and drift; on
+the 2026 Vuelta the stage 2 GC block still carried the stage 1 leader time. They are
+also kept away from `findOverallRaceResult`, or a `Stage 1 Result` block gets read as
+the race's overall result.
+
+**3. Live at build time, finished on demand.** `enrichStageRaceSnapshots` (live races)
+reads companion articles; `enrichRecentResultStandings` (recent races) deliberately
+does not. Reading them everywhere cost ~2s of a ~20s cold start. Finished cards render
+the winner-per-stage history plus a "Load full stage results" button calling
+`/api/race-stages`, cached six hours in `stageHistoryCache` and written back onto the
+cached race so the next page render already has it. The control never appears on a
+live card, whose companion articles were already read.
+
+**4. Per-stage finish videos.** See "Per-stage finish videos" above.
+
+### Rendering contract worth preserving
+
+- The strip lists the **whole route**, with unraced stages disabled, so card height
+  does not change as stages complete.
+- A gap *below* the current stage means a stage with no rider result, not one that has
+  not happened; the two carry different `title` text.
+- `parseTotalStages` counts a prologue as a stage, so a prologue race renders one fewer
+  numbered chip or the strip grows a phantom.
+- The GC section always shows the race's **current** overall regardless of the selected
+  stage, labelled with the stage it reflects. This is a deliberate choice, not an
+  oversight — revisit it only if asked.
+- Both click handlers are delegated at `document`, so markup swapped in by
+  `/api/race-stages` or revealed by "Load more races" works without rebinding.
+
+## Open Threads
+
+Live as of 2026-08-23. Verify against production before acting — these move.
+
+- **`2026 Tour of Britain Women` renders empty.** Live race, `completedStages: 0`, no
+  stage result and no GC, `stages: []`. Its Wikipedia page is unfilled, so there is
+  nothing to parse; this is not caused by the stage-results work. Same shape as the
+  Femmes outage, so if the page is still bare well into the race, check whether an
+  official provider exists for it before touching shared parsers.
+- **A finished race needs one click for deep stages.** If the cold-start budget ever
+  improves — the ~20s is dominated by `loadNationalChampionships`, not by this — the
+  cheapest win is to read companion articles for recent races at build time again and
+  drop the button. The split is a cost decision, not an architectural one.
+- **Per-stage video backlog fills 4 per refresh.** Invisible during a race, since one
+  stage arrives per day. Only noticeable if the process restarts late in a Grand Tour
+  with a cold `finishVideoCache`.
+- **Finished races get no per-stage videos at all.** `enrichStageFinishVideos` is gated
+  to live races. `/api/race-stages` could resolve them on demand too, at the cost of
+  endpoint latency; not done because nobody asked.
+- **`BUILD_INFO` was not touched** by this work and remains manual.
 
 ## Parser Traps Learned On 2026-08-06
 
@@ -449,7 +551,29 @@ fewer numbered chip or the strip grows a phantom; and a gap *below* the current 
 is a stage with no rider result (the 2026 Tour opened with a team time trial), not a
 stage that has not happened, so the two carry different titles.
 
-## Process Lessons From The Same Session
+## Process Lessons From The 2026-08-23 Session
+
+- **"Not showing up" can mean "showing but empty."** The report was that the Vuelta was
+  missing. It was on production the whole time, second card in Live Multi-Stage; what
+  was missing was places 2-5 of its stage podium. Fetching the deployed page and
+  screenshotting it settled in one step what re-reading parsers would not have. Confirm
+  what the user is actually looking at before diagnosing a cause.
+- **The before/after `/api/races` diff earns its keep.** Folding companion-article
+  blocks into the shared block list silently replaced the Vuelta's GC leader time
+  (4:58:40) with a stale copy from the companion page (10:57). Nothing failed, no test
+  caught it, and the card still rendered. The per-race diff surfaced it immediately.
+  Diff names separately from times: a name-only projection proves no rider or ordering
+  moved, which is the regression that actually matters.
+- **Measure a performance claim against a stashed baseline.** `git stash push -- server.js`,
+  benchmark, `git stash pop` gives a real before/after on the same machine and network.
+  Cold start is noisy — one run in five came back 10s slow — so take a median over
+  several rather than trusting a single number.
+- **Verify a resolved video, do not just check that one exists.** Both Vuelta stage
+  videos were confirmed by fetching the watch page and reading title, channel and
+  upload date. This repo has prior commits fixing finish videos that pointed at the
+  wrong race.
+
+## Process Lessons From The 2026-08-06 Session
 
 
 - **Local green does not mean the product is fixed.** The fix worked locally for two
@@ -475,6 +599,8 @@ stage that has not happened, so the two carry different titles.
 - External data drift is the dominant bug source.
 - Wikipedia live race pages often update unevenly; stage results and GC can be out of sync.
 - Wikipedia page *shape* varies as much as page freshness. Grand Tours, smaller stage races, and women's editions of the same race do not all use the same templates or table layouts, and a shape the parsers do not know about yields an empty race rather than an error. See "Parser Traps Learned On 2026-08-06".
+- A stage race's per-stage history depends on the main article's route table, which is not uniform: a team time trial has no rider winner (2026 Tour stage 1), and some tables drop the final stage row (2026 Tour stage 21). Both recover when the companion stage articles are read; until then those chips render disabled.
+- Companion stage articles and per-stage finish videos are fetched at build time for live races only. A finished race looking shallow is the design, not a regression — see "Stage Results Feature Map".
 - Official race pages can expose current data under stale metadata or stale URLs.
 - Article scoring is heuristic and division-sensitive; changes can improve one race and hurt another.
 - `BUILD_INFO` is manual and can be stale. Do not treat `/api/build-info` as a guaranteed current Git SHA unless the code was deliberately updated.
@@ -508,7 +634,8 @@ Then choose the smallest relevant read path:
 - Product scope or docs: `AGENTS.md`, `README.md`, `handoff.md`
 - Parser or data issue: search `server.js` for the target race/provider, then inspect relevant tests
 - National Championships issue: search `NATIONAL_CHAMPIONSHIP` in `server.js`
-- Finish video issue: search `RACE_FINISH_VIDEO_URLS` and `getRaceFinishVideoUrl`
+- Finish video issue: search `RACE_FINISH_VIDEO_URLS`, `getRaceFinishVideoUrl`, and `getStageFinishVideoUrl`
+- Stage results / stage strip issue: search `buildStageHistory`, `buildStageSwitcherMarkup`, and `extractStageArticleTitles`
 - Article issue: search `buildRaceArticleQueries`, `scoreRaceArticle`, and `selectRaceArticles`
 - Performance or cold-start issue: inspect cache loaders plus `scripts/benchmark-load.js`
 
@@ -517,7 +644,7 @@ Then choose the smallest relevant read path:
 Use a prompt like this:
 
 ```text
-Project: /Users/tcs16/Desktop/AgenticAI/FullStackApp/ProCyclingResults
+Project: /Users/tcs16/AgenticAI/FullStackApp/ProCyclingResults
 
 Read AGENTS.md first, then README.md and handoff.md. Treat README.md as durable architecture and handoff.md as the current cross-reference/audit snapshot. Verify git status, branch, remote refs, and worktrees before editing. The active product scope is Men's WorldTour, Women's WorldTour, and National Championships. ProSeries and Europe Tour are retired and archived unless explicitly requested. Keep changes narrow, preserve the no-dependency Node architecture, and run node -c server.js plus npm test for code changes.
 

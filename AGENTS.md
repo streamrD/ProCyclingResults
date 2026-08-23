@@ -27,6 +27,7 @@ Do not assume prior chat history is available or needed. Treat `README.md` as th
 - `test/parser-regressions.test.js`: existing regression coverage
 - `data/static-stage-race-snapshots.json`: bounded fallback data for selected stage races
 - `scripts/benchmark-load.js`: readiness and warmed-response benchmarking
+- `handoff.md`: cross-reference plus, for stage-race work, its "Stage Results Feature Map" and "Open Threads" sections
 
 ## When You Must Read README.md
 
@@ -96,7 +97,7 @@ Two techniques worth reusing:
 Use something close to this:
 
 ```text
-Project: ~/Desktop/AgenticAI/FullStackApp/ProCyclingResults
+Project: ~/AgenticAI/FullStackApp/ProCyclingResults
 
 Please read AGENTS.md first. Read README.md only if the task requires broader architectural or parser context. Inspect only the relevant code and tests, keep token usage lean, make the requested change, and run npm test when appropriate.
 
