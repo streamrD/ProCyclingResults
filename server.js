@@ -147,6 +147,11 @@ const TOP_TIER_PUBLISHERS = [
   { pattern: /road\.cc/i, score: 98 },
 ];
 
+// A three-week Grand Tour splits its stage results across two companion articles.
+// Cap the lookups so a malformed route table can never fan out into many fetches
+// against a rate-limited upstream.
+const MAX_STAGE_ARTICLES = 3;
+
 const SEASONS = [
   {
     pageTitle: "2026_UCI_World_Tour",
@@ -1495,6 +1500,21 @@ function splitWikiTemplateArgs(templateText) {
   return args.map((value) => value.trim());
 }
 
+// A {{cyclingresult}} time cell is a bare clock value: an elapsed time ("4h 47' 47\"",
+// "10' 57\"") for the leader and a gap ("+ 9\"", "+ 1' 23\"") for everyone below. Anything
+// carrying wiki markup is a team, jersey or reference argument rather than a time.
+function isWikiResultTimeCell(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned || /[[\]{}<>]/.test(cleaned)) {
+    return false;
+  }
+
+  return (
+    /^\+?\s*(?:\d+\s*h\s*)?(?:\d{1,2}\s*'\s*)?\d{1,2}\s*(?:''|")$/.test(cleaned) ||
+    /^\+?\s*\d+(?::\d{2}){1,2}$/.test(cleaned)
+  );
+}
+
 function parseCyclingResultLine(line) {
   const trimmed = String(line || "").trim();
   if (!/^\{\{\s*cycling\s*result\s*\|/i.test(trimmed)) {
@@ -1507,7 +1527,25 @@ function parseCyclingResultLine(line) {
     return null;
   }
 
-  return buildStandingEntry(cleanWikiText(args[1]), parseAthleteDetails(args[2]));
+  // {{cyclingresult|rank|rider|ESP|{{UCI team code|...}}|4h 47' 47"|{{cjersey|red}}}}
+  // keeps the country and the finishing time in their own positional arguments, while
+  // other pages inline the country as {{flagathlete|[[Rider]]|ESP}} inside the rider
+  // cell. parseAthleteDetails only understands the inline spelling, so reading only it
+  // dropped every flag *and* every time on Grand Tour stage articles.
+  const athlete = parseAthleteDetails(args[2]);
+  const trailingArgs = args.slice(3);
+  // Team and jersey cells are templates, so the country is the only bare alpha token
+  // among them and the time the only clock-shaped one; matching by shape rather than
+  // by position tolerates the optional jersey and team arguments being absent.
+  const positionalCountryCode = trailingArgs.find((value) => /^[A-Za-z]{2,3}$/.test(value)) || "";
+  const timeCell = trailingArgs.find(isWikiResultTimeCell) || "";
+
+  return buildStandingEntry(cleanWikiText(args[1]), {
+    ...athlete,
+    countryCode: athlete.countryCode || positionalCountryCode,
+    gap: timeCell.startsWith("+") ? timeCell : "",
+    time: timeCell.startsWith("+") ? "" : timeCell,
+  });
 }
 
 function extractCyclingResultBlocks(rawText) {
@@ -1605,12 +1643,68 @@ function extractRouteStageWinners(rawText) {
 
       const stageInfo = parseStageSequence(cells[0]);
       const winner = parseAthleteDetails(cells[cells.length - 1]);
+      // The route table is Stage | Date | Course | Distance | Type | Winner, so the
+      // date and course cells give a stage its label without a second fetch. They are
+      // best-effort: a race whose table omits them just renders the stage number.
+      const stageDate = cleanWikiText(cells[1] || "");
+      const course = cleanWikiText(cells[2] || "");
       // A stage whose race has not happened yet has an empty winner cell; reject
       // any winner still carrying table-layout residue (e.g. a "colspan" cell from
       // a merged "Total" footer row) so a scheduled stage is never read as raced.
-      return stageInfo && isPlausibleRiderName(winner.rider) ? { ...stageInfo, winner } : null;
+      return stageInfo && isPlausibleRiderName(winner.rider) ? { ...stageInfo, stageDate, course, winner } : null;
     })
     .filter(Boolean);
+}
+
+// One entry per stage that has actually been raced, richest source first: the full
+// podium from a {{cyclingresult}} block when a page publishes one, otherwise the
+// winner-only row from the route table. Ordering follows the route table so a
+// prologue sorts ahead of stage 1.
+// A Grand Tour's route table links each stage number at its companion article
+// ("[[2026 Vuelta a España, Stage 1 to Stage 11#Stage 1|1]]"), so the titles can be
+// read off the page instead of guessed from a naming convention. Races that publish
+// their stage results inline return nothing here and cost no extra fetch.
+function extractStageArticleTitles(rawText) {
+  const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
+  const titles = [...routeTable.matchAll(/\[\[([^|\]#]*,\s*Stage\s[^|\]#]*)(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]/gi)].map(
+    (match) => match[1].trim(),
+  );
+
+  return [...new Set(titles)].filter(Boolean).slice(0, MAX_STAGE_ARTICLES);
+}
+
+function buildStageHistory(routeStageWinners, stageResults) {
+  const standingsByStage = new Map();
+  stageResults.forEach((entry) => {
+    const existing = standingsByStage.get(entry.stageNumber);
+    if (!existing || entry.standings.length > existing.length) {
+      standingsByStage.set(entry.stageNumber, entry.standings);
+    }
+  });
+
+  const routeByStage = new Map(routeStageWinners.map((entry) => [entry.stageNumber, entry]));
+
+  return [...new Set([...routeByStage.keys(), ...standingsByStage.keys()])]
+    .map((stageNumber) => {
+      const routeEntry = routeByStage.get(stageNumber) || null;
+      const standings =
+        standingsByStage.get(stageNumber) || [buildStandingEntry(1, routeEntry?.winner)].filter(Boolean);
+      if (standings.length === 0) {
+        return null;
+      }
+
+      return {
+        number: stageNumber,
+        order: routeEntry?.stageOrder ?? stageNumber,
+        label: routeEntry?.stageLabel || (stageNumber === 0 ? "Prologue" : `Stage ${stageNumber}`),
+        ...(routeEntry?.stageDate ? { date: routeEntry.stageDate } : {}),
+        ...(routeEntry?.course ? { course: routeEntry.course } : {}),
+        standings,
+        ...getWinnerDetails(standings),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.order - right.order);
 }
 
 function extractStageLeadershipGcSnapshots(rawText) {
@@ -1751,12 +1845,19 @@ function parseTotalStages(rawText) {
   return stageCount + (hasPrologue ? 1 : 0);
 }
 
-function extractStageRaceSnapshot(rawText) {
+// Grand Tours keep only a winner column on the main article and publish the real
+// stage podiums on companion pages ("2026 Vuelta a España, Stage 1 to Stage 11").
+// `stageArticleTexts` carries those pages so a stage-by-stage history can be built;
+// `overallResult` is still read from `rawText` alone, because a stage article's first
+// "Stage 1 Result" block would otherwise be mistaken for the race's overall result.
+function extractStageRaceSnapshot(rawText, stageArticleTexts = []) {
   const blocks = extractCyclingResultBlocks(rawText);
+  const stageArticleBlocks = (Array.isArray(stageArticleTexts) ? stageArticleTexts : [stageArticleTexts])
+    .flatMap((text) => extractCyclingResultBlocks(text));
   const stageResults = [];
   const gcResults = [];
 
-  blocks.forEach((block) => {
+  const readResultBlock = (block, allowGeneralClassification) => {
     const title = normalizeSearchText(block.title);
     const stageMatch = title.match(/\bstage\s+(\d+)\s+result\b/);
     const gcMatch = title.match(/\bgeneral classification after stage\s+(\d+)\b/);
@@ -1769,34 +1870,38 @@ function extractStageRaceSnapshot(rawText) {
       });
     }
 
-    if (gcMatch && standings.length > 0) {
+    if (allowGeneralClassification && gcMatch && standings.length > 0) {
       gcResults.push({
         stageNumber: Number(gcMatch[1]),
         standings,
       });
     }
-  });
+  };
+
+  blocks.forEach((block) => readResultBlock(block, true));
+  // Companion stage articles contribute their stage podiums only. They also repeat a
+  // "General classification after Stage N" block, but those are hand-copied and drift
+  // from the main article's classification table — on the 2026 Vuelta the stage 2 GC
+  // block still carries the stage 1 leader time, which would contradict the gaps
+  // rendered beneath it.
+  stageArticleBlocks.forEach((block) => readResultBlock(block, false));
 
   const routeStageWinners = extractRouteStageWinners(rawText);
   const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
-  const latestStage =
-    [...stageResults]
-      .map((entry) => ({
-        ...entry,
-        stageOrder: entry.stageNumber,
-        stageLabel: `Stage ${entry.stageNumber}`,
-      }))
-      .sort((left, right) => right.stageOrder - left.stageOrder)[0] ||
-    [...routeStageWinners]
-      .sort((left, right) => right.stageOrder - left.stageOrder)
-      .map((entry) => ({
-        stageNumber: entry.stageNumber,
-        stageOrder: entry.stageOrder,
-        stageLabel: entry.stageLabel,
-        standings: [buildStandingEntry(1, entry.winner)].filter(Boolean),
-      }))[0] ||
-    null;
+  const stages = buildStageHistory(routeStageWinners, stageResults);
+  // The most recent raced stage is simply the last history entry, so the card's
+  // headline stage and its stage selector can never disagree about which stage is
+  // current or about how deep that stage's result is.
+  const latestStageEntry = stages[stages.length - 1] || null;
+  const latestStage = latestStageEntry
+    ? {
+        stageNumber: latestStageEntry.number,
+        stageOrder: latestStageEntry.order,
+        stageLabel: latestStageEntry.label,
+        standings: latestStageEntry.standings,
+      }
+    : null;
   // Ordering matters on ties: the {{cycling result}} blocks and the classification
   // tables carry full standings, while the leadership table only yields the leader.
   const latestGc =
@@ -1819,6 +1924,7 @@ function extractStageRaceSnapshot(rawText) {
 
   return {
     totalStages,
+    stages,
     completedStages: Math.max(
       latestGc?.stageNumber || 0,
       latestStage?.stageOrder || 0,
@@ -2681,6 +2787,16 @@ function getStageRaceFieldSourceId(field, primaryField, primarySnapshot, seconda
   return "";
 }
 
+function getStageHistoryQuality(stages) {
+  const entries = Array.isArray(stages) ? stages : [];
+
+  return [
+    entries.filter((entry) => (entry?.standings?.length || 0) > 1).length,
+    entries.filter((entry) => (entry?.standings?.length || 0) > 0).length,
+    entries.length,
+  ];
+}
+
 function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   const preferredSnapshot = choosePreferredByQuality(primary, secondary, (snapshot) => {
     if (!snapshot) {
@@ -2728,6 +2844,10 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
       now,
     ),
   );
+  // Official providers report only the current stage, so the Wikipedia-derived
+  // history is normally the only side carrying one. Prefer whichever side knows more
+  // stages in depth rather than whichever snapshot won overall.
+  const stages = choosePreferredByQuality(primary?.stages, secondary?.stages, getStageHistoryQuality);
   const totalStages = Math.max(
     Number(primary?.totalStages || 0),
     Number(secondary?.totalStages || 0),
@@ -2775,6 +2895,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
         totalStages: resolvedTotalStages,
+        stages: Array.isArray(stages) ? stages : [],
         completedStages,
         latestStage: latestStage
           ? {
@@ -2893,7 +3014,10 @@ function normalizeStandingGap(value) {
     return "";
   }
 
-  const asoMatch = cleaned.match(/\+?\s*(?:(\d+)h\s*)?(\d{1,2})'\s*(\d{2})''/i);
+  // ASO markup writes seconds as two apostrophes ("12' 34''") while Wikipedia's
+  // {{cyclingresult}} cells use a real double quote ("12' 34\""), and a sprint gap
+  // is often seconds-only ("+ 9\"") with no minutes part at all.
+  const asoMatch = cleaned.match(/\+?\s*(?:(\d+)\s*h\s*)?(?:(\d{1,2})\s*'\s*)?(\d{1,2})\s*(?:''|")/);
   if (asoMatch) {
     const hours = Number.parseInt(asoMatch[1] || "0", 10);
     const minutes = Number.parseInt(asoMatch[2] || "0", 10);
@@ -2924,7 +3048,7 @@ function normalizeStandingTime(value) {
     return "";
   }
 
-  const asoMatch = cleaned.match(/(?:(\d+)h\s*)?(\d{1,2})'\s*(\d{2})''/i);
+  const asoMatch = cleaned.match(/(?:(\d+)\s*h\s*)?(?:(\d{1,2})\s*'\s*)?(\d{1,2})\s*(?:''|")/);
   if (asoMatch) {
     const hours = Number.parseInt(asoMatch[1] || "0", 10);
     const minutes = Number.parseInt(asoMatch[2] || "0", 10);
@@ -4121,6 +4245,66 @@ function isRaceWithinScheduledLiveWindow(race, todayUtc = new Date()) {
   );
 }
 
+// Companion stage articles are a bonus source: a page that 404s or times out must
+// leave the race rendering exactly as it did from the main article alone.
+async function loadStageArticleTexts(rawText, loadWikiRaw = fetchWikiRaw) {
+  const titles = extractStageArticleTitles(rawText);
+  if (titles.length === 0) {
+    return [];
+  }
+
+  const texts = await Promise.all(
+    titles.map((title) =>
+      loadWikiRaw(title).catch(() => ""),
+    ),
+  );
+
+  return texts.filter(Boolean);
+}
+
+// Companion stage articles are read at build time for live races only, so a finished
+// race's card starts from the route table's winner-per-stage history. This fills in the
+// real podiums for one race on request, keeping the cold-start budget on the races that
+// are actually moving. Cached because the answer for a finished race never changes.
+const stageHistoryCache = new Map();
+const STAGE_HISTORY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_STAGE_HISTORY_CACHE_ENTRIES = 40;
+
+async function loadRequestedStageHistory(race) {
+  const cacheKey = getRaceId(race);
+  const cached = stageHistoryCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < STAGE_HISTORY_CACHE_TTL_MS) {
+    return cached.stages;
+  }
+
+  const loadWikiRaw = createWikiRawLoader();
+  const raw = await loadWikiRaw(race.pageTitle);
+  const stageArticleTexts = await loadStageArticleTexts(raw, loadWikiRaw);
+  const stages =
+    stageArticleTexts.length > 0 ? extractStageRaceSnapshot(raw, stageArticleTexts).stages || [] : [];
+
+  if (stageHistoryCache.size >= MAX_STAGE_HISTORY_CACHE_ENTRIES) {
+    stageHistoryCache.delete(stageHistoryCache.keys().next().value);
+  }
+  stageHistoryCache.set(cacheKey, { fetchedAt: Date.now(), stages });
+  return stages;
+}
+
+// Only races already on the page can be asked for, so the race id cannot be turned into
+// an arbitrary Wikipedia fetch.
+function findStageRaceById(data, raceId) {
+  const wanted = String(raceId || "").trim();
+  if (!wanted) {
+    return null;
+  }
+
+  return (
+    [...(data?.recentResults || []), ...(data?.finalizedStageRaces || []), ...(data?.liveStageRaces || [])].find(
+      (race) => getRaceId(race) === wanted && Array.isArray(race?.stageRace?.stages),
+    ) || null
+  );
+}
+
 async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
   await Promise.all(
     races.map(async (race) => {
@@ -4131,8 +4315,9 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
       try {
         const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
         const raw = await loadWikiRaw(race.pageTitle);
+        const stageArticleTexts = await loadStageArticleTexts(raw, loadWikiRaw);
         const parsedSnapshot = annotateStageRaceSnapshotSource(
-          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
+          applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw, stageArticleTexts)),
           "wikipedia-raw",
         );
         const snapshot = selectPreferredStageRaceSnapshot(officialSnapshot, parsedSnapshot, race);
@@ -4170,6 +4355,12 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw) {
         }
 
         const raw = await loadWikiRaw(race.pageTitle);
+        // Deliberately no companion stage articles here. Reading them for every recent
+        // race cost ~2s of a ~20s cold start, and a finished race's deep stage podiums
+        // are not what the homepage is waiting on. The route table still yields a
+        // winner-per-stage history, and /api/race-stages fills in the podiums for one
+        // race on request. Live races still read them at build time, in
+        // enrichStageRaceSnapshots, because that is the race people are watching.
         const parsedSnapshot = annotateStageRaceSnapshotSource(
           applyKnownStageRaceCorrections(race, extractStageRaceSnapshot(raw)),
           "wikipedia-raw",
@@ -5909,6 +6100,107 @@ function selectRichestStandings(...candidateLists) {
     .sort((left, right) => right.length - left.length)[0] || [];
 }
 
+function buildStageSlug(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
+  const standings = selectStandings(stage.standings);
+  const courseMeta = [stage.date, stage.course].filter(Boolean).join(" • ");
+
+  return `
+      <div class="stage-panel" id="${escapeHtml(stageId)}" data-stage-panel role="tabpanel" aria-label="${escapeHtml(
+        stage.label,
+      )} result"${isCurrentStage ? "" : " hidden"}>
+        <div class="detail-label">${escapeHtml(stage.label)} winner</div>
+        ${courseMeta ? `<p class="stage-panel-meta">${escapeHtml(courseMeta)}</p>` : ""}
+        <div class="stage-winner">${buildRiderMarkup(
+          { rider: stage.winner, countryCode: stage.winnerCountryCode, time: standings[0]?.time || "" },
+          "stage-winner-rider",
+          { metricContext: "stage" },
+        )}</div>
+        ${buildPodiumMarkup(standings, { metricContext: "stage" })}
+        ${isCurrentStage ? buildRaceFinishLink(race) : ""}
+      </div>`;
+}
+
+// A three-week race would push its GC far below the fold if every stage rendered at
+// once, so the stages share one panel and a numbered strip swaps between them. The
+// strip lists the full route, with stages that have not been raced yet disabled, so a
+// 21-stage card stays exactly as tall as a 5-stage one.
+//
+// A finished race is built from the route table alone, so its panels start winner-only
+// and carry a control to pull the real podiums from the companion stage articles.
+// `options.stageResultsRequested` marks the re-render after that request, so the button
+// is not offered a second time when the source had nothing deeper to give.
+function buildStageSwitcherMarkup(race, options = {}) {
+  const stages = (race.stageRace?.stages || []).filter((stage) => (stage?.standings?.length || 0) > 0);
+  if (stages.length < 2) {
+    return "";
+  }
+
+  const racedNumbers = new Set(stages.map((stage) => stage.number));
+  const currentNumber = stages[stages.length - 1].number;
+  const totalStages = Math.max(race.stageRace?.totalStages || 0, ...stages.map((stage) => stage.number));
+  const raceSlug = buildStageSlug(race.id || race.pageTitle || race.title);
+  const stageId = (stageNumber) => `${raceSlug}-stage-${stageNumber}`;
+  // parseTotalStages counts a prologue as a stage, so a race with a prologue has one
+  // fewer numbered stage than its total; without this the strip grows a phantom chip.
+  const hasPrologue = racedNumbers.has(0);
+  const numberedStageCount = Math.max(0, totalStages - (hasPrologue ? 1 : 0));
+
+  const chips = [...(hasPrologue ? [0] : []), ...Array.from({ length: numberedStageCount }, (unused, index) => index + 1)]
+    .map((stageNumber) => {
+      const chipLabel = stageNumber === 0 ? "P" : String(stageNumber);
+      if (!racedNumbers.has(stageNumber)) {
+        // A gap below the current stage is a stage we have no rider result for — a
+        // team time trial, say — not a stage that has yet to happen. Both are
+        // unselectable, but they should not claim to mean the same thing.
+        const chipTitle = stageNumber < currentNumber ? "No published result" : "Not raced yet";
+        return `<span class="stage-chip is-upcoming" title="${escapeHtml(chipTitle)}">${escapeHtml(chipLabel)}</span>`;
+      }
+
+      const isCurrentStage = stageNumber === currentNumber;
+      return `<button type="button" class="stage-chip${isCurrentStage ? " is-active" : ""}" role="tab" aria-selected="${
+        isCurrentStage ? "true" : "false"
+      }" aria-controls="${escapeHtml(stageId(stageNumber))}" data-stage-target="${escapeHtml(
+        stageId(stageNumber),
+      )}">${escapeHtml(chipLabel)}</button>`;
+    })
+    .join("");
+
+  const panels = stages
+    .map((stage) => buildStagePanelMarkup(race, stage, stageId(stage.number), stage.number === currentNumber))
+    .join("");
+  // Live races read their companion articles at build time, so their panels are already
+  // as deep as the source allows and there is nothing to offer.
+  const isShallowHistory = stages.some((stage) => stage.standings.length < 2);
+  const stageResultsControl =
+    !isShallowHistory || options.live
+      ? ""
+      : options.stageResultsRequested
+        ? `<p class="stage-panel-meta">No fuller stage results are published for this race.</p>`
+        : `
+        <button type="button" class="load-coverage-button stage-results-button" data-load-stage-results="${escapeHtml(
+          getRaceId(race),
+        )}">
+          Load full stage results
+        </button>`;
+
+  return `
+      <div class="card-subsection stage-switcher" data-stage-switcher>
+        <div class="detail-label">Stage results</div>
+        <div class="stage-strip" role="tablist" aria-label="${escapeHtml(race.title)} stages">${chips}</div>
+        ${panels}
+        ${stageResultsControl}
+      </div>`;
+}
+
 function buildStageRaceCard(race, options = {}) {
   const latestStage = race.stageRace?.latestStage || null;
   const classification = race.stageRace?.generalClassification || null;
@@ -5962,7 +6254,10 @@ function buildStageRaceCard(race, options = {}) {
     : isFinalized
       ? `<p class="stage-status-note">${escapeHtml(totalStagesLabel)}</p>`
       : "";
-  const stageContent = latestStage?.winner
+  const stageSwitcher = buildStageSwitcherMarkup(race, { live: Boolean(options.live) });
+  const stageContent = stageSwitcher
+    ? stageSwitcher
+    : latestStage?.winner
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(stageLabel)} winner</div>
@@ -7453,6 +7748,77 @@ function buildHtmlPage(data, view) {
         line-height: 1.45;
       }
 
+      .stage-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin: 0.55rem 0 0.2rem;
+      }
+
+      .stage-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.85rem;
+        height: 1.85rem;
+        padding: 0 0.35rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.75);
+        color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.92rem;
+        font-weight: 700;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .stage-chip:hover {
+        border-color: var(--uci-blue-bright);
+        background: rgba(0, 120, 199, 0.12);
+      }
+
+      .stage-chip:focus-visible {
+        outline: 2px solid var(--uci-blue-bright);
+        outline-offset: 2px;
+      }
+
+      .stage-chip.is-active {
+        border-color: var(--uci-blue);
+        background: var(--uci-blue);
+        color: white;
+      }
+
+      /* A stage that has not been raced yet still occupies the strip, so the card
+         shows the length of the race and never changes height as stages complete. */
+      .stage-chip.is-upcoming {
+        border-style: dashed;
+        border-color: var(--line);
+        background: transparent;
+        color: rgba(9, 33, 76, 0.32);
+        cursor: default;
+      }
+
+      .stage-panel-meta {
+        margin: 0.3rem 0 0;
+        color: rgba(9, 33, 76, 0.66);
+        font-size: 0.86rem;
+        line-height: 1.35;
+      }
+
+      .stage-panel[hidden] {
+        display: none;
+      }
+
+      .stage-results-button {
+        width: 100%;
+        margin-top: 0.9rem;
+        min-height: 2.6rem;
+        padding: 0.6rem 1rem;
+        font-size: 0.86rem;
+      }
+
       .article-grid {
         display: grid;
         gap: 1rem;
@@ -7986,6 +8352,49 @@ function buildHtmlPage(data, view) {
         }
       }
 
+      document.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-load-stage-results]");
+        if (!button) {
+          return;
+        }
+
+        const switcher = button.closest("[data-stage-switcher]");
+        button.classList.add("is-loading");
+        button.textContent = "Loading stage results…";
+
+        try {
+          const params = new URLSearchParams({ race: button.dataset.loadStageResults });
+          const result = await fetch("/api/race-stages?" + params.toString(), { cache: "no-store" });
+          if (!result.ok) {
+            throw new Error("Unable to load stage results");
+          }
+
+          const payload = await result.json();
+          switcher.outerHTML = payload.html || switcher.outerHTML;
+        } catch (error) {
+          button.classList.remove("is-loading");
+          button.textContent = "Stage results unavailable — try again";
+        }
+      });
+
+      // Delegated so stage strips inside deferred sections work without rebinding.
+      document.addEventListener("click", (event) => {
+        const chip = event.target.closest("[data-stage-target]");
+        const switcher = chip ? chip.closest("[data-stage-switcher]") : null;
+        if (!switcher) {
+          return;
+        }
+
+        switcher.querySelectorAll("[data-stage-target]").forEach((stageChip) => {
+          const isActive = stageChip === chip;
+          stageChip.classList.toggle("is-active", isActive);
+          stageChip.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+        switcher.querySelectorAll("[data-stage-panel]").forEach((panel) => {
+          panel.hidden = panel.id !== chip.dataset.stageTarget;
+        });
+      });
+
       document.addEventListener("click", (event) => {
         const button = event.target.closest(".deferred-load-button");
         if (!button) {
@@ -8320,6 +8729,32 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 200, {
           groupId,
           html: buildCoverageBlock(group, coverageView),
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/race-stages") {
+        const raceId = url.searchParams.get("race") || "";
+        const data = await loadRaceData({ includeDeferred: false });
+        const race = findStageRaceById(data, raceId);
+        if (!race) {
+          sendJson(response, 404, { error: "Unknown stage race." });
+          return;
+        }
+
+        const requestedStages = await loadRequestedStageHistory(race);
+        const preferredStages = choosePreferredByQuality(
+          requestedStages,
+          race.stageRace.stages,
+          getStageHistoryQuality,
+        );
+        // Write the deeper history back onto the cached race so the next full page
+        // render already has it, until the race-data cache next rebuilds.
+        race.stageRace.stages = Array.isArray(preferredStages) ? preferredStages : race.stageRace.stages;
+
+        sendJson(response, 200, {
+          raceId: getRaceId(race),
+          html: buildStageSwitcherMarkup(race, { stageResultsRequested: true }),
         });
         return;
       }

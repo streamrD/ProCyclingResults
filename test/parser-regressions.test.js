@@ -84,6 +84,10 @@ function loadParserExports() {
       buildNationalChampionshipsSection,
       getCompetitionGroups,
       buildRecentResultsBlock,
+      extractStageArticleTitles,
+      buildStageSwitcherMarkup,
+      mergeStageRaceSnapshots,
+      findStageRaceById,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -3168,4 +3172,302 @@ test("buildRaceCard renders a finished stage race that lacks a snapshot from its
   assert.match(html, /Jonas Vingegaard/);
   assert.match(html, /Primož Roglič/);
   assert.match(html, /Juan Ayuso/);
+});
+
+test("extractStageArticleTitles reads companion stage articles off the route table", () => {
+  const { extractStageArticleTitles } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-stage2.wikitext"), "utf8");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(extractStageArticleTitles(rawText))), [
+    "2026 Vuelta a España, Stage 1 to Stage 11",
+  ]);
+});
+
+test("extractStageArticleTitles returns nothing for a race that publishes stages inline", () => {
+  const { extractStageArticleTitles } = loadParserExports();
+  // A shorter stage race numbers its route table rows without linking anywhere, so
+  // there is no companion article to fetch and no extra upstream request to make.
+  const rawText = [
+    '{| class="wikitable"',
+    "|+ Stage characteristics and winners",
+    "|-",
+    '! scope="row" | 1',
+    "| 15 May",
+    "| [[Vitoria-Gasteiz]] to [[Vitoria-Gasteiz]]",
+    "| {{convert|100|km|abbr=on}}",
+    "| [[File:Hillystage.svg|20px]]",
+    "| Hilly stage",
+    "| {{flagathlete|[[Demi Vollering]]|NED}}",
+    "|}",
+  ].join("\n");
+
+  assert.deepEqual(JSON.parse(JSON.stringify(extractStageArticleTitles(rawText))), []);
+});
+
+test("extractStageArticleTitles also finds companion articles for shorter stage races", () => {
+  const { extractStageArticleTitles } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "la-vuelta-femenina-stage1.wikitext"), "utf8");
+
+  // Companion stage articles are not a Grand Tour convention: any race whose route
+  // table links them gets a deep stage history for free.
+  assert.deepEqual(JSON.parse(JSON.stringify(extractStageArticleTitles(rawText))), [
+    "2026 La Vuelta Femenina, Stage 1 to Stage 7",
+  ]);
+});
+
+test("extractStageRaceSnapshot builds a stage history from companion stage articles", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-stage2.wikitext"), "utf8");
+  const companionText = fs.readFileSync(
+    path.join(__dirname, "fixtures", "vuelta-a-espana-stages-1-11.wikitext"),
+    "utf8",
+  );
+
+  const snapshot = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText, [companionText])));
+
+  assert.equal(snapshot.stages.length, 2);
+  assert.deepEqual(
+    snapshot.stages.map((stage) => [stage.number, stage.label, stage.date, stage.course, stage.standings.length]),
+    [
+      [1, "Stage 1", "22 August", "Monaco to Monaco", 5],
+      [2, "Stage 2", "23 August", "Monaco to Manosque (France)", 5],
+    ],
+  );
+  // The main article alone only publishes a winner column, so the depth here is the
+  // whole point of reading the companion article.
+  assert.equal(extractStageRaceSnapshot(rawText).stages[1].standings.length, 1);
+  assert.equal(snapshot.latestStage.number, 2);
+  assert.deepEqual(snapshot.latestStage.standings[1], { place: "2", rider: "Pau Miquel", countryCode: "ESP" });
+});
+
+test("extractStageRaceSnapshot keeps the main article's general classification over a companion copy", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-stage2.wikitext"), "utf8");
+  const companionText = fs.readFileSync(
+    path.join(__dirname, "fixtures", "vuelta-a-espana-stages-1-11.wikitext"),
+    "utf8",
+  );
+
+  const snapshot = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText, [companionText])));
+
+  // The companion article repeats a stage 2 GC block still carrying the stage 1
+  // leader time (10:57); the main article's classification table is the one whose
+  // cumulative time agrees with the gaps below it.
+  assert.equal(snapshot.generalClassification.standings[0].time, "4:58:40");
+  assert.equal(snapshot.generalClassification.standings[1].gap, "+00:09");
+  // A companion "Stage 1 Result" block must never be mistaken for the overall result.
+  assert.deepEqual(snapshot.overallResult, []);
+});
+
+test("parseCyclingResultLine reads the positional country and time arguments", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  const companionText = fs.readFileSync(
+    path.join(__dirname, "fixtures", "vuelta-a-espana-stages-1-11.wikitext"),
+    "utf8",
+  );
+
+  const [stageOne] = JSON.parse(JSON.stringify(extractStageRaceSnapshot("", [companionText]))).stages;
+
+  assert.deepEqual(stageOne.standings, [
+    { place: "1", rider: "Tadej Pogačar", countryCode: "SLO", time: "10:57" },
+    { place: "2", rider: "Ethan Hayter", countryCode: "GBR" },
+    { place: "3", rider: "Joshua Tarling", countryCode: "GBR", gap: "+00:04" },
+    { place: "4", rider: "Callum Thornley", countryCode: "GBR", gap: "+00:05" },
+    { place: "5", rider: "Christophe Laporte", countryCode: "FRA", gap: "+00:06" },
+  ]);
+});
+
+test("buildStageSwitcherMarkup renders the whole route with only raced stages selectable", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const html = buildStageSwitcherMarkup({
+    id: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    stageRace: {
+      totalStages: 21,
+      completedStages: 2,
+      stages: [
+        { number: 1, order: 1, label: "Stage 1", date: "22 August", winner: "Tadej Pogačar", standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+        { number: 2, order: 2, label: "Stage 2", date: "23 August", winner: "Matthew Brennan", standings: [{ place: "1", rider: "Matthew Brennan" }] },
+      ],
+    },
+  });
+
+  assert.equal((html.match(/class="stage-chip/g) || []).length, 21);
+  assert.equal((html.match(/<button type="button" class="stage-chip/g) || []).length, 2);
+  // The current stage is the one selected, and it is the only visible panel.
+  assert.match(html, /data-stage-target="2026-vuelta-a-espana-stage-2"/);
+  assert.equal((html.match(/aria-selected="true"/g) || []).length, 1);
+  assert.equal((html.match(/data-stage-panel role="tabpanel"[^>]*hidden/g) || []).length, 1);
+  assert.match(html, /title="Not raced yet"/);
+});
+
+test("buildStageSwitcherMarkup distinguishes an unraced stage from one with no published result", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  // The 2026 Tour de France opened with a team time trial, so stage 1 has no rider
+  // winner even though the race is long past it.
+  const html = buildStageSwitcherMarkup({
+    id: "2026 Tour de France",
+    title: "Tour de France",
+    stageRace: {
+      totalStages: 4,
+      completedStages: 3,
+      stages: [
+        { number: 2, order: 2, label: "Stage 2", winner: "Isaac del Toro", standings: [{ place: "1", rider: "Isaac del Toro" }] },
+        { number: 3, order: 3, label: "Stage 3", winner: "Jonas Vingegaard", standings: [{ place: "1", rider: "Jonas Vingegaard" }] },
+      ],
+    },
+  });
+
+  assert.match(html, /title="No published result">1</);
+  assert.match(html, /title="Not raced yet">4</);
+});
+
+test("buildStageSwitcherMarkup stays out of the way for a race with a single stage result", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+
+  assert.equal(
+    buildStageSwitcherMarkup({
+      id: "2026 Tour of Britain Women",
+      title: "Tour of Britain Women",
+      stageRace: {
+        totalStages: 5,
+        completedStages: 1,
+        stages: [{ number: 1, order: 1, label: "Stage 1", winner: "Lorena Wiebes", standings: [{ place: "1", rider: "Lorena Wiebes" }] }],
+      },
+    }),
+    "",
+  );
+});
+
+test("buildStageRaceCard shows the finish video only on the current stage panel", () => {
+  const { buildStageRaceCard } = loadParserExports();
+  const html = buildStageRaceCard(
+    {
+      id: "2026 Vuelta a España",
+      title: "Vuelta a España",
+      series: "Men's WorldTour",
+      date: "22 August – 13 September 2026",
+      location: "Spain",
+      finishVideoUrl: "https://www.youtube.com/watch?v=IKmJHpLgGC8",
+      stageRace: {
+        totalStages: 21,
+        completedStages: 2,
+        stages: [
+          { number: 1, order: 1, label: "Stage 1", winner: "Tadej Pogačar", standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+          { number: 2, order: 2, label: "Stage 2", winner: "Matthew Brennan", standings: [{ place: "1", rider: "Matthew Brennan" }] },
+        ],
+        generalClassification: { stageNumber: 2, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+        overallResult: [],
+      },
+    },
+    { live: true },
+  );
+
+  assert.equal((html.match(/race-finish-link/g) || []).length, 1);
+  const [, currentStagePanel = ""] = html.split('id="2026-vuelta-a-espana-stage-2"');
+  assert.match(currentStagePanel, /race-finish-link/);
+});
+
+test("mergeStageRaceSnapshots keeps the deeper stage history when an official source has none", () => {
+  const { mergeStageRaceSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+  };
+  const official = {
+    totalStages: 21,
+    completedStages: 2,
+    latestStage: { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "Matthew Brennan" }] },
+    generalClassification: { stageNumber: 2, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    overallResult: [],
+  };
+  const parsed = {
+    totalStages: 21,
+    completedStages: 2,
+    stages: [
+      { number: 1, order: 1, label: "Stage 1", winner: "Tadej Pogačar", standings: [{ place: "1", rider: "Tadej Pogačar" }, { place: "2", rider: "Ethan Hayter" }] },
+      { number: 2, order: 2, label: "Stage 2", winner: "Matthew Brennan", standings: [{ place: "1", rider: "Matthew Brennan" }, { place: "2", rider: "Pau Miquel" }] },
+    ],
+    latestStage: { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "Matthew Brennan" }] },
+    generalClassification: { stageNumber: 2, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    overallResult: [],
+  };
+
+  const merged = mergeStageRaceSnapshots(official, parsed, race, new Date("2026-08-23T20:00:00.000Z"));
+
+  assert.equal(merged.stages.length, 2);
+  assert.equal(merged.stages[0].standings.length, 2);
+});
+
+function buildShallowStageRace() {
+  return {
+    id: "2026 Tour de France",
+    pageTitle: "2026 Tour de France",
+    title: "Tour de France",
+    stageRace: {
+      totalStages: 3,
+      completedStages: 2,
+      stages: [
+        { number: 1, order: 1, label: "Stage 1", winner: "Jonas Vingegaard", standings: [{ place: "1", rider: "Jonas Vingegaard" }] },
+        { number: 2, order: 2, label: "Stage 2", winner: "Isaac del Toro", standings: [{ place: "1", rider: "Isaac del Toro" }] },
+      ],
+    },
+  };
+}
+
+test("buildStageSwitcherMarkup offers an on-demand load when a finished race is winner-only", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const html = buildStageSwitcherMarkup(buildShallowStageRace());
+
+  assert.match(html, /data-load-stage-results="2026 Tour de France"/);
+  assert.match(html, /Load full stage results/);
+});
+
+test("buildStageSwitcherMarkup does not offer the load control on a live race", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  // Live races read their companion articles at build time, so a shallow history means
+  // the source has nothing deeper, not that it went unfetched.
+  const html = buildStageSwitcherMarkup(buildShallowStageRace(), { live: true });
+
+  assert.doesNotMatch(html, /data-load-stage-results/);
+  assert.doesNotMatch(html, /No fuller stage results/);
+});
+
+test("buildStageSwitcherMarkup drops the load control once every stage is deep", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const race = buildShallowStageRace();
+  race.stageRace.stages.forEach((stage) => {
+    stage.standings = [
+      { place: "1", rider: stage.winner },
+      { place: "2", rider: "Second Rider" },
+    ];
+  });
+
+  assert.doesNotMatch(buildStageSwitcherMarkup(race), /data-load-stage-results/);
+});
+
+test("buildStageSwitcherMarkup says so when a requested load found nothing deeper", () => {
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const html = buildStageSwitcherMarkup(buildShallowStageRace(), { stageResultsRequested: true });
+
+  assert.doesNotMatch(html, /data-load-stage-results/);
+  assert.match(html, /No fuller stage results are published for this race\./);
+});
+
+test("findStageRaceById only resolves races already on the page", () => {
+  const { findStageRaceById } = loadParserExports();
+  const tourDeFrance = buildShallowStageRace();
+  const data = {
+    recentResults: [{ id: "2026 Hamburg Cyclassics", pageTitle: "2026 Hamburg Cyclassics", title: "Hamburg Cyclassics" }],
+    finalizedStageRaces: [tourDeFrance],
+    liveStageRaces: [],
+  };
+
+  assert.equal(findStageRaceById(data, "2026 Tour de France")?.pageTitle, "2026 Tour de France");
+  // A race id cannot be turned into an arbitrary Wikipedia fetch.
+  assert.equal(findStageRaceById(data, "Barack Obama"), null);
+  assert.equal(findStageRaceById(data, ""), null);
+  // A one-day race carries no stage history to deepen.
+  assert.equal(findStageRaceById(data, "2026 Hamburg Cyclassics"), null);
 });

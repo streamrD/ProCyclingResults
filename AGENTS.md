@@ -57,6 +57,7 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - National Championships should prioritize completed event records in the UI. Use `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` only for narrow, source-backed date/location/podium/video overrides.
 - `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
 - Giro finish-video links now prefer official livefeed-derived URLs before falling back to the static map.
+- Companion stage articles are read at build time for live stage races only; reading them for recent races too cost roughly 2s of a ~20s cold start. Finished races render a winner-per-stage history and offer `/api/race-stages` on demand. Keep that split unless the cold-start budget changes.
 - A fix only reaches the product when it is pushed to `main`; Railway deploys from there. If the user reports the site is wrong, check what the deployed instance returns before re-debugging local code — they are usually looking at production, not your working tree.
 
 ## Validation
@@ -107,6 +108,8 @@ Task: <your task here>
 Most bugs here come from upstream content drift rather than complex internal state. When race data looks wrong, inspect the relevant parser/provider path before considering broader refactors.
 During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, national championship source drift, and upstream rate limiting before assuming the parser is wrong.
 Giro d'Italia and Giro d'Italia Women now use separate official standings sources, so check the correct provider path before changing shared Giro parsing heuristics.
+
+A stage race whose card shows only the stage winner and no places 2-5 is usually not a parser bug on the main article: longer races publish just a winner column there and keep the real podiums on companion articles (`2026 Vuelta a España, Stage 1 to Stage 11`), linked from the route table. `extractStageArticleTitles` / `loadStageArticleTexts` fetch those, and they feed stage results only — never GC or `overallResult`, whose companion copies drift from the main article. `stageRace.stages` is the per-stage history this produces, and it is what the card's stage-number strip renders. If the shallow race is a finished one, that is by design: only live races read companion articles during a build, and the card carries a "Load full stage results" button that calls `/api/race-stages`.
 
 A race that renders as live but totally empty usually means every source failed at once, not that one is stale. Check what `stageRace.provenance.snapshot` says: `wikipedia-raw` with `completedStages: 0` means the Wikipedia parse returned nothing *and* no official provider matched. Confirm by running the raw wikitext through `extractStageRaceSnapshot` directly before touching anything.
 

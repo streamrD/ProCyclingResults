@@ -1,0 +1,42 @@
+== Stage 1 ==
+;22 August 2026 – [[Monaco]] to Monaco, {{convert|9|km|abbr=on}} ([[Individual time trial|ITT]])
+
+{|
+|-
+||
+{{cyclingresult start|title=Stage 1 Result}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|10' 57"}}
+{{cyclingresult|2|[[Ethan Hayter]]|GBR|{{UCI team code|SOQ|2026}}|+ 0"}}
+{{cyclingresult|3|[[Joshua Tarling]]|GBR|{{UCI team code|NCI|2026b}}|+ 4"}}
+{{cyclingresult|4|[[Callum Thornley]]|GBR|{{UCI team code|RBH|2026}}|+ 5"}}
+{{cyclingresult|5|[[Christophe Laporte]]|FRA|{{UCI team code|TVL men|2026}}|+ 6"}}
+{{cyclingresult end}}
+||
+||
+{{cyclingresult start|title=General classification after Stage 1}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|10' 57"|{{cjersey|red}}}}
+{{cyclingresult|2|[[Ethan Hayter]]|GBR|{{UCI team code|SOQ|2026}}|+ 0"}}
+{{cyclingresult|3|[[Joshua Tarling]]|GBR|{{UCI team code|NCI|2026b}}|+ 4"|{{cjersey|white}}}}
+{{cyclingresult end}}
+|}
+
+== Stage 2 ==
+;23 August 2026 – Monaco to [[Manosque]] (France), {{convert|215.5|km|abbr=on}}
+{|
+|-
+||
+{{cyclingresult start|title=Stage 2 Result}}
+{{cyclingresult|1|[[Matthew Brennan (cyclist)|Matthew Brennan]]|GBR|{{UCI team code|TVL men|2026}}|4h 47' 47"}}
+{{cyclingresult|2|[[Pau Miquel]]|ESP|{{UCI team code|TBV|2026}}|+ 0"}}
+{{cyclingresult|3|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|+ 0"|{{cjersey|red}}}}
+{{cyclingresult|4|[[Mads Pedersen]]|DEN|{{UCI team code|LTK men|2026}}|+ 0"}}
+{{cyclingresult|5|[[Hugo Hofstetter]]|FRA|{{UCI team code|NSN|2026}}|+ 0"}}
+{{cyclingresult end}}
+||
+||
+{{cyclingresult start|title=General classification after Stage 2}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UEX|2026}}|10' 57"|{{cjersey|red}}}}
+{{cyclingresult|2|[[Wout van Aert]]|BEL|{{UCI team code|TVL men|2026}}|+ 9"}}
+{{cyclingresult|3|[[Matthew Brennan (cyclist)|Matthew Brennan]]|GBR|{{UCI team code|TVL men|2026}}|+ 10"|{{cjersey|white}}}}
+{{cyclingresult end}}
+|}

@@ -383,7 +383,65 @@ differ only in entry point, expected page title and default stage count. Fix a p
 bug once, not twice — but note the men's title pattern is anchored so it cannot match a
 Femmes page, and vice versa.
 
+## Parser Traps Learned On 2026-08-23
+
+The 2026 Vuelta a España card rendered with a stage podium one rider deep. The race was
+never missing — production had it in Live Multi-Stage the whole time — but the stage
+section carried only a winner, which reads as "no results". Both causes below are in
+shared code, so both were latent on every page using the same markup.
+
+**`{{cyclingresult}}` keeps the country and the time in positional arguments.**
+The template is `{{cyclingresult|rank|rider|ESP|{{UCI team code|...}}|4h 47' 47"}}`.
+`parseCyclingResultLine` passed only the rider cell to `parseAthleteDetails`, which
+looks for an inline `{{flagathlete|[[Rider]]|ESP}}`. The positional country and the
+time were both discarded — every flag and every time on these pages. The fix matches by
+shape, not index: among the trailing arguments the country is the only bare alpha token
+(team and jersey cells are templates) and the time the only clock-shaped one, so an
+absent jersey or team argument does not shift them. The blast radius of the fix was
+visible in an `/api/races` diff: times and gaps appeared on ten races that had silently
+been rendering without them, and no rider name or ordering changed anywhere.
+
+**Wikitext writes seconds with a real double quote, ASO writes two apostrophes.**
+`normalizeStandingTime` / `normalizeStandingGap` matched `12' 34''` only. Wikitext uses
+`12' 34"`, and a sprint gap is often seconds-only (`+ 9"`) with no minutes part. Both
+normalizers now accept either marker and an optional minutes group.
+
+**Longer stage races publish podiums on companion articles.**
+The main article's route table has a winner column and nothing else. The real per-stage
+results live on `2026 Vuelta a España, Stage 1 to Stage 11`, which the route table
+links from each stage number — so `extractStageArticleTitles` reads the titles off the
+page instead of guessing a naming convention, and a race that publishes inline costs no
+extra fetch. This is not a Grand Tour convention; La Vuelta Femenina links them too.
+
+**Companion articles are trustworthy for stage results and not for anything else.**
+They repeat a `General classification after Stage N` block, but those are hand-copied:
+on the 2026 Vuelta the stage 2 GC block still carried the stage 1 leader time (10:57
+instead of 4:58:40), which would have contradicted the gaps rendered directly beneath
+it. Folding companion blocks into the shared block list regressed the GC on the first
+attempt. They now feed `stageResults` only, and `findOverallRaceResult` never sees them
+— otherwise a `Stage 1 Result` block gets read as the race's overall result.
+
+**Deep stage history is worth a cold-start budget only for live races.**
+Reading companion articles for every recent race too added ~2s to a ~20s cold start.
+The split that survived: live races read them during the build, finished races render
+the route table's winner-per-stage history and offer `/api/race-stages` on demand,
+cached six hours and written back onto the cached race so the next page render already
+has it. The endpoint resolves its race through `findStageRaceById` against the current
+payload, so a race id cannot be turned into an arbitrary Wikipedia fetch. Worth knowing
+before optimizing further: many shorter stage races publish podiums inline on the main
+article and were already deep without any companion fetch at all.
+
+**A stage strip is the shape that survives a three-week race.**
+`stageRace.stages` holds one entry per raced stage and the card renders a numbered
+strip over the whole route with future stages disabled, swapping one panel in place.
+A 21-stage card is the same height as a 5-stage one. Two details that are easy to get
+wrong: `parseTotalStages` counts a prologue as a stage, so a prologue race needs one
+fewer numbered chip or the strip grows a phantom; and a gap *below* the current stage
+is a stage with no rider result (the 2026 Tour opened with a team time trial), not a
+stage that has not happened, so the two carry different titles.
+
 ## Process Lessons From The Same Session
+
 
 - **Local green does not mean the product is fixed.** The fix worked locally for two
   rounds while the user was looking at the deployed site, which was still on old code.

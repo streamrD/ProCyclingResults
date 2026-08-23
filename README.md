@@ -131,6 +131,8 @@ There is currently:
   Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
 - `/api/competition-coverage?group=<id>`
   Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
+- `/api/race-stages?race=<race id>`
+  Returns `{ raceId, html }` with a re-rendered stage switcher for one finished stage race, after reading its companion stage articles. The id must match a race already in the homepage payload (`findStageRaceById`), so it cannot be used to fetch an arbitrary Wikipedia page; anything else returns `404`.
 - `/assets/*`
   Serves static assets from the local `assets` directory.
 
@@ -272,7 +274,7 @@ Parsed race entries generally include:
 - `startDate`
 - `endDate`
 - `finishedToday`
-- `stageRace` when applicable
+- `stageRace` when applicable, including `stages` for multi-day races
 - `resultStandings` when richer standings are available
 
 These objects are plain JS objects, not instances or schemas.
@@ -342,6 +344,7 @@ For multi-day races, the app tries to derive:
 - latest stage winner
 - latest general classification
 - final overall result
+- a per-stage history in `stageRace.stages` (see below)
 
 It does this from Wikipedia race pages when possible by parsing:
 
@@ -352,10 +355,18 @@ It does this from Wikipedia race pages when possible by parsing:
 - route/stage winner tables
 - infobox first/second/third fields
 
-Two page-shape variations are worth knowing about, because both silently produced an empty snapshot until they were handled:
+Four page-shape variations are worth knowing about, because each silently produced an empty or shallow snapshot until it was handled:
 
 - Grand Tour pages (Tour de France, Tour de France Femmes) publish in-progress standings as plain wikitables rather than `{{cycling result start}}` blocks, which is what `extractClassificationTableGcSnapshots` reads. Prefer it over the classification-leadership table, whose `rowspan` columns do not line up per row and yield the wrong leader.
 - Rider cells use several redirects of the same template interchangeably — `{{flagathlete}}`, `{{Flagathlete}}` and `{{Flag athlete}}`. The spaced spelling is now the most common one on Tour de France pages, so `parseAthleteDetails` matches all of them; a name-only match drops every rider on those pages.
+- `{{cyclingresult|1|[[Rider]]|ESP|{{UCI team code|...}}|4h 47' 47"}}` keeps the country and the finishing time in their own positional arguments, not inside the rider cell. `parseCyclingResultLine` reads them by shape rather than by index — the country is the only bare alpha token among the trailing arguments and the time the only clock-shaped one — so an absent team or jersey argument does not shift them. Reading only the rider cell dropped every flag and every time on these pages.
+- Longer stage races publish only a winner column on the main article and put the real stage podiums on companion articles (`2026 Vuelta a España, Stage 1 to Stage 11`). The route table links them, so `extractStageArticleTitles` reads the titles off the page rather than guessing a naming convention, and `loadStageArticleTexts` fetches them (capped by `MAX_STAGE_ARTICLES`, failures degrade to the main article alone). This is not a Grand Tour convention: La Vuelta Femenina links them too, and any race that does gets a deep history for free.
+
+Companion articles are read **at build time for live stage races only**, in `enrichStageRaceSnapshots`. Reading them for every recent race as well cost about 2s of a ~20s cold start, which is not what the homepage should be waiting on for a race that finished in May. Finished races therefore start from the route table's winner-per-stage history and offer a "Load full stage results" control that calls `/api/race-stages`; the response is cached for six hours and written back onto the cached race, so the next full page render already has it. Note that many shorter stage races publish their podiums inline on the main article and are already deep without any of this.
+
+Companion articles feed **stage results only**. They also repeat a `General classification after Stage N` block, but those are hand-copied and drift — on the 2026 Vuelta the stage 2 GC block still carried the stage 1 leader time, which would contradict the gaps rendered beneath it. The main article's classification wikitable stays authoritative for GC, and `findOverallRaceResult` never sees companion blocks, so a `Stage 1 Result` block can never be mistaken for the race's overall result.
+
+`stageRace.stages` is the resulting per-stage history: one entry per stage actually raced, each with `number`, `order`, `label`, optional `date` / `course` from the route table, and `standings`. Entries prefer a companion-article podium and fall back to the route table's winner-only row, so a race with neither still renders as before. `latestStage` is simply the last entry, which keeps the card's headline stage and its stage selector from ever disagreeing. `mergeStageRaceSnapshots` carries the deeper history across the official/parsed merge, since official providers report only the current stage.
 
 If a race has official provider logic, it is loaded alongside the parsed Wikipedia snapshot and the fresher stage, GC, and overall fields are merged independently. Live stage races also apply a simple date-based freshness floor so obviously stale progress is deprioritized.
 
@@ -512,6 +523,8 @@ Client-side JS is still intentionally small, but it now does more than simple fo
 - Filters National Championships cards by country and category; the default view shows completed events first, while country-specific selections can reveal scheduled or TBD events.
 - Keeps deferred-section loading utilities available for future sections, though none are active right now
 - Reveals recent results a row at a time: each WorldTour section shows the first `WORLDTOUR_RECENT_RESULTS_STEP` (3) races, and a "Load more races" button reveals the next row up to `WORLDTOUR_RECENT_RESULTS` (12), after which the button removes itself. Revealing more races also adds them to that section's coverage race selector.
+- Loads the full stage podiums for a finished stage race on demand, replacing the switcher with the deeper markup returned by `/api/race-stages`. The control appears only when the card's history is winner-only, and never on a live card, whose companion articles were already read at build time.
+- Swaps the stage shown on a stage-race card. Each card with two or more raced stages renders a numbered strip covering the whole route — stages not yet raced are disabled — plus one hidden panel per raced stage. A delegated `click` listener toggles `is-active` and panel `hidden`, so the strip works inside deferred sections without rebinding, and a 21-stage card stays the height of a 5-stage one. The GC section below always shows the race's current overall regardless of the selected stage, and the finish-video link renders only on the current stage's panel.
 - Loads race coverage on demand for each active competition group
 - Changing a race selector submits the coverage request
 - Clicking refresh increments a hidden refresh token and reloads the coverage block

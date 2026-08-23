@@ -1,0 +1,75 @@
+{{Infobox cycling race report
+| stages             = 21
+}}
+
+== Route and stages ==
+{| class="wikitable"
+|+ Stage characteristics and winners
+|-
+! scope="col" | Stage
+! scope="col" | Date
+! scope="col" | Course
+! scope="col" | Distance
+! scope="col" colspan="2" | Type
+! scope="col" | Winner
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 1|1]]
+| style="text-align:right" | 22 August
+| [[Monaco]] to Monaco
+| style="text-align:center;" | {{convert|9|km|abbr=on}}
+| [[File:Time Trial.svg|20px|alt=|link=]]
+| [[Individual time trial]]
+| {{flagathlete|[[Tadej Pogačar]]|SLO}}
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 2|2]]
+| style="text-align:right" | 23 August
+| Monaco to [[Manosque]] (France)
+| style="text-align:center;" | {{convert|215.5|km|abbr=on}}
+| [[File:Hillystage.svg|20x20px]]
+| Hilly stage
+| {{flagathlete|[[Matthew Brennan (cyclist)|Mathew Brennan]]|GBR}}
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 3|3]]
+| style="text-align:right" | 24 August
+| [[Gruissan]] (France) to [[Font-Romeu-Odeillo-Via|Font Romeu]] (France)
+| style="text-align:center;" | {{convert|166.7|km|abbr=on}}
+| [[File:Mediummountainstage.svg|20px|alt=|link=]]
+| Medium-mountain stage
+| 
+|}
+
+== Classification standings ==
+=== General classification ===
+{| class="wikitable" style="width:50em;margin-bottom:0;"
+|+ General classification after stage 2 (1–10)
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Tadej Pogačar]]|SLO}} {{cjersey|red}}{{cjersey|dark green}}{{cjersey|red number}}
+| {{UCI team code|UEX|2026}}
+| align="right" | 4h 58' 40"
+|-
+! scope="row" | 2
+| {{Flag athlete|[[Wout van Aert]]|BEL}}
+| {{UCI team code|TVL men|2026}}
+| align="right" | + 9"
+|-
+! scope="row" | 3
+| {{Flag athlete|[[Matthew Brennan (cyclist)|Matthew Brennan]]|GBR}} {{cjersey|white}}
+| {{UCI team code|TVL men|2026}}
+| align="right" | + 10"
+|-
+! scope="row" | 4
+| {{Flag athlete|[[Léo Bisiaux]]|FRA}}
+| {{UCI team code|DCT|2026}}
+| align="right" | + 12"
+|-
+! scope="row" | 5
+| {{Flag athlete|[[Finn Fisher-Black]]|NZL}}
+| {{UCI team code|RBH|2026}}
+| align="right" | + 14"
+|}
