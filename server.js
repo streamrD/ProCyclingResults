@@ -2592,6 +2592,7 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
 
 const TOUR_DE_FRANCE_RANKINGS_URL = "https://www.letour.fr/en/rankings";
 const TOUR_DE_FRANCE_FEMMES_RANKINGS_URL = "https://www.letourfemmes.fr/en/rankings";
+const VUELTA_A_ESPANA_RANKINGS_URL = "https://www.lavuelta.es/en/rankings";
 
 // letour.fr and letourfemmes.fr are the same ASO rankings deployment, so both races
 // share every parser below and differ only in entry point, page title and stage count.
@@ -2607,6 +2608,19 @@ const TOUR_DE_FRANCE_FEMMES_RANKINGS_SOURCE = {
   rankingsUrl: TOUR_DE_FRANCE_FEMMES_RANKINGS_URL,
   titlePattern: /Official classifications of Tour de France Femmes\s*\d*\s*-\s*Stage\s*(\d+)/i,
   defaultTotalStages: 9,
+};
+// lavuelta.es is the same ASO rankings deployment again. The Vuelta's own Wikipedia
+// article publishes each stage result a day before it refreshes the classification
+// tables, so without this provider the GC is dropped as stale every evening of the
+// race and the card renders a stage with no overall standings behind it.
+const VUELTA_A_ESPANA_RANKINGS_SOURCE = {
+  pageTitle: "2026 Vuelta a España",
+  rankingsUrl: VUELTA_A_ESPANA_RANKINGS_URL,
+  // The page titles itself "La Vuelta", not "Vuelta a España". Anchoring the dash
+  // straight after the optional year keeps this from matching the Femenina edition,
+  // whose title reads "Official classifications of La Vuelta Femenina - Stage n".
+  titlePattern: /Official classifications of La Vuelta\s*\d*\s*-\s*Stage\s*(\d+)/i,
+  defaultTotalStages: 21,
 };
 
 // letour.fr runs the same ASO rankings platform as the Tour Auvergne / La Vuelta
@@ -2821,6 +2835,10 @@ async function fetchTourDeFranceOfficialSnapshot(race, fetchHtml = fetchText) {
 
 async function fetchTourDeFranceFemmesOfficialSnapshot(race, fetchHtml = fetchText) {
   return fetchAsoTourRankingsSnapshot(race, fetchHtml, TOUR_DE_FRANCE_FEMMES_RANKINGS_SOURCE);
+}
+
+async function fetchVueltaAEspanaOfficialSnapshot(race, fetchHtml = fetchText) {
+  return fetchAsoTourRankingsSnapshot(race, fetchHtml, VUELTA_A_ESPANA_RANKINGS_SOURCE);
 }
 
 function getStageRaceSnapshotQuality(snapshot) {
@@ -4252,6 +4270,11 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
     id: "giro-ditalia-women-rankings",
     matches: (race) => race?.pageTitle === "2026 Giro d'Italia Women",
     load: fetchGiroDItaliaWomenOfficialSnapshot,
+  },
+  {
+    id: "vuelta-a-espana-rankings",
+    matches: (race) => race?.pageTitle === "2026 Vuelta a España",
+    load: fetchVueltaAEspanaOfficialSnapshot,
   },
   {
     id: "vuelta-a-burgos-feminas-liveblog",

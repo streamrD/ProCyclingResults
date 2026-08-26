@@ -66,6 +66,7 @@ function loadParserExports() {
       buildTourDeFranceOfficialSnapshot,
       fetchTourDeFranceOfficialSnapshot,
       fetchTourDeFranceFemmesOfficialSnapshot,
+      fetchVueltaAEspanaOfficialSnapshot,
       extractClassificationTableGcSnapshots,
       parseAthleteDetails,
       cleanWikiText,
@@ -1617,6 +1618,68 @@ test("fetchTourDeFranceFemmesOfficialSnapshot ignores races it does not serve", 
     },
     async () => {
       throw new Error("must not fetch for the men's race");
+    },
+  );
+
+  assert.equal(snapshot, null);
+});
+
+test("fetchVueltaAEspanaOfficialSnapshot builds a stage + GC snapshot from lavuelta.es", async () => {
+  const { fetchVueltaAEspanaOfficialSnapshot } = loadParserExports();
+  const readFixture = (name) => fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
+  const fetchedUrls = [];
+
+  const snapshot = await fetchVueltaAEspanaOfficialSnapshot(
+    {
+      pageTitle: "2026 Vuelta a España",
+      startDate: new Date("2026-08-22T00:00:00Z"),
+      endDate: new Date("2026-09-13T00:00:00Z"),
+    },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.lavuelta.es/en/rankings") {
+        return readFixture("vuelta-a-espana-rankings-stage5.html");
+      }
+
+      if (url.includes("/itg/")) {
+        return readFixture("vuelta-a-espana-stage5-itg.html");
+      }
+
+      if (url.includes("/ite/")) {
+        return readFixture("vuelta-a-espana-stage5-ite.html");
+      }
+
+      return "";
+    },
+  );
+
+  assert.ok(fetchedUrls.every((url) => url.startsWith("https://www.lavuelta.es/")));
+  // The stage menu, not the calendar span, is authoritative: the Vuelta has rest days.
+  assert.equal(snapshot.totalStages, 21);
+  assert.equal(snapshot.completedStages, 5);
+  assert.equal(snapshot.latestStage.number, 5);
+  assert.equal(snapshot.latestStage.winner, "James Matthew Brennan");
+  assert.equal(snapshot.latestStage.winnerCountryCode, "GBR");
+  // The point of this provider: the GC is current with the stage. The Vuelta's
+  // Wikipedia article was still publishing "after stage 4" standings at this moment.
+  assert.equal(snapshot.generalClassification.stageNumber, 5);
+  assert.equal(snapshot.generalClassification.leader, "Tadej Pogacar");
+  assert.equal(snapshot.generalClassification.standings[1].rider, "Primoz Roglic");
+  assert.equal(snapshot.generalClassification.standings[1].gap, "+03:21");
+});
+
+test("fetchVueltaAEspanaOfficialSnapshot ignores races it does not serve", async () => {
+  const { fetchVueltaAEspanaOfficialSnapshot } = loadParserExports();
+  // La Vuelta Femenina has its own provider and its own rankings host; the men's
+  // entry point must never claim it.
+  const snapshot = await fetchVueltaAEspanaOfficialSnapshot(
+    {
+      pageTitle: "2026 La Vuelta Femenina",
+      startDate: new Date("2026-05-04T00:00:00Z"),
+      endDate: new Date("2026-05-10T00:00:00Z"),
+    },
+    async () => {
+      throw new Error("must not fetch for the women's race");
     },
   );
 
