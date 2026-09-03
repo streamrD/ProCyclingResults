@@ -6836,18 +6836,19 @@ function buildStageSlug(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-// Stylised silhouettes, one per stage type, as heights on a 0-1 scale from start to
-// finish. No source publishes a real elevation trace, so these answer the question a
-// results reader actually has — flat, hilly, or mountains — rather than pretending to be
-// the organiser's profile. Time trials share a gentle shape and are told apart by a
-// dashed line and a badge.
-const STAGE_PROFILE_HEIGHTS = {
-  flat: [0.1, 0.14, 0.09, 0.16, 0.11, 0.13, 0.08, 0.15, 0.12, 0.18, 0.1, 0.13, 0.07, 0.12, 0.09, 0.11, 0.08],
-  hilly: [0.1, 0.22, 0.14, 0.38, 0.2, 0.3, 0.44, 0.24, 0.16, 0.4, 0.28, 0.48, 0.22, 0.34, 0.18, 0.26, 0.12],
-  "medium-mountain": [0.12, 0.2, 0.36, 0.26, 0.52, 0.4, 0.3, 0.66, 0.48, 0.58, 0.34, 0.72, 0.56, 0.42, 0.3, 0.22, 0.18],
-  mountain: [0.1, 0.18, 0.34, 0.24, 0.62, 0.42, 0.78, 0.56, 0.4, 0.86, 0.6, 0.44, 0.96, 0.7, 0.5, 0.66, 0.74],
-  "individual-time-trial": [0.1, 0.13, 0.17, 0.12, 0.19, 0.15, 0.1, 0.14, 0.2, 0.16, 0.12, 0.18, 0.13, 0.1, 0.15, 0.11, 0.09],
-  "team-time-trial": [0.1, 0.13, 0.17, 0.12, 0.19, 0.15, 0.1, 0.14, 0.2, 0.16, 0.12, 0.18, 0.13, 0.1, 0.15, 0.11, 0.09],
+// Schematic pictograms, one per stage type, drawn the same way for every stage of that
+// type. A stage without a measured trace must look generic rather than plausible, so
+// these are deliberately icons — a line, some hills, some peaks — not profiles.
+const STAGE_TYPE_GLYPHS = {
+  flat: '<path class="stage-profile-glyph-line" d="M4 24 H60"></path>',
+  hilly:
+    '<path class="stage-profile-glyph-fill" d="M4 28 Q14 12 24 24 T44 20 T60 28 Z"></path><path class="stage-profile-glyph-line" d="M4 28 Q14 12 24 24 T44 20 T60 28"></path>',
+  "medium-mountain":
+    '<path class="stage-profile-glyph-fill" d="M4 28 L18 14 L28 22 L42 8 L52 18 L60 28 Z"></path><path class="stage-profile-glyph-line" d="M4 28 L18 14 L28 22 L42 8 L52 18 L60 28"></path>',
+  mountain:
+    '<path class="stage-profile-glyph-fill" d="M4 28 L16 8 L26 18 L38 3 L50 16 L60 28 Z"></path><path class="stage-profile-glyph-line" d="M4 28 L16 8 L26 18 L38 3 L50 16 L60 28"></path>',
+  "individual-time-trial": '<path class="stage-profile-glyph-line is-dashed" d="M4 24 H60"></path>',
+  "team-time-trial": '<path class="stage-profile-glyph-line is-dashed" d="M4 24 H60"></path>',
 };
 const STAGE_PROFILE_WIDTH = 600;
 const STAGE_PROFILE_HEIGHT = 80;
@@ -6875,9 +6876,6 @@ function formatStageElevation(elevationGainM, units) {
   return `${formatStageNumberValue(value, 0)} ${units === "imperial" ? "ft" : "m"} climbing`;
 }
 
-// Two consecutive flat stages should not be pixel-identical, so the interior points
-// wobble by a few percent from a seed derived from the stage itself. Deterministic, so
-// the same stage renders the same way on every build.
 // The real trace is scaled to its own altitude range, but never to less than a
 // kilometre of it, so a coastal flat stage sits low and a summit finish fills the
 // height rather than every stage being stretched to look alpine.
@@ -6913,41 +6911,15 @@ function buildMeasuredStageProfilePaths(profile) {
 }
 
 function buildStageProfilePaths(stage) {
-  const measured = buildMeasuredStageProfilePaths(stage?.profile);
-  if (measured) {
-    return measured;
-  }
-
-  const heights = STAGE_PROFILE_HEIGHTS[stage?.stageType];
-  if (!heights) {
-    return null;
-  }
-
-  let seed = (Math.round(Number(stage.number) || 0) * 7919 + Math.round((Number(stage.distanceKm) || 0) * 10)) % 233280;
-  const jitter = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return (seed / 233280 - 0.5) * 0.06;
-  };
-  const top = 6;
-  const bottom = STAGE_PROFILE_HEIGHT;
-  const points = heights.map((height, index) => {
-    const isEdge = index === 0 || index === heights.length - 1;
-    const value = Math.min(1, Math.max(0.03, height + (isEdge ? 0 : jitter())));
-    const x = ((index / (heights.length - 1)) * STAGE_PROFILE_WIDTH).toFixed(1);
-    const y = (bottom - 4 - value * (bottom - 4 - top)).toFixed(1);
-    return `${x},${y}`;
-  });
-
-  return {
-    line: `M${points.join(" L")}`,
-    area: `M0,${bottom} L${points.join(" L")} L${STAGE_PROFILE_WIDTH},${bottom} Z`,
-  };
+  return buildMeasuredStageProfilePaths(stage?.profile);
 }
 
-// The block under the stage strip: a silhouette for the stage type, its distance, and
-// its climbing when a source supplies one. Both figures render in metric and carry
-// their imperial text in data attributes so the client's km/mi toggle swaps them
-// without a round trip.
+// The block under the stage strip. A stage with a measured trace draws it, labelled
+// with where the data came from; any other stage shows a schematic pictogram for its
+// type plus a note that no profile is available, so a reader is never left guessing
+// which of the two they are looking at. Both figures render in metric and carry their
+// imperial text in data attributes so the client's km/mi toggle swaps them without a
+// round trip.
 function buildStageProfileMarkup(stage) {
   const stageType = String(stage?.stageType || "");
   const typeLabel = STAGE_TYPE_LABELS[stageType] || "";
@@ -6972,6 +6944,7 @@ function buildStageProfileMarkup(stage) {
 
   const paths = buildStageProfilePaths(stage);
   const badge = STAGE_PROFILE_BADGES[stageType];
+  const glyph = STAGE_TYPE_GLYPHS[stageType] || "";
   const peakLabel = paths?.peak
     ? `<span class="stage-profile-peak" style="left: ${paths.peak.leftPercent.toFixed(1)}%; bottom: ${paths.peak.bottomPercent.toFixed(
         1,
@@ -6981,7 +6954,7 @@ function buildStageProfileMarkup(stage) {
     : "";
   const canvas = paths
     ? `
-        <div class="stage-profile-canvas${paths.peak ? " is-measured" : ""}">
+        <div class="stage-profile-canvas is-measured">
           <div class="stage-profile-plot">
             <svg viewBox="0 0 ${STAGE_PROFILE_WIDTH} ${STAGE_PROFILE_HEIGHT}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
               <path class="stage-profile-area" d="${paths.area}"></path>
@@ -6989,7 +6962,18 @@ function buildStageProfileMarkup(stage) {
             </svg>${peakLabel}
           </div>${badge ? `<span class="stage-profile-badge">${escapeHtml(badge)}</span>` : ""}
         </div>`
+    : glyph
+      ? `
+        <div class="stage-profile-glyph" aria-hidden="true">
+          <svg viewBox="0 0 64 32" focusable="false">${glyph}</svg>
+        </div>`
+      : "";
+  const sourceLabel = paths
+    ? `<span class="stage-profile-source">Elevation data: ${escapeHtml(stage.profile?.source || "official route")}</span>`
     : "";
+  const genericNote = paths
+    ? ""
+    : `<span class="stage-profile-note">Stage-type icon only — no elevation profile is available for this stage.</span>`;
   const stats = [
     distanceKm
       ? `<span class="stage-profile-stat" data-unit-metric="${escapeHtml(
@@ -7022,9 +7006,13 @@ function buildStageProfileMarkup(stage) {
     .join(", ");
 
   return `
-        <figure class="stage-profile" data-stage-type="${escapeHtml(stageType)}" aria-label="${escapeHtml(ariaLabel)}">${canvas}
+        <figure class="stage-profile${paths ? " is-measured" : " is-generic"}" data-stage-type="${escapeHtml(
+          stageType,
+        )}" aria-label="${escapeHtml(ariaLabel)}">${canvas}
           <figcaption class="stage-profile-caption">
-            ${typeLabel ? `<span class="stage-profile-type">${escapeHtml(typeLabel)}</span>` : ""}${stats}${toggle}
+            ${!paths && badge ? `<span class="stage-profile-badge is-inline">${escapeHtml(badge)}</span>` : ""}${
+              typeLabel ? `<span class="stage-profile-type">${escapeHtml(typeLabel)}</span>` : ""
+            }${stats}${sourceLabel}${toggle}${genericNote}
           </figcaption>
         </figure>`;
 }
@@ -8822,6 +8810,69 @@ function buildHtmlPage(data, view) {
         gap: 0.35rem 0.95rem;
         margin-top: 0.45rem;
         font-size: 0.88rem;
+      }
+
+      /* A generic stage lays its pictogram beside the caption rather than above it, so
+         it reads as an icon-and-label row and never as a chart. */
+      .stage-profile.is-generic {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        border-style: dashed;
+        background: rgba(244, 248, 255, 0.55);
+      }
+
+      .stage-profile.is-generic .stage-profile-caption {
+        flex: 1;
+        margin-top: 0;
+      }
+
+      .stage-profile-glyph {
+        flex: 0 0 auto;
+        width: 3.6rem;
+        height: 1.9rem;
+        padding: 0.15rem 0.2rem;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--line);
+      }
+
+      .stage-profile-glyph svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .stage-profile-glyph-line {
+        fill: none;
+        stroke: var(--uci-blue);
+        stroke-width: 2.2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+
+      .stage-profile-glyph-line.is-dashed {
+        stroke-dasharray: 5 4;
+      }
+
+      .stage-profile-glyph-fill {
+        fill: rgba(0, 120, 199, 0.18);
+      }
+
+      .stage-profile-badge.is-inline {
+        position: static;
+      }
+
+      .stage-profile-source {
+        color: rgba(9, 33, 76, 0.6);
+        font-size: 0.78rem;
+      }
+
+      .stage-profile-note {
+        flex-basis: 100%;
+        color: rgba(9, 33, 76, 0.6);
+        font-size: 0.78rem;
+        line-height: 1.3;
       }
 
       .stage-profile-type {

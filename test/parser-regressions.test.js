@@ -4031,23 +4031,29 @@ test("mergeStageRaceSnapshots gives a provider-supplied stage its route details"
   assert.equal(merged.route.length, 3);
 });
 
-test("buildStageProfileMarkup draws a silhouette for the stage type with both unit systems", () => {
+test("buildStageProfileMarkup shows an obviously generic pictogram when no trace is known", () => {
   const { buildStageProfileMarkup } = loadParserExports();
   const html = buildStageProfileMarkup({ number: 5, stageType: "mountain", distanceKm: 155.9 });
 
+  assert.match(html, /stage-profile is-generic/);
   assert.match(html, /data-stage-type="mountain"/);
   assert.match(html, /Mountain stage/);
-  assert.match(html, /<path class="stage-profile-area"/);
+  assert.match(html, /stage-profile-glyph/);
+  assert.match(html, /no elevation profile is available/);
   assert.match(html, /data-unit-metric="155.9 km" data-unit-imperial="96.9 mi"/);
   assert.match(html, /data-unit-option="imperial"/);
   assert.doesNotMatch(html, /climbing/);
-  assert.doesNotMatch(html, /stage-profile-peak/);
+  assert.doesNotMatch(html, /stage-profile-area|stage-profile-peak|Elevation data/);
+  // Two stages of the same type draw the identical icon: nothing generic may look
+  // like a real profile that happens to differ between days.
+  const other = buildStageProfileMarkup({ number: 18, stageType: "mountain", distanceKm: 171 });
+  assert.equal(html.match(/<svg[\s\S]*?<\/svg>/)[0], other.match(/<svg[\s\S]*?<\/svg>/)[0]);
 
-  assert.match(buildStageProfileMarkup({ number: 1, stageType: "individual-time-trial", distanceKm: 9 }), /stage-profile-badge">ITT</);
-  assert.match(buildStageProfileMarkup({ number: 6, stageType: "team-time-trial", distanceKm: 24.1 }), /stage-profile-badge">TTT</);
+  assert.match(buildStageProfileMarkup({ number: 1, stageType: "individual-time-trial", distanceKm: 9 }), /stage-profile-badge is-inline">ITT</);
+  assert.match(buildStageProfileMarkup({ number: 6, stageType: "team-time-trial", distanceKm: 24.1 }), /stage-profile-badge is-inline">TTT</);
   // Nothing known about the course: no block at all, so the panel reads as before.
   assert.equal(buildStageProfileMarkup({ number: 2 }), "");
-  // Distance alone still renders, just without a silhouette.
+  // Distance alone still renders, just without a pictogram.
   const distanceOnly = buildStageProfileMarkup({ number: 2, distanceKm: 120 });
   assert.match(distanceOnly, /120 km/);
   assert.doesNotMatch(distanceOnly, /<svg/);
@@ -4066,7 +4072,9 @@ test("buildStageProfileMarkup prefers a measured trace and labels its summit and
   const stage = { number: 12, stageType: "mountain", distanceKm: 166.6, profile };
   const html = buildStageProfileMarkup(stage);
 
-  assert.match(html, /stage-profile-canvas is-measured/);
+  assert.match(html, /stage-profile is-measured/);
+  assert.match(html, /Elevation data: komoot/);
+  assert.doesNotMatch(html, /no elevation profile is available/);
   assert.match(html, /stage-profile-peak[^>]*data-unit-metric="2,137 m" data-unit-imperial="7,011 ft"/);
   assert.match(html, /data-unit-metric="4,527 m climbing" data-unit-imperial="14,852 ft climbing"/);
   // The summit is at the finish, so its label is clamped inside the canvas.
@@ -4084,8 +4092,9 @@ test("buildStageProfileMarkup prefers a measured trace and labels its summit and
     },
   }, { live: true });
   // The profile sits inside the stage panel, above the winner label.
-  assert.ok(switcher.indexOf('<figure class="stage-profile"') < switcher.indexOf("Stage 11 winner"));
-  assert.equal((switcher.match(/<figure class="stage-profile"/g) || []).length, 2);
+  const firstFigure = switcher.indexOf('<figure class="stage-profile ');
+  assert.ok(firstFigure >= 0 && firstFigure < switcher.indexOf("Stage 11 winner"));
+  assert.equal((switcher.match(/<figure class="stage-profile /g) || []).length, 2);
 });
 
 test("buildStageProfileFromKomoot resamples a trace by distance and keeps its summit", () => {
