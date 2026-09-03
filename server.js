@@ -3036,6 +3036,98 @@ function getLiveStageRaceFreshnessFloor(race, now = new Date()) {
   return Math.max(0, Math.min(totalStages || elapsedDays, elapsedDays - 2));
 }
 
+const ROUTE_DATE_MONTHS = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
+
+function findRouteDateMonth(word) {
+  const normalized = String(word || "").toLowerCase();
+  if (normalized.length < 3) {
+    return -1;
+  }
+
+  return ROUTE_DATE_MONTHS.findIndex((name) => name.startsWith(normalized));
+}
+
+// Route tables write a stage's date as "3 September", occasionally "September 3" or
+// with a weekday or year attached. Resolve it against the race's year; a cell that
+// names no recognisable month is unknown rather than guessed.
+function parseRouteStageDate(value, year) {
+  const text = cleanWikiText(value).toLowerCase();
+  const explicitYear = Number.parseInt(text.match(/\b(20\d\d)\b/)?.[1] || "", 10);
+  const resolvedYear = explicitYear || Number(year);
+  if (!Number.isFinite(resolvedYear) || resolvedYear <= 0) {
+    return null;
+  }
+
+  for (const match of text.matchAll(/\b(\d{1,2})\s+([a-z]+)\b/g)) {
+    const month = findRouteDateMonth(match[2]);
+    if (month >= 0) {
+      return new Date(Date.UTC(resolvedYear, month, Number(match[1])));
+    }
+  }
+
+  for (const match of text.matchAll(/\b([a-z]+)\s+(\d{1,2})\b/g)) {
+    const month = findRouteDateMonth(match[1]);
+    if (month >= 0) {
+      return new Date(Date.UTC(resolvedYear, month, Number(match[2])));
+    }
+  }
+
+  return null;
+}
+
+// The mirror image of the freshness floor: a stage the calendar has not reached yet
+// cannot have a result or a classification "after" it. Wikipedia's 2026 Vuelta article
+// captioned its stage-12 general classification "after stage 13" the evening stage 12
+// finished, and the higher number read as the fresher of the two GCs on offer, so the
+// card announced a stage that would not be raced until the next day. Two bounds apply:
+// no stage can outrun the days elapsed since the start, and a route-table stage dated
+// after today has not happened. The route only ever lowers the bound for stages it
+// lists, so a final stage the table omits is still accepted on its own day.
+function isStageRaceProgressPlausible(progress, race, route = [], now = new Date()) {
+  if (!isMultiDayRace(race) || !(progress > 0)) {
+    return true;
+  }
+
+  const startUtc = toUtcDateOnly(race.startDate);
+  const endUtc = toUtcDateOnly(race.endDate);
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (todayUtc.getTime() > endUtc.getTime()) {
+    return true;
+  }
+
+  if (todayUtc.getTime() < startUtc.getTime()) {
+    return false;
+  }
+
+  const elapsedDays = Math.floor((todayUtc.getTime() - startUtc.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  if (progress > elapsedDays) {
+    return false;
+  }
+
+  const raceYear = getRaceYear(race);
+  return !(Array.isArray(route) ? route : []).some((stage) => {
+    if (!stage || getStageRaceFieldProgress(stage) !== progress) {
+      return false;
+    }
+
+    const stageDate = parseRouteStageDate(stage.date, raceYear);
+    return Boolean(stageDate) && stageDate.getTime() > todayUtc.getTime();
+  });
+}
+
 function choosePreferredByQuality(primary, secondary, getQuality) {
   const primaryQuality = getQuality(primary);
   const secondaryQuality = getQuality(secondary);
@@ -3049,9 +3141,9 @@ function choosePreferredByQuality(primary, secondary, getQuality) {
   return primary || secondary || null;
 }
 
-function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now = new Date()) {
+function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now = new Date(), route = []) {
   if (!field) {
-    return [-1, -1, -1];
+    return [-1, -1, -1, -1, -1];
   }
 
   const floor = getLiveStageRaceFreshnessFloor(race, now);
@@ -3065,7 +3157,15 @@ function getStageRaceSnapshotFieldQuality(field, snapshot, race, fieldType, now 
     standingsLength <= 1 &&
     progress > floor + 2;
 
-  return [Number(floor <= 0 || progress >= floor), Number(!suspiciousSparseJump), progress, standingsLength];
+  // A field claiming a stage the calendar has not reached ranks below a stale one:
+  // stale standings are at least real standings.
+  return [
+    Number(isStageRaceProgressPlausible(progress, race, route, now)),
+    Number(floor <= 0 || progress >= floor),
+    Number(!suspiciousSparseJump),
+    progress,
+    standingsLength,
+  ];
 }
 
 function annotateStageRaceSnapshotSource(snapshot, sourceId) {
@@ -3144,14 +3244,20 @@ function getStageHistoryQuality(stages) {
 }
 
 function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
+  // Only the Wikipedia side describes the route (distance, type, course), so whichever
+  // snapshot carries one is the route for both. Its stage dates also bound how far the
+  // race can plausibly have progressed, so it is resolved before any field is ranked.
+  const route = [primary?.route, secondary?.route].find((entry) => Array.isArray(entry) && entry.length > 0) || [];
+  const isPlausibleProgress = (progress) => isStageRaceProgressPlausible(progress, race, route, now);
   const preferredSnapshot = choosePreferredByQuality(primary, secondary, (snapshot) => {
     if (!snapshot) {
-      return [-1, -1, -1, -1, -1];
+      return [-1, -1, -1, -1, -1, -1];
     }
 
     const floor = getLiveStageRaceFreshnessFloor(race, now);
     const snapshotQuality = getStageRaceSnapshotQuality(snapshot);
     return [
+      Number(isPlausibleProgress(getStageRaceSnapshotProgress(snapshot))),
       Number(floor <= 0 || getStageRaceSnapshotProgress(snapshot) >= floor),
       snapshotQuality[2],
       snapshotQuality[3],
@@ -3167,6 +3273,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
       race,
       "latestStage",
       now,
+      route,
     ),
   );
   let generalClassification = choosePreferredByQuality(
@@ -3179,6 +3286,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
         race,
         "generalClassification",
         now,
+        route,
       ),
   );
   const overallResult = choosePreferredByQuality(primary?.overallResult, secondary?.overallResult, (field) =>
@@ -3188,25 +3296,39 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
       race,
       "overallResult",
       now,
+      route,
     ),
   );
+  // Ranking only demotes an implausible field; when it is the sole candidate it still
+  // wins, so drop it outright rather than announce a stage that has not been raced.
+  if (latestStage && !isPlausibleProgress(getStageRaceFieldProgress(latestStage))) {
+    latestStage = null;
+  }
+
+  if (generalClassification && !isPlausibleProgress(getStageRaceFieldProgress(generalClassification))) {
+    generalClassification = null;
+  }
+
   // Official providers report only the current stage, so the Wikipedia-derived
   // history is normally the only side carrying one. Prefer whichever side knows more
   // stages in depth rather than whichever snapshot won overall.
   const stages = choosePreferredByQuality(primary?.stages, secondary?.stages, getStageHistoryQuality);
-  // Only the Wikipedia side describes the route (distance, type, course), so whichever
-  // snapshot carries one is the route for both.
-  const route = [primary?.route, secondary?.route].find((entry) => Array.isArray(entry) && entry.length > 0) || [];
   const totalStages = Math.max(
     Number(primary?.totalStages || 0),
     Number(secondary?.totalStages || 0),
   );
   const fallbackTotalStages = inferStageCountFromDates(race) || 0;
   const resolvedTotalStages = totalStages || fallbackTotalStages;
+  // A snapshot's own completed-stage count can carry the same implausible claim its
+  // fields did (Wikipedia derives it from the mis-captioned table), so it only counts
+  // when the calendar allows it.
   const completedStages = Math.max(
-    getStageRaceSnapshotProgress(preferredSnapshot),
-    getStageRaceFieldProgress(latestStage),
-    getStageRaceFieldProgress(generalClassification),
+    0,
+    ...[
+      getStageRaceSnapshotProgress(preferredSnapshot),
+      getStageRaceFieldProgress(latestStage),
+      getStageRaceFieldProgress(generalClassification),
+    ].filter((progress) => isPlausibleProgress(progress)),
   );
 
   if ((isMultiDayRace(race) || resolvedTotalStages > 1) && completedStages > 0) {

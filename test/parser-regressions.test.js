@@ -99,6 +99,8 @@ function loadParserExports() {
       extractStageArticleTitles,
       buildStageSwitcherMarkup,
       mergeStageRaceSnapshots,
+      isStageRaceProgressPlausible,
+      parseRouteStageDate,
       findStageRaceById,
       getStageFinishVideoUrl,
       enrichStageFinishVideos,
@@ -2710,6 +2712,156 @@ test("selectPreferredStageRaceSnapshot merges the freshest stage and GC independ
     generalClassification: "wikipedia-raw",
     overallResult: "official-stage",
   });
+});
+
+const VUELTA_2026_RACE = {
+  pageTitle: "2026 Vuelta a España",
+  startDate: new Date("2026-08-22T00:00:00Z"),
+  endDate: new Date("2026-09-13T00:00:00Z"),
+};
+const VUELTA_2026_ROUTE = [
+  { number: 11, label: "Stage 11", date: "2 September" },
+  { number: 12, label: "Stage 12", date: "3 September" },
+  { number: 13, label: "Stage 13", date: "4 September" },
+];
+
+function buildVueltaStage12OfficialSnapshot() {
+  return {
+    totalStages: 21,
+    completedStages: 12,
+    _sourceId: "vuelta-a-espana-rankings",
+    latestStage: {
+      number: 12,
+      label: "Stage 12",
+      standings: [
+        { place: "1", rider: "Jakob Omrzel" },
+        { place: "2", rider: "Enric Mas" },
+      ],
+    },
+    generalClassification: {
+      stageNumber: 12,
+      standings: [
+        { place: "1", rider: "Enric Mas" },
+        { place: "2", rider: "Primož Roglič" },
+      ],
+    },
+    overallResult: [],
+  };
+}
+
+// The evening stage 12 finished, the article's GC table was captioned "after stage 13"
+// while its route table still dated stage 13 to the next day.
+function buildVueltaMiscaptionedWikipediaSnapshot() {
+  return {
+    totalStages: 21,
+    completedStages: 13,
+    _sourceId: "wikipedia-raw",
+    stages: [
+      { number: 11, order: 11, label: "Stage 11", standings: [{ place: "1", rider: "Bryan Coquard" }] },
+      { number: 12, order: 12, label: "Stage 12", standings: [{ place: "1", rider: "Jakob Omrzel" }] },
+    ],
+    route: VUELTA_2026_ROUTE,
+    latestStage: {
+      number: 12,
+      label: "Stage 12",
+      standings: [{ place: "1", rider: "Jakob Omrzel" }],
+    },
+    generalClassification: {
+      stageNumber: 13,
+      standings: [
+        { place: "1", rider: "Enric Mas" },
+        { place: "2", rider: "Primož Roglič" },
+        { place: "3", rider: "Felix Gall" },
+      ],
+    },
+    overallResult: [],
+  };
+}
+
+test("selectPreferredStageRaceSnapshot rejects a GC captioned after a stage the calendar has not reached", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const merged = selectPreferredStageRaceSnapshot(
+    buildVueltaStage12OfficialSnapshot(),
+    buildVueltaMiscaptionedWikipediaSnapshot(),
+    VUELTA_2026_RACE,
+    new Date("2026-09-03T18:00:00Z"),
+  );
+
+  assert.equal(merged.completedStages, 12);
+  assert.equal(merged.latestStage.number, 12);
+  assert.equal(merged.generalClassification.stageNumber, 12);
+  assert.equal(merged.generalClassification.leader, "Enric Mas");
+  assert.equal(merged.provenance.snapshot, "vuelta-a-espana-rankings");
+  assert.equal(merged.provenance.generalClassification, "vuelta-a-espana-rankings");
+  assert.equal(merged.provenance.latestStage, "vuelta-a-espana-rankings");
+  // The Wikipedia history and route still ride along; only the bogus claim is refused.
+  assert.equal(merged.stages.map((stage) => stage.number).join(","), "11,12");
+});
+
+test("selectPreferredStageRaceSnapshot drops a mis-captioned GC rather than announce it when it is the only one", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const merged = selectPreferredStageRaceSnapshot(
+    null,
+    buildVueltaMiscaptionedWikipediaSnapshot(),
+    VUELTA_2026_RACE,
+    new Date("2026-09-03T18:00:00Z"),
+  );
+
+  assert.equal(merged.completedStages, 12);
+  assert.equal(merged.latestStage.number, 12);
+  assert.equal(merged.generalClassification, null);
+});
+
+test("selectPreferredStageRaceSnapshot accepts the same GC once its stage day arrives and the race ends", () => {
+  const { selectPreferredStageRaceSnapshot } = loadParserExports();
+  const onStageDay = selectPreferredStageRaceSnapshot(
+    null,
+    buildVueltaMiscaptionedWikipediaSnapshot(),
+    VUELTA_2026_RACE,
+    new Date("2026-09-04T16:00:00Z"),
+  );
+  assert.equal(onStageDay.generalClassification.stageNumber, 13);
+  assert.equal(onStageDay.completedStages, 13);
+
+  const afterTheRace = selectPreferredStageRaceSnapshot(
+    null,
+    { ...buildVueltaMiscaptionedWikipediaSnapshot(), generalClassification: { stageNumber: 21, standings: [{ place: "1", rider: "Enric Mas" }] } },
+    VUELTA_2026_RACE,
+    new Date("2026-09-20T12:00:00Z"),
+  );
+  assert.equal(afterTheRace.generalClassification.stageNumber, 21);
+});
+
+test("a final stage the route table omits is still plausible on its own day", () => {
+  const { isStageRaceProgressPlausible, parseRouteStageDate } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Tour de France",
+    startDate: new Date("2026-07-04T00:00:00Z"),
+    endDate: new Date("2026-07-26T00:00:00Z"),
+  };
+  const route = [{ number: 20, label: "Stage 20", date: "25 July" }];
+  const finalDay = new Date("2026-07-26T17:00:00Z");
+
+  assert.equal(isStageRaceProgressPlausible(21, race, route, finalDay), true);
+  assert.equal(isStageRaceProgressPlausible(20, race, route, new Date("2026-07-24T17:00:00Z")), false);
+  // Days elapsed bound a stage even without a dated route: stage 3 cannot exist on day 2.
+  assert.equal(isStageRaceProgressPlausible(3, race, [], new Date("2026-07-05T17:00:00Z")), false);
+  assert.equal(isStageRaceProgressPlausible(2, race, [], new Date("2026-07-05T17:00:00Z")), true);
+  // A prologue is progress 0.5 and is fine on the opening day.
+  assert.equal(isStageRaceProgressPlausible(0.5, race, [{ number: 0, label: "Prologue", date: "4 July" }], new Date("2026-07-04T17:00:00Z")), true);
+  // Nothing has been raced before the start, and a one-day race is never bounded.
+  assert.equal(isStageRaceProgressPlausible(1, race, [], new Date("2026-07-03T17:00:00Z")), false);
+  assert.equal(
+    isStageRaceProgressPlausible(1, { startDate: race.startDate, endDate: race.startDate }, [], new Date("2026-07-03T17:00:00Z")),
+    true,
+  );
+
+  assert.equal(parseRouteStageDate("3 September", 2026)?.toISOString(), "2026-09-03T00:00:00.000Z");
+  assert.equal(parseRouteStageDate("Saturday 4 July", 2026)?.toISOString(), "2026-07-04T00:00:00.000Z");
+  assert.equal(parseRouteStageDate("July 5", 2026)?.toISOString(), "2026-07-05T00:00:00.000Z");
+  assert.equal(parseRouteStageDate("6 Sept 2025", 2026)?.toISOString(), "2025-09-06T00:00:00.000Z");
+  assert.equal(parseRouteStageDate("TBA", 2026), null);
+  assert.equal(parseRouteStageDate("", 2026), null);
 });
 
 test("selectPreferredStageRaceSnapshot deprioritizes stale live progress during an active race", () => {
