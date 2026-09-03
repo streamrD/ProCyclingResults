@@ -32,7 +32,7 @@ The retired ProSeries and Europe Tour sections were implemented previously and r
 Observed local path:
 
 ```text
-/Users/tcs16/AgenticAI/FullStackApp/ProCyclingResults
+/Users/tcs16/AgenticAI/ProCyclingResults
 ```
 
 Earlier revisions of this file recorded the path with a `Desktop/` segment that does
@@ -869,7 +869,7 @@ Then choose the smallest relevant read path:
 Use a prompt like this:
 
 ```text
-Project: /Users/tcs16/AgenticAI/FullStackApp/ProCyclingResults
+Project: /Users/tcs16/AgenticAI/ProCyclingResults
 
 Read AGENTS.md first, then README.md and handoff.md. Treat README.md as durable architecture and handoff.md as the current cross-reference/audit snapshot. Verify git status, branch, remote refs, and worktrees before editing. The active product scope is Men's WorldTour, Women's WorldTour, and National Championships. ProSeries and Europe Tour are retired and archived unless explicitly requested. Keep changes narrow, preserve the no-dependency Node architecture, and run node -c server.js plus npm test for code changes.
 

@@ -101,7 +101,7 @@ Two techniques worth reusing:
 Use something close to this:
 
 ```text
-Project: ~/AgenticAI/FullStackApp/ProCyclingResults
+Project: ~/AgenticAI/ProCyclingResults
 
 Please read AGENTS.md first. Read README.md only if the task requires broader architectural or parser context. Inspect only the relevant code and tests, keep token usage lean, make the requested change, and run npm test when appropriate.
 
