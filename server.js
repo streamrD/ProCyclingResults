@@ -6881,6 +6881,16 @@ function formatStageElevation(elevationGainM, units) {
 // height rather than every stage being stretched to look alpine.
 const STAGE_PROFILE_MIN_ALTITUDE_SPAN_M = 1000;
 
+// Start and finish towns come from the route table's course cell ("Vera to Calar
+// Alto"); anything that does not split cleanly into two places is left unlabelled.
+function parseStageCourseEnds(course) {
+  const parts = cleanFeedText(course || "")
+    .split(/\s+(?:to|–|—|→|>)\s+/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length === 2 ? { start: parts[0], finish: parts[1] } : null;
+}
+
 function buildMeasuredStageProfilePaths(profile) {
   const points = (Array.isArray(profile?.points) ? profile.points : []).filter(
     (point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]),
@@ -6896,8 +6906,25 @@ function buildMeasuredStageProfilePaths(profile) {
   const maxAlt = Math.max(...points.map((point) => point[1]));
   const span = Math.max(maxAlt - minAlt, STAGE_PROFILE_MIN_ALTITUDE_SPAN_M);
   const toY = (altitude) => bottom - 4 - ((altitude - minAlt) / span) * (bottom - 4 - top);
+  const toBottomPercent = (altitude) => ((bottom - toY(altitude)) / bottom) * 100;
   const coordinates = points.map(([km, altitude]) => `${((km / distanceKm) * STAGE_PROFILE_WIDTH).toFixed(1)},${toY(altitude).toFixed(1)}`);
   const peak = points.reduce((best, point) => (point[1] > best[1] ? point : best), points[0]);
+
+  // Altitude gridlines at a round step chosen for the range, drawn as stretched SVG
+  // lines with HTML labels; km ticks along the base at a step chosen for the length.
+  const altitudeStep = span >= 2000 ? 500 : span >= 800 ? 250 : 100;
+  const gridlines = [];
+  for (let altitude = Math.ceil(minAlt / altitudeStep) * altitudeStep; altitude <= minAlt + span; altitude += altitudeStep) {
+    const bottomPercent = toBottomPercent(altitude);
+    if (bottomPercent > 8 && bottomPercent < 96) {
+      gridlines.push({ altitudeM: altitude, y: toY(altitude), bottomPercent });
+    }
+  }
+  const kmStep = distanceKm > 120 ? 50 : distanceKm > 40 ? 25 : distanceKm > 12 ? 10 : 5;
+  const ticks = [];
+  for (let km = kmStep; km < distanceKm - kmStep * 0.35; km += kmStep) {
+    ticks.push({ km, leftPercent: (km / distanceKm) * 100 });
+  }
 
   return {
     line: `M${coordinates.join(" L")}`,
@@ -6905,8 +6932,13 @@ function buildMeasuredStageProfilePaths(profile) {
     peak: {
       altitudeM: peak[1],
       leftPercent: Math.min(94, Math.max(6, (peak[0] / distanceKm) * 100)),
-      bottomPercent: ((bottom - toY(peak[1])) / bottom) * 100,
+      bottomPercent: toBottomPercent(peak[1]),
     },
+    startAltitudeM: points[0][1],
+    finishAltitudeM: points[points.length - 1][1],
+    distanceKm,
+    gridlines,
+    ticks,
   };
 }
 
@@ -6952,14 +6984,50 @@ function buildStageProfileMarkup(stage) {
         formatStageAltitude(paths.peak.altitudeM, "imperial"),
       )}">${escapeHtml(formatStageAltitude(paths.peak.altitudeM, "metric"))}</span>`
     : "";
+  const ends = parseStageCourseEnds(stage?.course);
+  const altitudeLabel = (altitudeM, className, style) =>
+    `<span class="${className}" style="${style}" data-unit-metric="${escapeHtml(formatStageAltitude(altitudeM, "metric"))}" data-unit-imperial="${escapeHtml(
+      formatStageAltitude(altitudeM, "imperial"),
+    )}">${escapeHtml(formatStageAltitude(altitudeM, "metric"))}</span>`;
+  const gradientId = `stage-profile-gradient-${Math.round(Number(stage?.number) || 0)}-${Math.round((distanceKm || 0) * 10)}`;
   const canvas = paths
     ? `
         <div class="stage-profile-canvas is-measured">
           <div class="stage-profile-plot">
             <svg viewBox="0 0 ${STAGE_PROFILE_WIDTH} ${STAGE_PROFILE_HEIGHT}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-              <path class="stage-profile-area" d="${paths.area}"></path>
+              <defs>
+                <linearGradient id="${gradientId}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${STAGE_PROFILE_HEIGHT}">
+                  <stop offset="0" stop-color="#c8102e"></stop>
+                  <stop offset="0.42" stop-color="#f2b705"></stop>
+                  <stop offset="0.8" stop-color="#3fae5a"></stop>
+                  <stop offset="1" stop-color="#2b8a4a"></stop>
+                </linearGradient>
+              </defs>
+              ${paths.gridlines
+                .map((line) => `<line class="stage-profile-gridline" x1="0" x2="${STAGE_PROFILE_WIDTH}" y1="${line.y.toFixed(1)}" y2="${line.y.toFixed(1)}"></line>`)
+                .join("")}
+              <path class="stage-profile-area" style="fill: url(#${gradientId});" d="${paths.area}"></path>
               <path class="stage-profile-line" d="${paths.line}"></path>
-            </svg>${peakLabel}
+            </svg>${peakLabel}${paths.gridlines
+              .map((line) => altitudeLabel(line.altitudeM, "stage-profile-gridlabel", `bottom: ${line.bottomPercent.toFixed(1)}%;`))
+              .join("")}${paths.ticks
+              .map(
+                (tick) =>
+                  `<span class="stage-profile-tick" style="left: ${tick.leftPercent.toFixed(1)}%;" data-unit-metric="${escapeHtml(
+                    formatStageDistance(tick.km, "metric"),
+                  )}" data-unit-imperial="${escapeHtml(formatStageDistance(tick.km, "imperial"))}">${escapeHtml(formatStageDistance(tick.km, "metric"))}</span>`,
+              )
+              .join("")}
+            <span class="stage-profile-end is-start">${ends ? `<strong>${escapeHtml(ends.start)}</strong>` : "Start"} ${altitudeLabel(
+              paths.startAltitudeM,
+              "stage-profile-end-altitude",
+              "",
+            )}</span>
+            <span class="stage-profile-end is-finish">${ends ? `<strong>${escapeHtml(ends.finish)}</strong>` : "Finish"} ${altitudeLabel(
+              paths.finishAltitudeM,
+              "stage-profile-end-altitude",
+              "",
+            )}</span>
           </div>${badge ? `<span class="stage-profile-badge">${escapeHtml(badge)}</span>` : ""}
         </div>`
     : glyph
@@ -6970,6 +7038,11 @@ function buildStageProfileMarkup(stage) {
       : "";
   const sourceLabel = paths
     ? `<span class="stage-profile-source">Elevation data: ${escapeHtml(stage.profile?.source || "official route")}</span>`
+    : "";
+  // Compact by default; the expanded chart is the same SVG given room to breathe. The
+  // client remembers the choice alongside the unit preference.
+  const expandControl = paths
+    ? `<button type="button" class="stage-profile-expand" data-profile-toggle aria-expanded="false">Expand profile</button>`
     : "";
   const genericNote = paths
     ? ""
@@ -7012,7 +7085,7 @@ function buildStageProfileMarkup(stage) {
           <figcaption class="stage-profile-caption">
             ${!paths && badge ? `<span class="stage-profile-badge is-inline">${escapeHtml(badge)}</span>` : ""}${
               typeLabel ? `<span class="stage-profile-type">${escapeHtml(typeLabel)}</span>` : ""
-            }${stats}${sourceLabel}${toggle}${genericNote}
+            }${stats}${sourceLabel}${toggle}${expandControl}${genericNote}
           </figcaption>
         </figure>`;
 }
@@ -8731,14 +8804,180 @@ function buildHtmlPage(data, view) {
         position: relative;
       }
 
-      /* The summit label sits above its peak, so a measured profile reserves headroom
-         for it instead of letting it clip at the top of the card. */
-      .stage-profile-canvas.is-measured {
-        padding-top: 1.25rem;
-      }
-
       .stage-profile-plot {
         position: relative;
+      }
+
+      /* A measured stage is a compact row by default: a thumbnail of the trace beside
+         its caption. Expanding lays the caption over a tall chart with its axes, end
+         markers and summit label, which stay hidden while compact. */
+      .stage-profile.is-measured {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.9rem;
+      }
+
+      .stage-profile.is-measured .stage-profile-canvas {
+        flex: 0 0 8.5rem;
+      }
+
+      .stage-profile.is-measured .stage-profile-plot svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .stage-profile.is-measured .stage-profile-plot {
+        height: 3rem;
+        border-radius: 8px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.7);
+        border: 1px solid var(--line);
+      }
+
+      .stage-profile.is-measured .stage-profile-caption {
+        flex: 1 1 14rem;
+        margin-top: 0;
+      }
+
+      .stage-profile.is-measured .stage-profile-peak,
+      .stage-profile.is-measured .stage-profile-gridlabel,
+      .stage-profile.is-measured .stage-profile-gridline,
+      .stage-profile.is-measured .stage-profile-tick,
+      .stage-profile.is-measured .stage-profile-end {
+        display: none;
+      }
+
+      .stage-profile.is-expanded {
+        padding-bottom: 0.75rem;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.85), rgba(238, 243, 251, 0.95));
+      }
+
+      .stage-profile.is-expanded .stage-profile-canvas {
+        order: 2;
+        flex: 1 1 100%;
+        padding: 1.5rem 0 1.7rem 3.1rem;
+      }
+
+      .stage-profile.is-expanded .stage-profile-plot {
+        height: 15rem;
+        overflow: visible;
+        border-radius: 0;
+        border: 0;
+        border-bottom: 2px solid var(--uci-blue-deep);
+        background: transparent;
+      }
+
+      .stage-profile.is-expanded .stage-profile-peak,
+      .stage-profile.is-expanded .stage-profile-gridlabel,
+      .stage-profile.is-expanded .stage-profile-tick,
+      .stage-profile.is-expanded .stage-profile-end {
+        display: block;
+      }
+
+      .stage-profile.is-expanded .stage-profile-gridline {
+        display: inline;
+      }
+
+      .stage-profile.is-expanded .stage-profile-badge {
+        top: 0.2rem;
+        right: 0;
+      }
+
+      .stage-profile-gridline {
+        stroke: rgba(9, 33, 76, 0.16);
+        stroke-width: 1;
+        stroke-dasharray: 4 5;
+        vector-effect: non-scaling-stroke;
+      }
+
+      .stage-profile-gridlabel {
+        position: absolute;
+        right: calc(100% + 0.45rem);
+        transform: translateY(50%);
+        color: rgba(9, 33, 76, 0.6);
+        font-size: 0.72rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .stage-profile-tick {
+        position: absolute;
+        top: calc(100% + 0.35rem);
+        transform: translateX(-50%);
+        color: rgba(9, 33, 76, 0.6);
+        font-size: 0.72rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .stage-profile-tick::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: -0.4rem;
+        height: 0.3rem;
+        border-left: 1px solid rgba(9, 33, 76, 0.4);
+      }
+
+      .stage-profile-end {
+        position: absolute;
+        top: calc(100% + 0.35rem);
+        color: var(--uci-blue-deep);
+        font-size: 0.78rem;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .stage-profile-end strong {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .stage-profile-end.is-start {
+        left: 0;
+      }
+
+      .stage-profile-end.is-finish {
+        right: 0;
+        text-align: right;
+      }
+
+      .stage-profile-end-altitude {
+        color: rgba(9, 33, 76, 0.6);
+        font-size: 0.72rem;
+      }
+
+      .stage-profile-expand {
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        padding: 0.2rem 0.6rem;
+        background: rgba(255, 255, 255, 0.75);
+        color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .stage-profile-expand:hover,
+      .stage-profile-expand:focus-visible {
+        border-color: var(--uci-blue-bright);
+        background: rgba(0, 120, 199, 0.12);
+        outline: none;
+      }
+
+      .stage-profile-expand::after {
+        content: " ▾";
+      }
+
+      .stage-profile.is-expanded .stage-profile-expand::after {
+        content: " ▴";
       }
 
       .stage-profile-canvas svg {
@@ -8749,11 +8988,12 @@ function buildHtmlPage(data, view) {
 
       .stage-profile-area {
         fill: rgba(0, 120, 199, 0.16);
+        opacity: 0.9;
       }
 
       .stage-profile-line {
         fill: none;
-        stroke: var(--uci-blue);
+        stroke: var(--uci-blue-deep);
         stroke-width: 2;
         stroke-linejoin: round;
         stroke-linecap: round;
@@ -8766,10 +9006,6 @@ function buildHtmlPage(data, view) {
 
       .stage-profile[data-stage-type$="time-trial"] .stage-profile-line {
         stroke-dasharray: 7 5;
-      }
-
-      .stage-profile-canvas.is-measured .stage-profile-area {
-        fill: rgba(0, 51, 160, 0.2);
       }
 
       .stage-profile-peak {
@@ -9562,9 +9798,49 @@ function buildHtmlPage(data, view) {
         applyUnitPreference(button.dataset.unitOption);
       });
 
+      // Measured profiles open compact; expanding one expands them all, and the choice
+      // is kept the same way the units are.
+      const PROFILE_VIEW_KEY = "pcr-profile-view";
+
+      function readProfileView() {
+        try {
+          return window.localStorage.getItem(PROFILE_VIEW_KEY) === "expanded" ? "expanded" : "compact";
+        } catch (error) {
+          return "compact";
+        }
+      }
+
+      function applyProfileView(view) {
+        const expanded = view === "expanded";
+        document.querySelectorAll(".stage-profile.is-measured").forEach((figure) => {
+          figure.classList.toggle("is-expanded", expanded);
+          const button = figure.querySelector("[data-profile-toggle]");
+          if (button) {
+            button.setAttribute("aria-expanded", expanded ? "true" : "false");
+            button.textContent = expanded ? "Collapse profile" : "Expand profile";
+          }
+        });
+      }
+
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-profile-toggle]");
+        if (!button) {
+          return;
+        }
+
+        const view = button.getAttribute("aria-expanded") === "true" ? "compact" : "expanded";
+        try {
+          window.localStorage.setItem(PROFILE_VIEW_KEY, view);
+        } catch (error) {
+          // Storage blocked: the toggle still works for this page view.
+        }
+        applyProfileView(view);
+      });
+
       // Markup that arrives later (deeper stage results, more races, deferred sections)
-      // is rendered in metric, so re-apply the preference whenever elements land. Text
-      // swaps add only text nodes, which the element check ignores, so this cannot loop.
+      // is rendered in metric and compact, so re-apply both preferences whenever
+      // elements land. Text swaps add only text nodes, which the element check
+      // ignores, so this cannot loop.
       new MutationObserver((mutations) => {
         const landed = mutations.some((mutation) =>
           Array.from(mutation.addedNodes).some(
@@ -9574,9 +9850,11 @@ function buildHtmlPage(data, view) {
         );
         if (landed) {
           applyUnitPreference(readUnitPreference());
+          applyProfileView(readProfileView());
         }
       }).observe(document.body, { childList: true, subtree: true });
       applyUnitPreference(readUnitPreference());
+      applyProfileView(readProfileView());
 
       bindArticleControls();
       bindLoadMoreRaces();

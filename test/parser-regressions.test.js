@@ -106,6 +106,7 @@ function loadParserExports() {
       applyLateOfficialSnapshots,
       mergeLatestStageIntoHistory,
       extractRouteStages,
+      parseStageCourseEnds,
       extractKomootTourReference,
       buildStageProfileFromKomoot,
       enrichStageProfiles,
@@ -4043,7 +4044,7 @@ test("buildStageProfileMarkup shows an obviously generic pictogram when no trace
   assert.match(html, /data-unit-metric="155.9 km" data-unit-imperial="96.9 mi"/);
   assert.match(html, /data-unit-option="imperial"/);
   assert.doesNotMatch(html, /climbing/);
-  assert.doesNotMatch(html, /stage-profile-area|stage-profile-peak|Elevation data/);
+  assert.doesNotMatch(html, /stage-profile-area|stage-profile-peak|Elevation data|data-profile-toggle/);
   // Two stages of the same type draw the identical icon: nothing generic may look
   // like a real profile that happens to differ between days.
   const other = buildStageProfileMarkup({ number: 18, stageType: "mountain", distanceKm: 171 });
@@ -4074,6 +4075,21 @@ test("buildStageProfileMarkup prefers a measured trace and labels its summit and
 
   assert.match(html, /stage-profile is-measured/);
   assert.match(html, /Elevation data: komoot/);
+  assert.match(html, /data-profile-toggle aria-expanded="false"/);
+  // Axes: 500 m gridlines for a 2 km range, 50 km ticks for a 166 km stage, and the
+  // finish altitude on the right-hand end marker.
+  assert.match(html, /stage-profile-gridlabel[^>]*data-unit-metric="500 m"/);
+  assert.match(html, /stage-profile-gridlabel[^>]*data-unit-metric="2,000 m"/);
+  assert.match(html, /stage-profile-tick[^>]*data-unit-metric="100 km" data-unit-imperial="62.1 mi"/);
+  // A tick that would collide with the finish marker is dropped.
+  assert.doesNotMatch(html, /stage-profile-tick[^>]*data-unit-metric="150 km"/);
+  assert.match(html, /stage-profile-end is-finish">Finish/);
+  assert.match(html, /is-finish">Finish <span class="stage-profile-end-altitude"[^>]*data-unit-metric="2,137 m"/);
+  assert.match(html, /<stop offset="0" stop-color="#c8102e">/);
+  assert.match(html, /stage-profile-area" style="fill: url\(#stage-profile-gradient-12-1666\);"/);
+  const named = buildStageProfileMarkup({ ...stage, course: "Vera to Calar Alto" });
+  assert.match(named, /is-start"><strong>Vera<\/strong>/);
+  assert.match(named, /is-finish"><strong>Calar Alto<\/strong>/);
   assert.doesNotMatch(html, /no elevation profile is available/);
   assert.match(html, /stage-profile-peak[^>]*data-unit-metric="2,137 m" data-unit-imperial="7,011 ft"/);
   assert.match(html, /data-unit-metric="4,527 m climbing" data-unit-imperial="14,852 ft climbing"/);
@@ -4116,6 +4132,10 @@ test("buildStageProfileFromKomoot resamples a trace by distance and keeps its su
   assert.equal(profile.elevationLossM, 730);
   assert.equal(profile.points.length, 120);
   assert.deepEqual(JSON.parse(JSON.stringify(profile.points[0])), [0, 100]);
+  const { parseStageCourseEnds } = loadParserExports();
+  assert.deepEqual(JSON.parse(JSON.stringify(parseStageCourseEnds("Vera to Calar Alto"))), { start: "Vera", finish: "Calar Alto" });
+  assert.deepEqual(JSON.parse(JSON.stringify(parseStageCourseEnds("Monaco to Monaco"))), { start: "Monaco", finish: "Monaco" });
+  assert.equal(parseStageCourseEnds("Barcelona"), null);
   assert.deepEqual(JSON.parse(JSON.stringify(profile.points[119])), [3.4, 420]);
   assert.equal(profile.maxAltM, 900);
   assert.equal(profile.minAltM, 100);
