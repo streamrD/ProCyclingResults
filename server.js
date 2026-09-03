@@ -6679,6 +6679,21 @@ function getStageProfileCacheKey(race, stage) {
   return `${getRaceId(race)}#${stage?.number}`;
 }
 
+function getCachedStageProfile(race, stageNumber) {
+  return stageProfileCache.get(getStageProfileCacheKey(race, { number: stageNumber }))?.profile || null;
+}
+
+// The stage after the last raced one, as the route table describes it, or null when
+// the route is unknown or the race is on its final stage.
+function getNextRouteStage(race) {
+  const stages = (race?.stageRace?.stages || []).filter((stage) => (stage?.standings?.length || 0) > 0);
+  if (stages.length === 0) {
+    return null;
+  }
+  const nextNumber = stages[stages.length - 1].number + 1;
+  return (race.stageRace?.route || []).find((entry) => Number(entry?.number) === nextNumber) || null;
+}
+
 // Profiles already fetched for this race are re-attached from the cache. Used when a
 // race's stage history is rebuilt from Wikipedia (`/api/race-stages`), which would
 // otherwise drop them until the next full build.
@@ -6735,6 +6750,25 @@ async function enrichStageProfiles(races, now = new Date(), options = {}) {
             }
           }),
       );
+    }
+
+    // Tomorrow's stage is worth one lookup too: the card previews it under the results,
+    // and organisers publish the whole route before the race starts. Cache only — it
+    // has no history entry to attach to yet.
+    const next = getNextRouteStage(race);
+    if (next && pending.length < STAGE_PROFILE_LOOKUP_LIMIT) {
+      const nextKey = getStageProfileCacheKey(race, next);
+      const cachedNext = stageProfileCache.get(nextKey);
+      const nextTtl = cachedNext?.profile ? STAGE_PROFILE_CACHE_TTL_MS : STAGE_PROFILE_MISS_TTL_MS;
+      if (!cachedNext || (!cachedNext.persistent && now.getTime() - cachedNext.fetchedAt >= nextTtl)) {
+        pending.push(
+          loadProfile(source.stageUrl(next.number))
+            .catch(() => null)
+            .then((profile) => {
+              stageProfileCache.set(nextKey, { fetchedAt: Date.now(), profile: profile || null });
+            }),
+        );
+      }
     }
   }
 
@@ -7235,13 +7269,40 @@ function buildStageSwitcherMarkup(race, options = {}) {
           Load full stage results
         </button>`;
 
+  const upNext = options.live ? buildUpNextMarkup(race) : "";
+
   return `
       <div class="card-subsection stage-switcher" data-stage-switcher>
         <div class="detail-label">Stage results</div>
         <div class="stage-strip" role="tablist" aria-label="${escapeHtml(race.title)} stages">${chips}</div>
         ${panels}
-        ${stageResultsControl}
+        ${stageResultsControl}${upNext}
       </div>`;
+}
+
+// What a fan checks the night before: the next stage's date, course, type, distance
+// and — when the organiser has published the trace — its profile. Rendered only for a
+// live race with a route entry for the following stage.
+function buildUpNextMarkup(race) {
+  const next = getNextRouteStage(race);
+  if (!next) {
+    return "";
+  }
+
+  const profileMarkup = buildStageProfileMarkup({
+    number: next.number,
+    stageType: next.stageType,
+    distanceKm: next.distanceKm,
+    course: next.course,
+    profile: getCachedStageProfile(race, next.number),
+  });
+  const meta = [next.date, next.course].filter(Boolean).join(" • ");
+
+  return `
+        <div class="stage-upnext" data-stage-upnext>
+          <div class="detail-label">Up next · ${escapeHtml(next.label || `Stage ${next.number}`)}</div>
+          ${meta ? `<p class="stage-panel-meta">${escapeHtml(meta)}</p>` : ""}${profileMarkup}
+        </div>`;
 }
 
 function buildStageRaceCard(race, options = {}) {
@@ -8852,6 +8913,20 @@ function buildHtmlPage(data, view) {
 
       .stage-panel[hidden] {
         display: none;
+      }
+
+      .stage-upnext {
+        margin-top: 1rem;
+        padding-top: 0.85rem;
+        border-top: 1px dashed var(--line-strong);
+      }
+
+      .stage-upnext .stage-panel-meta {
+        margin-bottom: 0.55rem;
+      }
+
+      .stage-upnext .stage-profile {
+        margin-bottom: 0;
       }
 
       .stage-profile {

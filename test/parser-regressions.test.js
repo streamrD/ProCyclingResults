@@ -113,6 +113,8 @@ function loadParserExports() {
       attachCachedStageProfiles,
       stageProfileCache,
       loadPersistedStageProfiles,
+      buildUpNextMarkup,
+      getNextRouteStage,
       applyRouteDetails,
       buildStageProfileMarkup,
       parseStageType,
@@ -4259,4 +4261,48 @@ test("a persisted stage profile seeds the cache and is never re-fetched", async 
     fs.unlinkSync(file);
     stageProfileCache.clear();
   }
+});
+
+test("a live race previews the next stage under its results, with its profile when cached", async () => {
+  const { buildStageSwitcherMarkup, stageProfileCache, enrichStageProfiles } = loadParserExports();
+  stageProfileCache.clear();
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 21,
+      stages: [
+        { number: 11, order: 11, label: "Stage 11", stageType: "flat", distanceKm: 156.1, winner: "A", standings: [{ place: "1", rider: "A" }] },
+        { number: 12, order: 12, label: "Stage 12", stageType: "mountain", distanceKm: 166.5, winner: "B", standings: [{ place: "1", rider: "B" }] },
+      ],
+      route: [
+        { number: 12, order: 12, label: "Stage 12", stageType: "mountain", distanceKm: 166.5 },
+        { number: 13, order: 13, label: "Stage 13", date: "4 September", course: "Almuñécar to Loja", stageType: "medium-mountain", distanceKm: 192.8 },
+      ],
+    },
+  };
+
+  const generic = buildStageSwitcherMarkup(race, { live: true });
+  assert.match(generic, /Up next · Stage 13/);
+  assert.match(generic, /4 September • Almuñécar to Loja/);
+  assert.match(generic, /stage-upnext[\s\S]*stage-profile is-generic[\s\S]*Medium mountain stage/);
+  // The preview is the last thing in the switcher, and never shown on a finished race.
+  assert.ok(generic.indexOf("stage-upnext") > generic.indexOf("Stage 12 winner"));
+  assert.doesNotMatch(buildStageSwitcherMarkup(race), /stage-upnext/);
+
+  // The enrichment fetches tomorrow's stage into the cache; the preview then draws it.
+  const requested = [];
+  await enrichStageProfiles([race], new Date("2026-09-03T18:00:00.000Z"), {
+    loadProfile: async (url) => {
+      requested.push(url);
+      return url.endsWith("/stage-13") ? { source: "komoot", distanceKm: 192.8, elevationGainM: 3414, points: [[0, 10], [100, 900], [192.8, 480]] } : null;
+    },
+  });
+  assert.ok(requested.includes("https://www.lavuelta.es/en/stage-13"));
+  const measured = buildStageSwitcherMarkup(race, { live: true });
+  assert.match(measured, /stage-upnext[\s\S]*stage-profile is-measured[\s\S]*3,414 m climbing/);
+  stageProfileCache.clear();
 });
