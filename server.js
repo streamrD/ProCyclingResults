@@ -6911,20 +6911,42 @@ function buildMeasuredStageProfilePaths(profile) {
   const peak = points.reduce((best, point) => (point[1] > best[1] ? point : best), points[0]);
 
   // Altitude gridlines at a round step chosen for the range, drawn as stretched SVG
-  // lines with HTML labels; km ticks along the base at a step chosen for the length.
-  const altitudeStep = span >= 2000 ? 500 : span >= 800 ? 250 : 100;
-  const gridlines = [];
-  for (let altitude = Math.ceil(minAlt / altitudeStep) * altitudeStep; altitude <= minAlt + span; altitude += altitudeStep) {
-    const bottomPercent = toBottomPercent(altitude);
-    if (bottomPercent > 8 && bottomPercent < 96) {
-      gridlines.push({ altitudeM: altitude, y: toY(altitude), bottomPercent });
+  // lines with HTML labels; distance ticks along the base at a step chosen for the
+  // length. Each axis is built twice — round metres and round feet, round kilometres
+  // and round miles — because a converted round number is not a round number, and
+  // the client shows whichever set matches the unit preference.
+  const buildGridlines = (units) => {
+    const toMetres = units === "imperial" ? (feet) => feet / 3.28084 : (metres) => metres;
+    const fromMetres = units === "imperial" ? (metres) => metres * 3.28084 : (metres) => metres;
+    const unitSpan = fromMetres(span);
+    const step =
+      units === "imperial"
+        ? unitSpan >= 6000 ? 2000 : unitSpan >= 2500 ? 1000 : 500
+        : unitSpan >= 2000 ? 500 : unitSpan >= 800 ? 250 : 100;
+    const lines = [];
+    for (let value = Math.ceil(fromMetres(minAlt) / step) * step; toMetres(value) <= minAlt + span; value += step) {
+      const altitudeM = toMetres(value);
+      const bottomPercent = toBottomPercent(altitudeM);
+      if (bottomPercent > 8 && bottomPercent < 96) {
+        lines.push({ units, label: `${formatStageNumberValue(value, 0)} ${units === "imperial" ? "ft" : "m"}`, y: toY(altitudeM), bottomPercent });
+      }
     }
-  }
-  const kmStep = distanceKm > 120 ? 50 : distanceKm > 40 ? 25 : distanceKm > 12 ? 10 : 5;
-  const ticks = [];
-  for (let km = kmStep; km < distanceKm - kmStep * 0.35; km += kmStep) {
-    ticks.push({ km, leftPercent: (km / distanceKm) * 100 });
-  }
+    return lines;
+  };
+  const buildTicks = (units) => {
+    const unitDistance = units === "imperial" ? distanceKm * 0.621371 : distanceKm;
+    const step =
+      units === "imperial"
+        ? unitDistance > 75 ? 25 : unitDistance > 25 ? 10 : unitDistance > 8 ? 5 : 2
+        : unitDistance > 120 ? 50 : unitDistance > 40 ? 25 : unitDistance > 12 ? 10 : 5;
+    const marks = [];
+    for (let value = step; value < unitDistance - step * 0.35; value += step) {
+      marks.push({ units, label: `${formatStageNumberValue(value, 0)} ${units === "imperial" ? "mi" : "km"}`, leftPercent: (value / unitDistance) * 100 });
+    }
+    return marks;
+  };
+  const gridlines = [...buildGridlines("metric"), ...buildGridlines("imperial")];
+  const ticks = [...buildTicks("metric"), ...buildTicks("imperial")];
 
   return {
     line: `M${coordinates.join(" L")}`,
@@ -7006,18 +7028,28 @@ function buildStageProfileMarkup(stage) {
                 </linearGradient>
               </defs>
               ${paths.gridlines
-                .map((line) => `<line class="stage-profile-gridline" x1="0" x2="${STAGE_PROFILE_WIDTH}" y1="${line.y.toFixed(1)}" y2="${line.y.toFixed(1)}"></line>`)
+                .map(
+                  (line) =>
+                    `<line class="stage-profile-gridline" data-unit-system="${line.units}" x1="0" x2="${STAGE_PROFILE_WIDTH}" y1="${line.y.toFixed(
+                      1,
+                    )}" y2="${line.y.toFixed(1)}"></line>`,
+                )
                 .join("")}
               <path class="stage-profile-area" style="fill: url(#${gradientId});" d="${paths.area}"></path>
               <path class="stage-profile-line" d="${paths.line}"></path>
             </svg>${peakLabel}${paths.gridlines
-              .map((line) => altitudeLabel(line.altitudeM, "stage-profile-gridlabel", `bottom: ${line.bottomPercent.toFixed(1)}%;`))
+              .map(
+                (line) =>
+                  `<span class="stage-profile-gridlabel" data-unit-system="${line.units}" style="bottom: ${line.bottomPercent.toFixed(1)}%;">${escapeHtml(
+                    line.label,
+                  )}</span>`,
+              )
               .join("")}${paths.ticks
               .map(
                 (tick) =>
-                  `<span class="stage-profile-tick" style="left: ${tick.leftPercent.toFixed(1)}%;" data-unit-metric="${escapeHtml(
-                    formatStageDistance(tick.km, "metric"),
-                  )}" data-unit-imperial="${escapeHtml(formatStageDistance(tick.km, "imperial"))}">${escapeHtml(formatStageDistance(tick.km, "metric"))}</span>`,
+                  `<span class="stage-profile-tick" data-unit-system="${tick.units}" style="left: ${tick.leftPercent.toFixed(1)}%;">${escapeHtml(
+                    tick.label,
+                  )}</span>`,
               )
               .join("")}
             <span class="stage-profile-end is-start">${ends ? `<strong>${escapeHtml(ends.start)}</strong>` : "Start"} ${altitudeLabel(
@@ -8887,6 +8919,25 @@ function buildHtmlPage(data, view) {
         right: 0;
       }
 
+      /* Axes come in a metric and an imperial set; the client stamps the preference on
+         <html> and the matching set shows. Metric is the default when nothing is stamped. */
+      .stage-profile.is-expanded [data-unit-system="imperial"] {
+        display: none;
+      }
+
+      html[data-units="imperial"] .stage-profile.is-expanded [data-unit-system="metric"] {
+        display: none;
+      }
+
+      html[data-units="imperial"] .stage-profile.is-expanded .stage-profile-gridlabel[data-unit-system="imperial"],
+      html[data-units="imperial"] .stage-profile.is-expanded .stage-profile-tick[data-unit-system="imperial"] {
+        display: block;
+      }
+
+      html[data-units="imperial"] .stage-profile.is-expanded .stage-profile-gridline[data-unit-system="imperial"] {
+        display: inline;
+      }
+
       .stage-profile-gridline {
         stroke: rgba(9, 33, 76, 0.16);
         stroke-width: 1;
@@ -9776,6 +9827,7 @@ function buildHtmlPage(data, view) {
       }
 
       function applyUnitPreference(units) {
+        document.documentElement.setAttribute("data-units", units);
         document.querySelectorAll("[data-unit-metric]").forEach((element) => {
           element.textContent = units === "imperial" ? element.dataset.unitImperial : element.dataset.unitMetric;
         });

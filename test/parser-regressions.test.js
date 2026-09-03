@@ -4078,11 +4078,15 @@ test("buildStageProfileMarkup prefers a measured trace and labels its summit and
   assert.match(html, /data-profile-toggle aria-expanded="false"/);
   // Axes: 500 m gridlines for a 2 km range, 50 km ticks for a 166 km stage, and the
   // finish altitude on the right-hand end marker.
-  assert.match(html, /stage-profile-gridlabel[^>]*data-unit-metric="500 m"/);
-  assert.match(html, /stage-profile-gridlabel[^>]*data-unit-metric="2,000 m"/);
-  assert.match(html, /stage-profile-tick[^>]*data-unit-metric="100 km" data-unit-imperial="62.1 mi"/);
+  assert.match(html, /stage-profile-gridlabel" data-unit-system="metric"[^>]*>500 m</);
+  assert.match(html, /stage-profile-gridlabel" data-unit-system="metric"[^>]*>2,000 m</);
+  assert.match(html, /stage-profile-tick" data-unit-system="metric"[^>]*>100 km</);
   // A tick that would collide with the finish marker is dropped.
-  assert.doesNotMatch(html, /stage-profile-tick[^>]*data-unit-metric="150 km"/);
+  assert.doesNotMatch(html, />150 km</);
+  // The imperial axes are round in their own units, not converted metres.
+  assert.match(html, /stage-profile-gridlabel" data-unit-system="imperial"[^>]*>6,000 ft</);
+  assert.match(html, /stage-profile-tick" data-unit-system="imperial"[^>]*>50 mi</);
+  assert.doesNotMatch(html, /6,562 ft/);
   assert.match(html, /stage-profile-end is-finish">Finish/);
   assert.match(html, /is-finish">Finish <span class="stage-profile-end-altitude"[^>]*data-unit-metric="2,137 m"/);
   assert.match(html, /<stop offset="0" stop-color="#ef3340">[\s\S]*<stop offset="0.3" stop-color="#ffcc00">[\s\S]*<stop offset="0.62" stop-color="#005bbb">[\s\S]*<stop offset="1" stop-color="#00a651">/);
