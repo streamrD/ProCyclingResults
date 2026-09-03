@@ -6996,11 +6996,12 @@ function buildStageProfileMarkup(stage) {
           <div class="stage-profile-plot">
             <svg viewBox="0 0 ${STAGE_PROFILE_WIDTH} ${STAGE_PROFILE_HEIGHT}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
               <defs>
+                <!-- The site's rainbow strip: green at the valley floor, blue through the middle, red at the summit. -->
                 <linearGradient id="${gradientId}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${STAGE_PROFILE_HEIGHT}">
-                  <stop offset="0" stop-color="#c8102e"></stop>
-                  <stop offset="0.42" stop-color="#f2b705"></stop>
-                  <stop offset="0.8" stop-color="#3fae5a"></stop>
-                  <stop offset="1" stop-color="#2b8a4a"></stop>
+                  <stop offset="0" stop-color="#ef3340"></stop>
+                  <stop offset="0.12" stop-color="#ef3340"></stop>
+                  <stop offset="0.52" stop-color="#005bbb"></stop>
+                  <stop offset="1" stop-color="#00a651"></stop>
                 </linearGradient>
               </defs>
               ${paths.gridlines

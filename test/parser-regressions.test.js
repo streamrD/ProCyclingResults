@@ -4085,7 +4085,7 @@ test("buildStageProfileMarkup prefers a measured trace and labels its summit and
   assert.doesNotMatch(html, /stage-profile-tick[^>]*data-unit-metric="150 km"/);
   assert.match(html, /stage-profile-end is-finish">Finish/);
   assert.match(html, /is-finish">Finish <span class="stage-profile-end-altitude"[^>]*data-unit-metric="2,137 m"/);
-  assert.match(html, /<stop offset="0" stop-color="#c8102e">/);
+  assert.match(html, /<stop offset="0" stop-color="#ef3340">[\s\S]*<stop offset="0.52" stop-color="#005bbb">[\s\S]*<stop offset="1" stop-color="#00a651">/);
   assert.match(html, /stage-profile-area" style="fill: url\(#stage-profile-gradient-12-1666\);"/);
   const named = buildStageProfileMarkup({ ...stage, course: "Vera to Calar Alto" });
   assert.match(named, /is-start"><strong>Vera<\/strong>/);
