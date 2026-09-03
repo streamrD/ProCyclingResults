@@ -495,6 +495,30 @@ choice in `localStorage` under `pcr-units`, re-applying it to any markup that la
 No source publishes categorised-climb markers or a climbing total for the non-ASO races;
 the race centre (racecenter.lavuelta.es) draws them from an API its bundle obscures.
 
+**6. Stage time gaps (added 2026-09-03).** Every stage podium row below the winner shows
+the rider's finishing time and, in a small pill beside it, the gap to the stage winner.
+`getStageStandingMetrics(entry, winnerSeconds)` produces the pair; `buildPodiumMarkup`
+computes `winnerSeconds` from the place-1 entry when `metricContext` is `"stage"` and
+hands it to `buildRiderMarkup`, which renders `.standing-gap` (time) and
+`.standing-delta` (gap). Three source shapes reach it, and the rules cover all three:
+
+| Source shape | Example | What renders |
+| --- | --- | --- |
+| Time and gap both given (official providers: lavuelta.es, letour.fr, Giro) | `4:31:49`, `+01:56` | Time as given; gap **recomputed from the two times** |
+| Winner's time plus gaps for the rest (Wikipedia `{{cyclingresult}}`) | winner `4:12:24`, rider `+ 7"` | Time derived as winner + gap: `4:12:31`, `+00:07` |
+| Times only | `31:38`, `32:42` | Gap derived as the difference: `+01:04` |
+
+A rider on the winner's time reads `s.t.`, whether the source wrote an equal time or
+"s.t." itself. A rider with neither value renders as before, name only. When the
+winner's own time is missing nothing can be derived and the source values stand.
+Recomputing the gap whenever both times exist is deliberate: some providers put the
+*GC* gap on a stage row, and the difference of two stage times is the only figure that
+cannot be wrong that way. The GC podium is untouched — leader time, then gaps — so the
+two sections keep reading differently on purpose. Helpers: `parseClockSeconds`,
+`formatClock`, `formatGap`. Tests: "a stage podium shows each rider's finishing time and
+gap" in `test/parser-regressions.test.js`, plus the older "shows stage time separately
+from cumulative GC timing" test, which now asserts the derived gap sits in its own pill.
+
 ### Rendering contract worth preserving
 
 - The strip lists the **whole route**, with unraced stages disabled, so card height

@@ -529,7 +529,7 @@ The design system is encoded directly in the inline `<style>` block:
 
 ### Stage podium times
 
-Stage results show each rider's finishing time and, beside it, the gap to the stage winner; whichever half a source omits is derived from the winner's time, and a rider on the same time reads "s.t.". The general classification keeps its leader-time-then-gaps form.
+Stage results show each rider's finishing time and, beside it, the gap to the stage winner. Official providers give both; Wikipedia gives the winner's time and everyone else's gap; a few rows carry times alone. Whichever half is missing is derived from the winner's time (`getStageStandingMetrics`), the gap is recomputed from the two times whenever both exist so a provider's GC gap never lands on a stage row, and a rider on the winner's time reads "s.t.". The general classification keeps its leader-time-then-gaps form. The full rule set is item 6 of "Stage Results Feature Map" in `handoff.md`.
 
 ### Stage profiles
 
