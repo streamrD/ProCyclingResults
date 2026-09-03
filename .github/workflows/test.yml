@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --version
+      # No dependencies to install: the app is built-in modules only.
+      - run: node -c server.js
+      - run: npm test
+        env:
+          # The browser smoke test uses whichever Chrome the runner image ships.
+          CHROME_PATH: /usr/bin/google-chrome

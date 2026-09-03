@@ -15,6 +15,7 @@ const BUILD_INFO = {
   branch: process.env.RAILWAY_GIT_BRANCH || "",
   deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || "",
   source: process.env.RAILWAY_GIT_COMMIT_SHA ? "railway-env" : "hardcoded-fallback",
+  node: process.version,
 };
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";

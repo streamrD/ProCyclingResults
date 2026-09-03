@@ -457,11 +457,28 @@ crimson, alpine, navy-to-gold; the user picked the stripe, then asked for yellow
 blue and red. Comps: https://claude.ai/code/artifact/7add321d-1e0c-4061-943b-cc9bc6eb3475.
 The line stays `--uci-blue-deep`. Changing the palette is those stops and nothing else.
 
-*Known gaps.* Imperial gridlines are round metres converted (6,562 ft, not 6,500 ft).
-`stageProfileCache` is in-memory, so every deploy re-fetches, and only live races are
-enriched — a race that finishes keeps its profiles only until the week-long entries
-lapse. Categorised-climb markers (the race centre's PM/sprint flags) have no reachable
-source. Both unit systems render
+*Durable store.* `data/stage-profiles.json` holds every fetched trace, keyed
+`<page title>#<stage>`, and `loadPersistedStageProfiles` seeds `stageProfileCache` from
+it at startup with entries that never expire. Fill it with
+`npm run refresh:stage-profiles -- --race "2026 Vuelta a España" --stages 21` once a
+route is published (organisers post all stages before the race) and commit the result;
+production then never re-fetches those stages, and a finished race keeps its charts.
+Runtime fetches still cover anything the file lacks. Enrichment runs for live,
+finished and recent races alike, gated to the current year and a matching source.
+
+*Up next.* A live race previews the following stage under its results:
+`buildUpNextMarkup` reads it off `stageRace.route` and draws its profile from the cache
+(`getCachedStageProfile`); `enrichStageProfiles` also fetches that one stage so the
+preview is measured even before a refresh. Nothing renders once the final stage is raced.
+
+*Axes.* Gridlines and distance ticks are built twice — round metres/kilometres and round
+feet/miles — tagged `data-unit-system`; the client stamps `data-units` on `<html>` and
+CSS shows the matching set.
+
+*Known gaps.* Categorised-climb markers (the race centre's PM/sprint flags) have no
+reachable source. Only the Vuelta site embeds komoot; check letour.fr, letourfemmes.fr
+and lavueltafemenina.es each spring — `STAGE_PROFILE_SOURCES` already lists them, so an
+embed there lights up without code. Both unit systems render
 into `data-unit-metric` / `data-unit-imperial`; the client swaps text and remembers the
 choice in `localStorage` under `pcr-units`, re-applying it to any markup that lands later.
 No source publishes categorised-climb markers or a climbing total for the non-ASO races;
@@ -766,7 +783,7 @@ stage that has not happened, so the two carry different titles.
 - Retired section support still exists as hooks and archived config, but there are no active deferred groups.
 - YouTube finish-video search and official providers (e.g. letour.fr) depend on third-party page structure; expect occasional parser drift there too.
 - There is no schema validation for upstream payloads.
-- There is no CI config, lint script, formatter config, lockfile, or explicit Node engine declaration.
+- CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
 
 ## Suggested First Checks For A New Agent
 

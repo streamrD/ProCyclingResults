@@ -529,7 +529,7 @@ The design system is encoded directly in the inline `<style>` block:
 
 ### Stage profiles
 
-Every stage panel opens with a profile block. A stage with a measured trace (see "Stage profiles" under Data Sources) renders compact by default — a colour thumbnail beside type, distance, climbing, source and the km/mi toggle — and expands to a tall chart with an altitude-coloured fill, gridlines, km ticks and start/finish towns. The fill is the site's rainbow strip mapped to height: green valley floor, blue lower slopes, yellow high ground, red summit. A stage without a trace shows a schematic pictogram for its Wikipedia stage type and says so; generic must look generic. Full rationale, gaps and the comp history live in `handoff.md` under "Stage Results Feature Map".
+Every stage panel opens with a profile block. A stage with a measured trace (see "Stage profiles" under Data Sources) renders compact by default — a colour thumbnail beside type, distance, climbing, source and the km/mi toggle — and expands to a tall chart with an altitude-coloured fill, gridlines, km ticks and start/finish towns. The fill is the site's rainbow strip mapped to height: green valley floor, blue lower slopes, yellow high ground, red summit. A stage without a trace shows a schematic pictogram for its Wikipedia stage type and says so; generic must look generic. Fetched traces are committed to `data/stage-profiles.json` (refresh with `npm run refresh:stage-profiles -- --race "<page title>"`) so deploys and finished races keep them, and a live race previews the next stage under its results. Full rationale, gaps and the comp history live in `handoff.md` under "Stage Results Feature Map".
 
 ## Browser Interactivity
 

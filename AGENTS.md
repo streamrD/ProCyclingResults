@@ -56,6 +56,8 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - Remember that the active product scope is Men's WorldTour, Women's WorldTour, and National Championships.
 - UCI ProSeries and Europe Tour sections were implemented previously, retired on 2026-06-22, and archived in `archive/proseries-europe-tour-sections.js`. Do not reactivate them unless the user asks for that explicitly.
 - National Championships should prioritize completed event records in the UI. Use `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` only for narrow, source-backed date/location/podium/video overrides.
+- Stage profiles live in `data/stage-profiles.json`. When a new ASO route is published, run `npm run refresh:stage-profiles -- --race "<Wikipedia page title>" --stages <n>` and commit the file; the server seeds its cache from it and never re-fetches those stages.
+- `npm test` includes a headless-Chrome smoke test of the client script; it skips when no Chrome is installed, so a green run on a machine without Chrome has not exercised the browser code.
 - `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
 - Giro finish-video links now prefer official livefeed-derived URLs before falling back to the static map.
 - Companion stage articles are read at build time for live stage races only; reading them for recent races too cost roughly 2s of a ~20s cold start. Finished races render a winner-per-stage history and offer `/api/race-stages` on demand. Keep that split unless the cold-start budget changes.

@@ -8,6 +8,10 @@
     "test": "node --test",
     "benchmark:load": "node scripts/benchmark-load.js",
     "benchmark:ready": "node scripts/benchmark-load.js --wait-ready",
-    "benchmark:homepage-ready": "node scripts/benchmark-load.js --wait-homepage-ready"
+    "benchmark:homepage-ready": "node scripts/benchmark-load.js --wait-homepage-ready",
+    "refresh:stage-profiles": "node scripts/refresh-stage-profiles.js"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
