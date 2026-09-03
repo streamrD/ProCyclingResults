@@ -59,6 +59,7 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
 - Giro finish-video links now prefer official livefeed-derived URLs before falling back to the static map.
 - Companion stage articles are read at build time for live stage races only; reading them for recent races too cost roughly 2s of a ~20s cold start. Finished races render a winner-per-stage history and offer `/api/race-stages` on demand. Keep that split unless the cold-start budget changes.
+- Stage cards draw a real elevation profile only where an organiser publishes a trace (komoot embeds on ASO sites, currently the Vuelta). Anything else must look obviously generic — a pictogram plus a "no profile available" note — never a plausible silhouette. That is a product decision made on 2026-09-03; see "Stage Results Feature Map" in `handoff.md` before touching `buildStageProfileMarkup`.
 - A fix only reaches the product when it is pushed to `main`; Railway deploys from there. If the user reports the site is wrong, check what the deployed instance returns before re-debugging local code — they are usually looking at production, not your working tree.
 
 ## Validation

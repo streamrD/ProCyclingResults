@@ -527,6 +527,10 @@ The design system is encoded directly in the inline `<style>` block:
 - card-based layouts
 - responsive grid breakpoints
 
+### Stage profiles
+
+Every stage panel opens with a profile block. A stage with a measured trace (see "Stage profiles" under Data Sources) renders compact by default — a colour thumbnail beside type, distance, climbing, source and the km/mi toggle — and expands to a tall chart with an altitude-coloured fill, gridlines, km ticks and start/finish towns. The fill is the site's rainbow strip mapped to height: green valley floor, blue lower slopes, yellow high ground, red summit. A stage without a trace shows a schematic pictogram for its Wikipedia stage type and says so; generic must look generic. Full rationale, gaps and the comp history live in `handoff.md` under "Stage Results Feature Map".
+
 ## Browser Interactivity
 
 Client-side JS is still intentionally small, but it now does more than simple form submission:

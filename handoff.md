@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-08-23
+Updated: 2026-09-03
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -444,7 +444,24 @@ under `pcr-profile-view` and applies it to every measured profile on the page. A
 same icon for every stage of that type, in a dashed box, with the note "no elevation
 profile is available" — because a plausible-looking silhouette was tried first and read
 as a real profile (the user spotted three Tour mountain stages drawn nearly alike). Do
-not make the generic case look more realistic; make it look more generic. Both unit systems render
+not make the generic case look more realistic; make it look more generic.
+
+*Palette.* The measured fill maps the site's rainbow strip to height: green `#00a651`
+at the valley floor, blue `#005bbb` on the lower slopes, yellow `#ffcc00` across the
+high ground and red `#ef3340` held for the summit slice (stops in the `<linearGradient>`
+inside `buildStageProfileMarkup`, `gradientUnits="userSpaceOnUse"` so colour follows chart
+height rather than each stage's own bounding box). The warm end deliberately takes the
+top third so a 2,000 m climb lights up instead of showing a red tip. Chosen from six
+comps rendered in the site's own styling — topographic, house blue, UCI stripe, Vuelta
+crimson, alpine, navy-to-gold; the user picked the stripe, then asked for yellow between
+blue and red. Comps: https://claude.ai/code/artifact/7add321d-1e0c-4061-943b-cc9bc6eb3475.
+The line stays `--uci-blue-deep`. Changing the palette is those stops and nothing else.
+
+*Known gaps.* Imperial gridlines are round metres converted (6,562 ft, not 6,500 ft).
+`stageProfileCache` is in-memory, so every deploy re-fetches, and only live races are
+enriched — a race that finishes keeps its profiles only until the week-long entries
+lapse. Categorised-climb markers (the race centre's PM/sprint flags) have no reachable
+source. Both unit systems render
 into `data-unit-metric` / `data-unit-imperial`; the client swaps text and remembers the
 choice in `localStorage` under `pcr-units`, re-applying it to any markup that lands later.
 No source publishes categorised-climb markers or a climbing total for the non-ASO races;
@@ -778,6 +795,7 @@ Then choose the smallest relevant read path:
 - National Championships issue: search `NATIONAL_CHAMPIONSHIP` in `server.js`
 - Finish video issue: search `RACE_FINISH_VIDEO_URLS`, `getRaceFinishVideoUrl`, and `getStageFinishVideoUrl`
 - Stage results / stage strip issue: search `buildStageHistory`, `buildStageSwitcherMarkup`, and `extractStageArticleTitles`
+- Stage profile issue: search `buildStageProfileMarkup`, `enrichStageProfiles`, `extractRouteStages`, and `STAGE_PROFILE_SOURCES`
 - Article issue: search `buildRaceArticleQueries`, `scoreRaceArticle`, and `selectRaceArticles`
 - Performance or cold-start issue: inspect cache loaders plus `scripts/benchmark-load.js`
 
