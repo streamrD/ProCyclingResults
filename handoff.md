@@ -409,6 +409,36 @@ here first.
 
 **4. Per-stage finish videos.** See "Per-stage finish videos" above.
 
+**5. Stage profiles (added 2026-09-03).** Each stage panel opens with a profile block:
+a silhouette for the stage type, the distance, the climbing total when known, and a
+km/mi toggle. Two data paths feed it.
+
+- *Route table.* `extractRouteStages` now reads every row of "Stage characteristics",
+  raced or not, and adds `distanceKm` (from `{{convert|…|km}}`) and `stageType` (one of
+  `flat`, `hilly`, `medium-mountain`, `mountain`, `individual-time-trial`,
+  `team-time-trial`, read from the icon file name *and* the label — pages use either).
+  `buildStageHistory` copies both onto raced stages, and the snapshot carries the whole
+  route as `stageRace.route` so `applyRouteDetails` can fill in a stage that arrives
+  from an official provider before Wikipedia has its winner. Without that the current
+  stage — the one a reader most wants — would be the only one with no profile.
+- *Measured trace.* `enrichStageProfiles` fetches the organiser's stage page for the
+  races in `STAGE_PROFILE_SOURCES` (ASO sites: Vuelta, Tour, Tour Femmes, Vuelta
+  Femenina), finds the embedded komoot tour, and pulls its distance, `elevation_up` and
+  coordinate trace from komoot's public API. The trace is resampled to 120 points by
+  distance and stored on the stage as `profile`. Only lavuelta.es embedded komoot when
+  this was built; letour.fr and the women's sites ship static profile images, so they
+  fall through to the silhouette. Current edition only, live races only, budgeted like
+  the official providers (`STAGE_PROFILE_BLOCKING_BUDGET_MS`, `STAGE_PROFILE_LOOKUP_LIMIT`),
+  and cached for a week in `stageProfileCache` because a published profile never
+  changes. Late arrivals write onto the cached race, so the next render has them.
+
+`buildStageProfileMarkup` prefers the measured trace, scaled to its own altitude range
+but never less than 1,000 m of it so a flat stage stays low. Both unit systems render
+into `data-unit-metric` / `data-unit-imperial`; the client swaps text and remembers the
+choice in `localStorage` under `pcr-units`, re-applying it to any markup that lands later.
+No source publishes categorised-climb markers or a climbing total for the non-ASO races;
+the race centre (racecenter.lavuelta.es) draws them from an API its bundle obscures.
+
 ### Rendering contract worth preserving
 
 - The strip lists the **whole route**, with unraced stages disabled, so card height

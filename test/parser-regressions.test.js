@@ -105,6 +105,16 @@ function loadParserExports() {
       BUILD_INFO,
       applyLateOfficialSnapshots,
       mergeLatestStageIntoHistory,
+      extractRouteStages,
+      extractKomootTourReference,
+      buildStageProfileFromKomoot,
+      enrichStageProfiles,
+      attachCachedStageProfiles,
+      stageProfileCache,
+      applyRouteDetails,
+      buildStageProfileMarkup,
+      parseStageType,
+      parseStageDistanceKm,
       parseTeamReference,
       collectTeamReferences,
       normalizeSearchText,
@@ -3934,4 +3944,249 @@ test("a team time trial renders team names once they are resolved, and is skippe
   // Without resolved names there is only a team code, which is not worth rendering.
   const unresolved = extractStageRaceSnapshot(rawText);
   assert.equal(unresolved.stages.some((stage) => stage.number === 1), false);
+});
+
+test("extractRouteStages reads distance and stage type off every route row, raced or not", () => {
+  const { extractRouteStages, extractStageRaceSnapshot } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-stage2.wikitext"), "utf8");
+
+  const route = JSON.parse(JSON.stringify(extractRouteStages(rawText)));
+  assert.equal(route.length, 3);
+  assert.equal(route[0].distanceKm, 9);
+  assert.equal(route[0].stageType, "individual-time-trial");
+  assert.equal(route[1].distanceKm, 215.5);
+  assert.equal(route[1].stageType, "hilly");
+  // Stage 3 has not been raced: no winner, but its course is still described.
+  assert.equal(route[2].winner, null);
+  assert.equal(route[2].distanceKm, 166.7);
+  assert.equal(route[2].stageType, "medium-mountain");
+
+  const snapshot = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText)));
+  assert.equal(snapshot.stages.length, 2);
+  assert.equal(snapshot.stages[1].distanceKm, 215.5);
+  assert.equal(snapshot.stages[1].stageType, "hilly");
+  assert.deepEqual(
+    snapshot.route.map((entry) => [entry.number, entry.stageType, entry.distanceKm]),
+    [[1, "individual-time-trial", 9], [2, "hilly", 215.5], [3, "medium-mountain", 166.7]],
+  );
+});
+
+test("parseStageType reads the icon file name or the label, whichever a page provides", () => {
+  const { parseStageType, parseStageDistanceKm } = loadParserExports();
+  assert.equal(parseStageType(["[[File:Mountainstage.svg|20px|alt=|link=]]", ""]), "mountain");
+  assert.equal(parseStageType(["[[File:Mediummountainstage.svg|20px]]", "Medium-mountain stage"]), "medium-mountain");
+  assert.equal(parseStageType(["[[File:Plainstage.svg|link=|alt=|20x20px]]", "Flat stage"]), "flat");
+  assert.equal(parseStageType(["", "[[Team time trial]]"]), "team-time-trial");
+  assert.equal(parseStageType(["[[File:Time Trial.svg|20px]]", "[[Individual time trial]]"]), "individual-time-trial");
+  assert.equal(parseStageType(["", "Hilly stage"]), "hilly");
+  assert.equal(parseStageType(["", "Rest day"]), "");
+
+  assert.equal(parseStageDistanceKm("{{convert|215.5|km|abbr=on}}"), 215.5);
+  assert.equal(parseStageDistanceKm("166,7 km"), 166.7);
+  assert.equal(parseStageDistanceKm("{{cvt|100|mi}}"), 160.9);
+  assert.equal(parseStageDistanceKm("—"), null);
+});
+
+test("mergeStageRaceSnapshots gives a provider-supplied stage its route details", () => {
+  const { mergeStageRaceSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+  };
+  // lavuelta.es reports stage 3 before Wikipedia's route table has its winner, so the
+  // stage arrives with standings only and has to pick up its distance and type.
+  const official = {
+    totalStages: 21,
+    completedStages: 3,
+    latestStage: { number: 3, label: "Stage 3", standings: [{ place: "1", rider: "Jakob Omrzel" }, { place: "2", rider: "Urko Berrade" }] },
+    generalClassification: { stageNumber: 3, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    overallResult: [],
+  };
+  const parsed = {
+    totalStages: 21,
+    completedStages: 2,
+    stages: [
+      { number: 1, order: 1, label: "Stage 1", distanceKm: 9, stageType: "individual-time-trial", winner: "Tadej Pogačar", standings: [{ place: "1", rider: "Tadej Pogačar" }, { place: "2", rider: "Ethan Hayter" }] },
+      { number: 2, order: 2, label: "Stage 2", distanceKm: 215.5, stageType: "hilly", winner: "Matthew Brennan", standings: [{ place: "1", rider: "Matthew Brennan" }, { place: "2", rider: "Pau Miquel" }] },
+    ],
+    route: [
+      { number: 1, order: 1, label: "Stage 1", distanceKm: 9, stageType: "individual-time-trial" },
+      { number: 2, order: 2, label: "Stage 2", distanceKm: 215.5, stageType: "hilly" },
+      { number: 3, order: 3, label: "Stage 3", date: "24 August", course: "Gruissan to Font Romeu", distanceKm: 166.7, stageType: "medium-mountain" },
+    ],
+    latestStage: { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "Matthew Brennan" }] },
+    generalClassification: { stageNumber: 2, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    overallResult: [],
+  };
+
+  const merged = JSON.parse(JSON.stringify(mergeStageRaceSnapshots(official, parsed, race, new Date("2026-08-24T20:00:00.000Z"))));
+
+  assert.deepEqual(merged.stages.map((stage) => stage.number), [1, 2, 3]);
+  assert.equal(merged.stages[2].distanceKm, 166.7);
+  assert.equal(merged.stages[2].stageType, "medium-mountain");
+  assert.equal(merged.stages[2].course, "Gruissan to Font Romeu");
+  assert.equal(merged.stages[2].standings.length, 2);
+  assert.equal(merged.latestStage.stageType, "medium-mountain");
+  assert.equal(merged.route.length, 3);
+});
+
+test("buildStageProfileMarkup draws a silhouette for the stage type with both unit systems", () => {
+  const { buildStageProfileMarkup } = loadParserExports();
+  const html = buildStageProfileMarkup({ number: 5, stageType: "mountain", distanceKm: 155.9 });
+
+  assert.match(html, /data-stage-type="mountain"/);
+  assert.match(html, /Mountain stage/);
+  assert.match(html, /<path class="stage-profile-area"/);
+  assert.match(html, /data-unit-metric="155.9 km" data-unit-imperial="96.9 mi"/);
+  assert.match(html, /data-unit-option="imperial"/);
+  assert.doesNotMatch(html, /climbing/);
+  assert.doesNotMatch(html, /stage-profile-peak/);
+
+  assert.match(buildStageProfileMarkup({ number: 1, stageType: "individual-time-trial", distanceKm: 9 }), /stage-profile-badge">ITT</);
+  assert.match(buildStageProfileMarkup({ number: 6, stageType: "team-time-trial", distanceKm: 24.1 }), /stage-profile-badge">TTT</);
+  // Nothing known about the course: no block at all, so the panel reads as before.
+  assert.equal(buildStageProfileMarkup({ number: 2 }), "");
+  // Distance alone still renders, just without a silhouette.
+  const distanceOnly = buildStageProfileMarkup({ number: 2, distanceKm: 120 });
+  assert.match(distanceOnly, /120 km/);
+  assert.doesNotMatch(distanceOnly, /<svg/);
+});
+
+test("buildStageProfileMarkup prefers a measured trace and labels its summit and climbing", () => {
+  const { buildStageProfileMarkup, buildStageSwitcherMarkup } = loadParserExports();
+  const profile = {
+    source: "komoot",
+    distanceKm: 166.6,
+    elevationGainM: 4527,
+    minAltM: 113,
+    maxAltM: 2137,
+    points: [[0, 113], [40, 400], [80, 900], [120, 700], [166.6, 2137]],
+  };
+  const stage = { number: 12, stageType: "mountain", distanceKm: 166.6, profile };
+  const html = buildStageProfileMarkup(stage);
+
+  assert.match(html, /stage-profile-canvas is-measured/);
+  assert.match(html, /stage-profile-peak[^>]*data-unit-metric="2,137 m" data-unit-imperial="7,011 ft"/);
+  assert.match(html, /data-unit-metric="4,527 m climbing" data-unit-imperial="14,852 ft climbing"/);
+  // The summit is at the finish, so its label is clamped inside the canvas.
+  assert.match(html, /left: 94\.0%/);
+
+  const switcher = buildStageSwitcherMarkup({
+    id: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    stageRace: {
+      totalStages: 21,
+      stages: [
+        { number: 11, order: 11, label: "Stage 11", stageType: "flat", distanceKm: 180, winner: "A", standings: [{ place: "1", rider: "A" }] },
+        { ...stage, order: 12, label: "Stage 12", winner: "Jakob Omrzel", standings: [{ place: "1", rider: "Jakob Omrzel" }] },
+      ],
+    },
+  }, { live: true });
+  // The profile sits inside the stage panel, above the winner label.
+  assert.ok(switcher.indexOf('<figure class="stage-profile"') < switcher.indexOf("Stage 11 winner"));
+  assert.equal((switcher.match(/<figure class="stage-profile"/g) || []).length, 2);
+});
+
+test("buildStageProfileFromKomoot resamples a trace by distance and keeps its summit", () => {
+  const { buildStageProfileFromKomoot, extractKomootTourReference } = loadParserExports();
+  // Four fixes roughly 1.1 km apart along a meridian, climbing to a summit and back.
+  const coordinates = {
+    items: [
+      { lat: 40, lng: -3, alt: 100.4 },
+      { lat: 40.01, lng: -3, alt: 350 },
+      { lat: 40.02, lng: -3, alt: 900.2 },
+      { lat: 40.03, lng: -3, alt: 420 },
+    ],
+  };
+  const profile = buildStageProfileFromKomoot({ distance: 3400, elevation_up: 1050.6, elevation_down: 730.2 }, coordinates);
+
+  assert.equal(profile.source, "komoot");
+  assert.equal(profile.distanceKm, 3.4);
+  assert.equal(profile.elevationGainM, 1051);
+  assert.equal(profile.elevationLossM, 730);
+  assert.equal(profile.points.length, 120);
+  assert.deepEqual(JSON.parse(JSON.stringify(profile.points[0])), [0, 100]);
+  assert.deepEqual(JSON.parse(JSON.stringify(profile.points[119])), [3.4, 420]);
+  assert.equal(profile.maxAltM, 900);
+  assert.equal(profile.minAltM, 100);
+  assert.equal(buildStageProfileFromKomoot({}, { items: [] }), null);
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(extractKomootTourReference('<iframe src="https://www.komoot.com/tour/3034130062/embed?share_token=aWHYO5Ej_tQ-9&amp;layout=lavuelta"></iframe>'))),
+    { tourId: "3034130062", shareToken: "aWHYO5Ej_tQ-9" },
+  );
+  assert.equal(extractKomootTourReference("<html>no embed</html>"), null);
+});
+
+test("enrichStageProfiles fetches the organiser's trace for the current edition only, once", async () => {
+  const { enrichStageProfiles, attachCachedStageProfiles, stageProfileCache } = loadParserExports();
+  stageProfileCache.clear();
+  const requested = [];
+  const loadProfile = async (url) => {
+    requested.push(url);
+    return url.endsWith("/stage-2") ? null : { source: "komoot", distanceKm: 9, elevationGainM: 80, points: [[0, 10], [9, 40]] };
+  };
+  const buildRace = (pageTitle, year) => ({
+    id: pageTitle,
+    pageTitle,
+    startDate: new Date(`${year}-08-22T00:00:00.000Z`),
+    endDate: new Date(`${year}-09-13T00:00:00.000Z`),
+    stageRace: {
+      totalStages: 21,
+      stages: [
+        { number: 1, order: 1, label: "Stage 1", standings: [{ place: "1", rider: "A" }] },
+        { number: 2, order: 2, label: "Stage 2", standings: [{ place: "1", rider: "B" }] },
+        { number: 3, order: 3, label: "Stage 3", standings: [] },
+      ],
+    },
+  });
+  const now = new Date("2026-09-03T18:00:00.000Z");
+  const vuelta = buildRace("2026 Vuelta a España", 2026);
+  const lastYear = buildRace("2025 Vuelta a España", 2025);
+  const other = buildRace("2026 Tour de Pologne", 2026);
+
+  await enrichStageProfiles([vuelta, lastYear, other], now, { loadProfile });
+
+  // Raced stages only, newest first; the site describes this year's race alone.
+  assert.deepEqual(requested, ["https://www.lavuelta.es/en/stage-2", "https://www.lavuelta.es/en/stage-1"]);
+  assert.equal(vuelta.stageRace.stages[0].profile.elevationGainM, 80);
+  assert.equal(vuelta.stageRace.stages[1].profile, undefined);
+  assert.equal(lastYear.stageRace.stages[0].profile, undefined);
+  assert.equal(other.stageRace.stages[0].profile, undefined);
+
+  // A second build is served from the cache: the hit is re-attached, the miss waits
+  // out its retry window, and nothing is fetched.
+  const rebuilt = buildRace("2026 Vuelta a España", 2026);
+  await enrichStageProfiles([rebuilt], now, { loadProfile });
+  assert.equal(requested.length, 2);
+  assert.equal(rebuilt.stageRace.stages[0].profile.elevationGainM, 80);
+
+  const reparsed = buildRace("2026 Vuelta a España", 2026);
+  attachCachedStageProfiles(reparsed);
+  assert.equal(reparsed.stageRace.stages[0].profile.elevationGainM, 80);
+  stageProfileCache.clear();
+});
+
+test("enrichStageProfiles stops blocking at its budget and still applies a late trace", async () => {
+  const { enrichStageProfiles, stageProfileCache } = loadParserExports();
+  stageProfileCache.clear();
+  let release;
+  const loadProfile = () => new Promise((resolve) => { release = resolve; });
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+    stageRace: { totalStages: 21, stages: [{ number: 1, order: 1, label: "Stage 1", standings: [{ place: "1", rider: "A" }] }] },
+  };
+
+  await enrichStageProfiles([race], new Date("2026-09-03T18:00:00.000Z"), { loadProfile, budgetMs: 10 });
+  assert.equal(race.stageRace.stages[0].profile, undefined);
+
+  release({ source: "komoot", distanceKm: 9, elevationGainM: 80, points: [[0, 10], [9, 40]] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(race.stageRace.stages[0].profile.elevationGainM, 80);
+  assert.equal(stageProfileCache.get("2026 Vuelta a España#1").profile.elevationGainM, 80);
+  stageProfileCache.clear();
 });

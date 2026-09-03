@@ -1734,7 +1734,71 @@ function isPlausibleRiderName(rider) {
   return value.length > 0 && !/[=|{}]|colspan|rowspan/i.test(value);
 }
 
-function extractRouteStageWinners(rawText, teamNames = new Map()) {
+const STAGE_TYPE_LABELS = {
+  flat: "Flat stage",
+  hilly: "Hilly stage",
+  "medium-mountain": "Medium mountain stage",
+  mountain: "Mountain stage",
+  "individual-time-trial": "Individual time trial",
+  "team-time-trial": "Team time trial",
+};
+
+// The route table's Type column is an icon cell followed by a text cell, and pages are
+// inconsistent about which of the two carries the useful words: the icon file name
+// ("Mediummountainstage.svg", "Time Trial.svg") and the label ("Medium-mountain stage",
+// "[[Individual time trial]]") are read together so either alone is enough. Team time
+// trials are checked first because they also match the plain "time trial" test.
+function parseStageType(cells) {
+  const raw = (Array.isArray(cells) ? cells : [cells]).join(" ");
+  // cleanWikiText drops file links outright, so the icon names are lifted out first.
+  const iconNames = [...raw.matchAll(/File:([^|\]]+)/gi)].map((match) => match[1]).join(" ");
+  const text = normalizeSearchText(`${iconNames} ${raw}`).replace(/-/g, " ");
+  if (/team\s*time\s*trial/.test(text)) {
+    return "team-time-trial";
+  }
+  if (/time\s*trial|\bprologue\b/.test(text)) {
+    return "individual-time-trial";
+  }
+  if (/medium\s*mountain/.test(text)) {
+    return "medium-mountain";
+  }
+  if (/mountain/.test(text)) {
+    return "mountain";
+  }
+  if (/hilly|intermediate/.test(text)) {
+    return "hilly";
+  }
+  if (/flat|plain/.test(text)) {
+    return "flat";
+  }
+  return "";
+}
+
+// Distances are written as {{convert|215.5|km|abbr=on}} almost everywhere, with the
+// occasional bare "215.5 km"; either way the number is kept in kilometres and the
+// renderer converts for display.
+function parseStageDistanceKm(cell) {
+  const raw = String(cell || "");
+  const match =
+    raw.match(/\{\{\s*(?:convert|cvt)\s*\|\s*(\d+(?:[.,]\d+)?)\s*\|\s*(km|mi)\b/i) ||
+    cleanWikiText(raw).match(/(\d+(?:[.,]\d+)?)\s*(km|mi)\b/i);
+  if (!match) {
+    return null;
+  }
+
+  const value = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  const km = match[2].toLowerCase() === "mi" ? value / 0.621371 : value;
+  return Math.round(km * 10) / 10;
+}
+
+// Every row of the route table, raced or not. Unraced stages carry no winner, but their
+// distance and type still describe the route, and an official provider's current stage
+// needs them once it is folded into the history ahead of Wikipedia's own update.
+function extractRouteStages(rawText, teamNames = new Map()) {
   const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
   if (!routeTable) {
     return [];
@@ -1761,6 +1825,10 @@ function extractRouteStageWinners(rawText, teamNames = new Map()) {
       }
 
       const stageInfo = parseStageSequence(cells[0]);
+      if (!stageInfo) {
+        return null;
+      }
+
       const winnerCell = cells[cells.length - 1];
       const teamReference = parseTeamReference(winnerCell);
       const teamName = teamReference ? teamNames.get(getTeamReferenceKey(teamReference)) : "";
@@ -1774,12 +1842,69 @@ function extractRouteStageWinners(rawText, teamNames = new Map()) {
       // best-effort: a race whose table omits them just renders the stage number.
       const stageDate = cleanWikiText(cells[1] || "");
       const course = cleanWikiText(cells[2] || "");
+      const distanceKm = parseStageDistanceKm(cells[3]);
+      const stageType = parseStageType(cells.slice(4, cells.length - 1));
       // A stage whose race has not happened yet has an empty winner cell; reject
       // any winner still carrying table-layout residue (e.g. a "colspan" cell from
       // a merged "Total" footer row) so a scheduled stage is never read as raced.
-      return stageInfo && isPlausibleRiderName(winner.rider) ? { ...stageInfo, stageDate, course, winner } : null;
+      return {
+        ...stageInfo,
+        stageDate,
+        course,
+        ...(distanceKm ? { distanceKm } : {}),
+        ...(stageType ? { stageType } : {}),
+        winner: isPlausibleRiderName(winner.rider) ? winner : null,
+      };
     })
     .filter(Boolean);
+}
+
+function extractRouteStageWinners(rawText, teamNames = new Map()) {
+  return extractRouteStages(rawText, teamNames).filter((entry) => entry.winner);
+}
+
+// The route as the card needs it: one entry per listed stage, keyed by stage number,
+// carrying only what describes the course. It travels on the snapshot as `route` so a
+// stage that arrives from an official provider can pick up its distance and type.
+function buildRouteDetails(routeStages) {
+  return (Array.isArray(routeStages) ? routeStages : []).map((entry) => ({
+    number: entry.stageNumber,
+    order: entry.stageOrder,
+    label: entry.stageLabel,
+    ...(entry.stageDate ? { date: entry.stageDate } : {}),
+    ...(entry.course ? { course: entry.course } : {}),
+    ...(entry.distanceKm ? { distanceKm: entry.distanceKm } : {}),
+    ...(entry.stageType ? { stageType: entry.stageType } : {}),
+  }));
+}
+
+const ROUTE_DETAIL_FIELDS = ["date", "course", "distanceKm", "stageType", "elevationGainM"];
+
+// Fill route details onto stages that lack them without overwriting anything a stage
+// already knows: a provider-supplied stage keeps its standings and gains its course.
+function applyRouteDetails(stages, route) {
+  const routeByNumber = new Map(
+    (Array.isArray(route) ? route : []).filter((entry) => entry).map((entry) => [Number(entry.number), entry]),
+  );
+  if (!Array.isArray(stages) || routeByNumber.size === 0) {
+    return stages;
+  }
+
+  return stages.map((stage) => {
+    const details = stage ? routeByNumber.get(Number(stage.number)) : null;
+    if (!details) {
+      return stage;
+    }
+
+    const filled = { ...stage };
+    ROUTE_DETAIL_FIELDS.forEach((field) => {
+      const missing = filled[field] === undefined || filled[field] === null || filled[field] === "";
+      if (missing && details[field] !== undefined && details[field] !== null && details[field] !== "") {
+        filled[field] = details[field];
+      }
+    });
+    return filled;
+  });
 }
 
 // One entry per stage that has actually been raced, richest source first: the full
@@ -1825,6 +1950,8 @@ function buildStageHistory(routeStageWinners, stageResults) {
         label: routeEntry?.stageLabel || (stageNumber === 0 ? "Prologue" : `Stage ${stageNumber}`),
         ...(routeEntry?.stageDate ? { date: routeEntry.stageDate } : {}),
         ...(routeEntry?.course ? { course: routeEntry.course } : {}),
+        ...(routeEntry?.distanceKm ? { distanceKm: routeEntry.distanceKm } : {}),
+        ...(routeEntry?.stageType ? { stageType: routeEntry.stageType } : {}),
         standings,
         ...getWinnerDetails(standings),
       };
@@ -2046,7 +2173,8 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
   // rendered beneath it.
   stageArticleBlocks.forEach((block) => readResultBlock(block, false));
 
-  const routeStageWinners = extractRouteStageWinners(rawText, teamNames);
+  const routeStages = extractRouteStages(rawText, teamNames);
+  const routeStageWinners = routeStages.filter((entry) => entry.winner);
   const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
   const stages = buildStageHistory(routeStageWinners, stageResults);
@@ -2085,6 +2213,7 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
   return {
     totalStages,
     stages,
+    ...(routeStages.length > 0 ? { route: buildRouteDetails(routeStages) } : {}),
     completedStages: Math.max(
       latestGc?.stageNumber || 0,
       latestStage?.stageOrder || 0,
@@ -3064,6 +3193,9 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   // history is normally the only side carrying one. Prefer whichever side knows more
   // stages in depth rather than whichever snapshot won overall.
   const stages = choosePreferredByQuality(primary?.stages, secondary?.stages, getStageHistoryQuality);
+  // Only the Wikipedia side describes the route (distance, type, course), so whichever
+  // snapshot carries one is the route for both.
+  const route = [primary?.route, secondary?.route].find((entry) => Array.isArray(entry) && entry.length > 0) || [];
   const totalStages = Math.max(
     Number(primary?.totalStages || 0),
     Number(secondary?.totalStages || 0),
@@ -3111,11 +3243,12 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
   return preferredSnapshot || latestStage || generalClassification || (overallResult?.length || 0) > 0
     ? {
         totalStages: resolvedTotalStages,
-        stages: mergeLatestStageIntoHistory(stages, latestStage),
+        stages: applyRouteDetails(mergeLatestStageIntoHistory(stages, latestStage), route),
+        ...(route.length > 0 ? { route } : {}),
         completedStages,
         latestStage: latestStage
           ? {
-              ...latestStage,
+              ...applyRouteDetails([latestStage], route)[0],
               ...getWinnerDetails(latestStage.standings),
             }
           : null,
@@ -5558,6 +5691,7 @@ async function buildRaceData(metadata, options = {}) {
   // dominate cold-start latency; failures degrade silently to no link.
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
+  await enrichStageProfiles(liveStageRaces);
   // Fire-and-forget: these races already render from Wikipedia, and their provider is
   // still in flight rather than re-requested.
   applyLateOfficialSnapshots(lateOfficialLookups);
@@ -6397,6 +6531,191 @@ function buildStageFinishVideoSubject(race, stage) {
 // reason companion stage articles are: a three-week race would otherwise fire twenty
 // searches on one cold start. Results cache per (race, stage), so the backlog fills in
 // over successive refreshes instead of all at once, newest stage first.
+// Real stage profiles. ASO's race sites embed each stage as a komoot tour, and komoot's
+// public API returns the tour's distance, climbing total and the full coordinate trace
+// with altitudes. That is the same data the organiser's profile graphic is drawn from,
+// so a race listed here renders its true profile; everything else falls back to the
+// stylised silhouette for its stage type. Only the current edition is looked up: the
+// sites always show this year's race, whatever year the Wikipedia page describes.
+const STAGE_PROFILE_SOURCES = [
+  {
+    matches: (race) => /^\d{4} Vuelta a España$/.test(race?.pageTitle || ""),
+    stageUrl: (stageNumber) => `https://www.lavuelta.es/en/stage-${stageNumber}`,
+  },
+  {
+    matches: (race) => /^\d{4} Tour de France$/.test(race?.pageTitle || ""),
+    stageUrl: (stageNumber) => `https://www.letour.fr/en/stage-${stageNumber}`,
+  },
+  {
+    matches: (race) => /^\d{4} Tour de France Femmes$/.test(race?.pageTitle || ""),
+    stageUrl: (stageNumber) => `https://www.letourfemmes.fr/en/stage-${stageNumber}`,
+  },
+  {
+    matches: (race) => /^\d{4} La Vuelta Femenina$/.test(race?.pageTitle || ""),
+    stageUrl: (stageNumber) => `https://www.lavueltafemenina.es/en/stage-${stageNumber}`,
+  },
+];
+const STAGE_PROFILE_LOOKUP_LIMIT = 8;
+const STAGE_PROFILE_BLOCKING_BUDGET_MS = 2500;
+const STAGE_PROFILE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const STAGE_PROFILE_MISS_TTL_MS = 60 * 60 * 1000;
+const STAGE_PROFILE_POINT_COUNT = 120;
+const stageProfileCache = new Map();
+
+function extractKomootTourReference(html) {
+  const match = String(html || "").match(/komoot\.com\/tour\/(\d+)\/embed\?share_token=([A-Za-z0-9_-]+)/);
+  return match ? { tourId: match[1], shareToken: match[2] } : null;
+}
+
+function haversineKm(from, to) {
+  const toRadians = (degrees) => (degrees * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(to.lat - from.lat);
+  const dLng = toRadians(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
+}
+
+// Resample the trace to a fixed number of points evenly spaced by distance, so a stage
+// carries a couple of kilobytes rather than thousands of GPS fixes. Each sample takes
+// the highest altitude in its window rather than the average, which keeps a sharp
+// summit from being smoothed away.
+function buildStageProfileFromKomoot(tour, coordinates) {
+  const items = (Array.isArray(coordinates?.items) ? coordinates.items : []).filter(
+    (item) => Number.isFinite(item?.lat) && Number.isFinite(item?.lng) && Number.isFinite(item?.alt),
+  );
+  if (items.length < 2) {
+    return null;
+  }
+
+  const cumulative = [0];
+  for (let index = 1; index < items.length; index += 1) {
+    cumulative.push(cumulative[index - 1] + haversineKm(items[index - 1], items[index]));
+  }
+  const traceKm = cumulative[cumulative.length - 1];
+  const distanceKm = Number(tour?.distance) > 0 ? Number(tour.distance) / 1000 : traceKm;
+  if (!(traceKm > 0)) {
+    return null;
+  }
+
+  const points = [];
+  let cursor = 0;
+  for (let sample = 0; sample < STAGE_PROFILE_POINT_COUNT; sample += 1) {
+    const windowEnd = ((sample + 1) / STAGE_PROFILE_POINT_COUNT) * traceKm;
+    let altitude = items[cursor].alt;
+    while (cursor < items.length - 1 && cumulative[cursor + 1] <= windowEnd) {
+      cursor += 1;
+      altitude = Math.max(altitude, items[cursor].alt);
+    }
+    if (sample === STAGE_PROFILE_POINT_COUNT - 1) {
+      altitude = items[items.length - 1].alt;
+    }
+    points.push([Math.round((sample / (STAGE_PROFILE_POINT_COUNT - 1)) * distanceKm * 10) / 10, Math.round(altitude)]);
+  }
+  points[0] = [0, Math.round(items[0].alt)];
+
+  const altitudes = points.map((point) => point[1]);
+  return {
+    source: "komoot",
+    distanceKm: Math.round(distanceKm * 10) / 10,
+    elevationGainM: Math.round(Number(tour?.elevation_up) || 0),
+    elevationLossM: Math.round(Number(tour?.elevation_down) || 0),
+    minAltM: Math.min(...altitudes),
+    maxAltM: Math.max(...altitudes),
+    points,
+  };
+}
+
+async function fetchStageProfile(stagePageUrl) {
+  const reference = extractKomootTourReference(await fetchText(stagePageUrl));
+  if (!reference) {
+    return null;
+  }
+
+  const base = `https://api.komoot.de/v007/tours/${encodeURIComponent(reference.tourId)}`;
+  const query = `?share_token=${encodeURIComponent(reference.shareToken)}`;
+  const [tour, coordinates] = await Promise.all([fetchJson(base + query), fetchJson(`${base}/coordinates${query}`)]);
+  return buildStageProfileFromKomoot(tour, coordinates);
+}
+
+function getStageProfileSource(race, now = new Date()) {
+  if (getRaceYear(race) !== now.getUTCFullYear()) {
+    return null;
+  }
+  return STAGE_PROFILE_SOURCES.find((source) => source.matches(race)) || null;
+}
+
+function getStageProfileCacheKey(race, stage) {
+  return `${getRaceId(race)}#${stage?.number}`;
+}
+
+// Profiles already fetched for this race are re-attached from the cache. Used when a
+// race's stage history is rebuilt from Wikipedia (`/api/race-stages`), which would
+// otherwise drop them until the next full build.
+function attachCachedStageProfiles(race) {
+  (race?.stageRace?.stages || []).forEach((stage) => {
+    const cached = stageProfileCache.get(getStageProfileCacheKey(race, stage));
+    if (!stage.profile && cached?.profile) {
+      stage.profile = cached.profile;
+    }
+  });
+  return race;
+}
+
+// Bounded like the official-provider lookups: whatever lands inside the budget renders
+// on first paint, and whatever lands later is written onto the cached race and the
+// profile cache, so the next render has it without another fetch. Profiles never
+// change once published, so hits live for a week; a miss is retried after an hour.
+async function enrichStageProfiles(races, now = new Date(), options = {}) {
+  const budgetMs = options.budgetMs ?? STAGE_PROFILE_BLOCKING_BUDGET_MS;
+  const loadProfile = options.loadProfile || fetchStageProfile;
+  const pending = [];
+
+  for (const race of races || []) {
+    const source = getStageProfileSource(race, now);
+    if (!source || !isMultiDayRace(race) || !Array.isArray(race.stageRace?.stages)) {
+      continue;
+    }
+
+    for (const stage of [...race.stageRace.stages].reverse()) {
+      if (stage.profile || (stage.standings?.length || 0) === 0 || !(Number(stage.number) > 0)) {
+        continue;
+      }
+
+      const cacheKey = getStageProfileCacheKey(race, stage);
+      const cached = stageProfileCache.get(cacheKey);
+      const ttl = cached?.profile ? STAGE_PROFILE_CACHE_TTL_MS : STAGE_PROFILE_MISS_TTL_MS;
+      if (cached && now.getTime() - cached.fetchedAt < ttl) {
+        if (cached.profile) {
+          stage.profile = cached.profile;
+        }
+        continue;
+      }
+      if (pending.length >= STAGE_PROFILE_LOOKUP_LIMIT) {
+        continue;
+      }
+
+      pending.push(
+        loadProfile(source.stageUrl(stage.number))
+          .catch(() => null)
+          .then((profile) => {
+            stageProfileCache.set(cacheKey, { fetchedAt: Date.now(), profile: profile || null });
+            if (profile) {
+              stage.profile = profile;
+            }
+          }),
+      );
+    }
+  }
+
+  if (pending.length > 0) {
+    await Promise.race([Promise.all(pending), sleep(budgetMs)]);
+  }
+  return races;
+}
+
 async function enrichStageFinishVideos(races, now = new Date()) {
   const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const pending = [];
@@ -6517,6 +6836,199 @@ function buildStageSlug(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Stylised silhouettes, one per stage type, as heights on a 0-1 scale from start to
+// finish. No source publishes a real elevation trace, so these answer the question a
+// results reader actually has — flat, hilly, or mountains — rather than pretending to be
+// the organiser's profile. Time trials share a gentle shape and are told apart by a
+// dashed line and a badge.
+const STAGE_PROFILE_HEIGHTS = {
+  flat: [0.1, 0.14, 0.09, 0.16, 0.11, 0.13, 0.08, 0.15, 0.12, 0.18, 0.1, 0.13, 0.07, 0.12, 0.09, 0.11, 0.08],
+  hilly: [0.1, 0.22, 0.14, 0.38, 0.2, 0.3, 0.44, 0.24, 0.16, 0.4, 0.28, 0.48, 0.22, 0.34, 0.18, 0.26, 0.12],
+  "medium-mountain": [0.12, 0.2, 0.36, 0.26, 0.52, 0.4, 0.3, 0.66, 0.48, 0.58, 0.34, 0.72, 0.56, 0.42, 0.3, 0.22, 0.18],
+  mountain: [0.1, 0.18, 0.34, 0.24, 0.62, 0.42, 0.78, 0.56, 0.4, 0.86, 0.6, 0.44, 0.96, 0.7, 0.5, 0.66, 0.74],
+  "individual-time-trial": [0.1, 0.13, 0.17, 0.12, 0.19, 0.15, 0.1, 0.14, 0.2, 0.16, 0.12, 0.18, 0.13, 0.1, 0.15, 0.11, 0.09],
+  "team-time-trial": [0.1, 0.13, 0.17, 0.12, 0.19, 0.15, 0.1, 0.14, 0.2, 0.16, 0.12, 0.18, 0.13, 0.1, 0.15, 0.11, 0.09],
+};
+const STAGE_PROFILE_WIDTH = 600;
+const STAGE_PROFILE_HEIGHT = 80;
+const STAGE_PROFILE_BADGES = { "individual-time-trial": "ITT", "team-time-trial": "TTT" };
+
+function formatStageNumberValue(value, decimals) {
+  const fixed = Number(value).toFixed(decimals);
+  const [whole, fraction] = fixed.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction && Number(fraction) > 0 ? `${grouped}.${fraction}` : grouped;
+}
+
+function formatStageDistance(distanceKm, units) {
+  const value = units === "imperial" ? distanceKm * 0.621371 : distanceKm;
+  return `${formatStageNumberValue(value, 1)} ${units === "imperial" ? "mi" : "km"}`;
+}
+
+function formatStageAltitude(altitudeM, units) {
+  const value = units === "imperial" ? altitudeM * 3.28084 : altitudeM;
+  return `${formatStageNumberValue(value, 0)} ${units === "imperial" ? "ft" : "m"}`;
+}
+
+function formatStageElevation(elevationGainM, units) {
+  const value = units === "imperial" ? elevationGainM * 3.28084 : elevationGainM;
+  return `${formatStageNumberValue(value, 0)} ${units === "imperial" ? "ft" : "m"} climbing`;
+}
+
+// Two consecutive flat stages should not be pixel-identical, so the interior points
+// wobble by a few percent from a seed derived from the stage itself. Deterministic, so
+// the same stage renders the same way on every build.
+// The real trace is scaled to its own altitude range, but never to less than a
+// kilometre of it, so a coastal flat stage sits low and a summit finish fills the
+// height rather than every stage being stretched to look alpine.
+const STAGE_PROFILE_MIN_ALTITUDE_SPAN_M = 1000;
+
+function buildMeasuredStageProfilePaths(profile) {
+  const points = (Array.isArray(profile?.points) ? profile.points : []).filter(
+    (point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]),
+  );
+  const distanceKm = Number(profile?.distanceKm) || points[points.length - 1]?.[0] || 0;
+  if (points.length < 2 || !(distanceKm > 0)) {
+    return null;
+  }
+
+  const top = 6;
+  const bottom = STAGE_PROFILE_HEIGHT;
+  const minAlt = Math.min(...points.map((point) => point[1]));
+  const maxAlt = Math.max(...points.map((point) => point[1]));
+  const span = Math.max(maxAlt - minAlt, STAGE_PROFILE_MIN_ALTITUDE_SPAN_M);
+  const toY = (altitude) => bottom - 4 - ((altitude - minAlt) / span) * (bottom - 4 - top);
+  const coordinates = points.map(([km, altitude]) => `${((km / distanceKm) * STAGE_PROFILE_WIDTH).toFixed(1)},${toY(altitude).toFixed(1)}`);
+  const peak = points.reduce((best, point) => (point[1] > best[1] ? point : best), points[0]);
+
+  return {
+    line: `M${coordinates.join(" L")}`,
+    area: `M0,${bottom} L${coordinates.join(" L")} L${STAGE_PROFILE_WIDTH},${bottom} Z`,
+    peak: {
+      altitudeM: peak[1],
+      leftPercent: Math.min(94, Math.max(6, (peak[0] / distanceKm) * 100)),
+      bottomPercent: ((bottom - toY(peak[1])) / bottom) * 100,
+    },
+  };
+}
+
+function buildStageProfilePaths(stage) {
+  const measured = buildMeasuredStageProfilePaths(stage?.profile);
+  if (measured) {
+    return measured;
+  }
+
+  const heights = STAGE_PROFILE_HEIGHTS[stage?.stageType];
+  if (!heights) {
+    return null;
+  }
+
+  let seed = (Math.round(Number(stage.number) || 0) * 7919 + Math.round((Number(stage.distanceKm) || 0) * 10)) % 233280;
+  const jitter = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return (seed / 233280 - 0.5) * 0.06;
+  };
+  const top = 6;
+  const bottom = STAGE_PROFILE_HEIGHT;
+  const points = heights.map((height, index) => {
+    const isEdge = index === 0 || index === heights.length - 1;
+    const value = Math.min(1, Math.max(0.03, height + (isEdge ? 0 : jitter())));
+    const x = ((index / (heights.length - 1)) * STAGE_PROFILE_WIDTH).toFixed(1);
+    const y = (bottom - 4 - value * (bottom - 4 - top)).toFixed(1);
+    return `${x},${y}`;
+  });
+
+  return {
+    line: `M${points.join(" L")}`,
+    area: `M0,${bottom} L${points.join(" L")} L${STAGE_PROFILE_WIDTH},${bottom} Z`,
+  };
+}
+
+// The block under the stage strip: a silhouette for the stage type, its distance, and
+// its climbing when a source supplies one. Both figures render in metric and carry
+// their imperial text in data attributes so the client's km/mi toggle swaps them
+// without a round trip.
+function buildStageProfileMarkup(stage) {
+  const stageType = String(stage?.stageType || "");
+  const typeLabel = STAGE_TYPE_LABELS[stageType] || "";
+  // The route table's distance is the official one; the trace's is a fallback for a
+  // stage whose table row never carried a figure. Climbing comes from the trace unless
+  // a source has set it directly.
+  const distanceKm =
+    Number(stage?.distanceKm) > 0
+      ? Number(stage.distanceKm)
+      : Number(stage?.profile?.distanceKm) > 0
+        ? Number(stage.profile.distanceKm)
+        : null;
+  const elevationGainM =
+    Number(stage?.elevationGainM) > 0
+      ? Number(stage.elevationGainM)
+      : Number(stage?.profile?.elevationGainM) > 0
+        ? Number(stage.profile.elevationGainM)
+        : null;
+  if (!typeLabel && !distanceKm) {
+    return "";
+  }
+
+  const paths = buildStageProfilePaths(stage);
+  const badge = STAGE_PROFILE_BADGES[stageType];
+  const peakLabel = paths?.peak
+    ? `<span class="stage-profile-peak" style="left: ${paths.peak.leftPercent.toFixed(1)}%; bottom: ${paths.peak.bottomPercent.toFixed(
+        1,
+      )}%;" data-unit-metric="${escapeHtml(formatStageAltitude(paths.peak.altitudeM, "metric"))}" data-unit-imperial="${escapeHtml(
+        formatStageAltitude(paths.peak.altitudeM, "imperial"),
+      )}">${escapeHtml(formatStageAltitude(paths.peak.altitudeM, "metric"))}</span>`
+    : "";
+  const canvas = paths
+    ? `
+        <div class="stage-profile-canvas${paths.peak ? " is-measured" : ""}">
+          <div class="stage-profile-plot">
+            <svg viewBox="0 0 ${STAGE_PROFILE_WIDTH} ${STAGE_PROFILE_HEIGHT}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+              <path class="stage-profile-area" d="${paths.area}"></path>
+              <path class="stage-profile-line" d="${paths.line}"></path>
+            </svg>${peakLabel}
+          </div>${badge ? `<span class="stage-profile-badge">${escapeHtml(badge)}</span>` : ""}
+        </div>`
+    : "";
+  const stats = [
+    distanceKm
+      ? `<span class="stage-profile-stat" data-unit-metric="${escapeHtml(
+          formatStageDistance(distanceKm, "metric"),
+        )}" data-unit-imperial="${escapeHtml(formatStageDistance(distanceKm, "imperial"))}">${escapeHtml(
+          formatStageDistance(distanceKm, "metric"),
+        )}</span>`
+      : "",
+    elevationGainM
+      ? `<span class="stage-profile-stat" data-unit-metric="${escapeHtml(
+          formatStageElevation(elevationGainM, "metric"),
+        )}" data-unit-imperial="${escapeHtml(formatStageElevation(elevationGainM, "imperial"))}">${escapeHtml(
+          formatStageElevation(elevationGainM, "metric"),
+        )}</span>`
+      : "",
+  ].join("");
+  const toggle = distanceKm || elevationGainM
+    ? `
+          <span class="unit-toggle" role="group" aria-label="Distance and elevation units">
+            <button type="button" class="unit-option is-active" data-unit-option="metric" aria-pressed="true">km</button>
+            <button type="button" class="unit-option" data-unit-option="imperial" aria-pressed="false">mi</button>
+          </span>`
+    : "";
+  const ariaLabel = [
+    typeLabel,
+    distanceKm ? formatStageDistance(distanceKm, "metric") : "",
+    elevationGainM ? formatStageElevation(elevationGainM, "metric") : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return `
+        <figure class="stage-profile" data-stage-type="${escapeHtml(stageType)}" aria-label="${escapeHtml(ariaLabel)}">${canvas}
+          <figcaption class="stage-profile-caption">
+            ${typeLabel ? `<span class="stage-profile-type">${escapeHtml(typeLabel)}</span>` : ""}${stats}${toggle}
+          </figcaption>
+        </figure>`;
+}
+
 function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
   const standings = selectStandings(stage.standings);
   const courseMeta = [stage.date, stage.course].filter(Boolean).join(" • ");
@@ -6524,7 +7036,7 @@ function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
   return `
       <div class="stage-panel" id="${escapeHtml(stageId)}" data-stage-panel role="tabpanel" aria-label="${escapeHtml(
         stage.label,
-      )} result"${isCurrentStage ? "" : " hidden"}>
+      )} result"${isCurrentStage ? "" : " hidden"}>${buildStageProfileMarkup(stage)}
         <div class="detail-label">${escapeHtml(stage.label)} winner</div>
         ${courseMeta ? `<p class="stage-panel-meta">${escapeHtml(courseMeta)}</p>` : ""}
         <div class="stage-winner">${buildRiderMarkup(
@@ -6667,7 +7179,7 @@ function buildStageRaceCard(race, options = {}) {
     ? stageSwitcher
     : latestStage?.winner
     ? `
-      <div class="card-subsection">
+      <div class="card-subsection">${buildStageProfileMarkup(latestStage)}
         <div class="detail-label">${escapeHtml(stageLabel)} winner</div>
         <div class="stage-winner">${buildRiderMarkup(
           {
@@ -8219,6 +8731,146 @@ function buildHtmlPage(data, view) {
         display: none;
       }
 
+      .stage-profile {
+        margin: 0 0 0.85rem;
+        padding: 0.6rem 0.75rem 0.55rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(244, 248, 255, 0.92));
+      }
+
+      .stage-profile-canvas {
+        position: relative;
+      }
+
+      /* The summit label sits above its peak, so a measured profile reserves headroom
+         for it instead of letting it clip at the top of the card. */
+      .stage-profile-canvas.is-measured {
+        padding-top: 1.25rem;
+      }
+
+      .stage-profile-plot {
+        position: relative;
+      }
+
+      .stage-profile-canvas svg {
+        display: block;
+        width: 100%;
+        height: 4.6rem;
+      }
+
+      .stage-profile-area {
+        fill: rgba(0, 120, 199, 0.16);
+      }
+
+      .stage-profile-line {
+        fill: none;
+        stroke: var(--uci-blue);
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
+      }
+
+      .stage-profile[data-stage-type="mountain"] .stage-profile-area {
+        fill: rgba(0, 51, 160, 0.22);
+      }
+
+      .stage-profile[data-stage-type$="time-trial"] .stage-profile-line {
+        stroke-dasharray: 7 5;
+      }
+
+      .stage-profile-canvas.is-measured .stage-profile-area {
+        fill: rgba(0, 51, 160, 0.2);
+      }
+
+      .stage-profile-peak {
+        position: absolute;
+        transform: translate(-50%, 0);
+        margin-bottom: 0.2rem;
+        padding: 0.08rem 0.4rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--line-strong);
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+
+      .stage-profile-badge {
+        position: absolute;
+        top: 0.15rem;
+        right: 0.15rem;
+        padding: 0.18rem 0.5rem;
+        border-radius: 999px;
+        background: var(--uci-blue);
+        color: white;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+      }
+
+      .stage-profile-caption {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.95rem;
+        margin-top: 0.45rem;
+        font-size: 0.88rem;
+      }
+
+      .stage-profile-type {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--uci-blue-deep);
+      }
+
+      .stage-profile-stat {
+        color: rgba(9, 33, 76, 0.8);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .unit-toggle {
+        display: inline-flex;
+        margin-left: auto;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.75);
+      }
+
+      .unit-option {
+        border: 0;
+        padding: 0.2rem 0.55rem;
+        background: transparent;
+        color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      .unit-option:focus-visible {
+        outline: 2px solid var(--uci-blue-bright);
+        outline-offset: -2px;
+      }
+
+      .unit-option.is-active {
+        background: var(--uci-blue);
+        color: white;
+      }
+
       .stage-results-button {
         width: 100%;
         margin-top: 0.9rem;
@@ -8822,6 +9474,59 @@ function buildHtmlPage(data, view) {
         loadDeferredSection(groupId, { scrollOnLoad });
       });
 
+      // Stage distances and climbing render in metric; the choice is kept per browser so
+      // a reader who picks miles once keeps miles on every card and every visit.
+      const UNIT_PREFERENCE_KEY = "pcr-units";
+
+      function readUnitPreference() {
+        try {
+          return window.localStorage.getItem(UNIT_PREFERENCE_KEY) === "imperial" ? "imperial" : "metric";
+        } catch (error) {
+          return "metric";
+        }
+      }
+
+      function applyUnitPreference(units) {
+        document.querySelectorAll("[data-unit-metric]").forEach((element) => {
+          element.textContent = units === "imperial" ? element.dataset.unitImperial : element.dataset.unitMetric;
+        });
+        document.querySelectorAll("[data-unit-option]").forEach((button) => {
+          const isActive = button.dataset.unitOption === units;
+          button.classList.toggle("is-active", isActive);
+          button.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+      }
+
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-unit-option]");
+        if (!button) {
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(UNIT_PREFERENCE_KEY, button.dataset.unitOption);
+        } catch (error) {
+          // Private mode or blocked storage: the toggle still works for this page view.
+        }
+        applyUnitPreference(button.dataset.unitOption);
+      });
+
+      // Markup that arrives later (deeper stage results, more races, deferred sections)
+      // is rendered in metric, so re-apply the preference whenever elements land. Text
+      // swaps add only text nodes, which the element check ignores, so this cannot loop.
+      new MutationObserver((mutations) => {
+        const landed = mutations.some((mutation) =>
+          Array.from(mutation.addedNodes).some(
+            (node) =>
+              node.nodeType === 1 && (node.matches("[data-unit-metric]") || node.querySelector("[data-unit-metric]")),
+          ),
+        );
+        if (landed) {
+          applyUnitPreference(readUnitPreference());
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+      applyUnitPreference(readUnitPreference());
+
       bindArticleControls();
       bindLoadMoreRaces();
       bindNationalChampionshipFilters();
@@ -9159,6 +9864,7 @@ const server = http.createServer(async (request, response) => {
         // Write the deeper history back onto the cached race so the next full page
         // render already has it, until the race-data cache next rebuilds.
         race.stageRace.stages = Array.isArray(preferredStages) ? preferredStages : race.stageRace.stages;
+        attachCachedStageProfiles(race);
 
         sendJson(response, 200, {
           raceId: getRaceId(race),
