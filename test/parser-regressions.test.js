@@ -112,6 +112,7 @@ function loadParserExports() {
       enrichStageProfiles,
       attachCachedStageProfiles,
       stageProfileCache,
+      loadPersistedStageProfiles,
       applyRouteDetails,
       buildStageProfileMarkup,
       parseStageType,
@@ -4222,4 +4223,40 @@ test("enrichStageProfiles stops blocking at its budget and still applies a late 
   assert.equal(race.stageRace.stages[0].profile.elevationGainM, 80);
   assert.equal(stageProfileCache.get("2026 Vuelta a España#1").profile.elevationGainM, 80);
   stageProfileCache.clear();
+});
+
+test("a persisted stage profile seeds the cache and is never re-fetched", async () => {
+  const { loadPersistedStageProfiles, enrichStageProfiles, stageProfileCache } = loadParserExports();
+  stageProfileCache.clear();
+  const file = path.join(__dirname, "fixtures", "stage-profiles.tmp.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      profiles: {
+        "2026 Vuelta a España#1": { fetchedAt: "2026-08-01T00:00:00.000Z", profile: { source: "komoot", distanceKm: 9, elevationGainM: 80, points: [[0, 10], [9, 40]] } },
+        "2026 Vuelta a España#2": { fetchedAt: "2026-08-01T00:00:00.000Z", profile: { source: "komoot", points: [] } },
+      },
+    }),
+  );
+  try {
+    assert.equal(loadPersistedStageProfiles(file), 1);
+    // The seeded entry is older than any TTL and must still count.
+    stageProfileCache.get("2026 Vuelta a España#1").fetchedAt = 0;
+
+    const requested = [];
+    const race = {
+      id: "2026 Vuelta a España",
+      pageTitle: "2026 Vuelta a España",
+      startDate: new Date("2026-08-22T00:00:00.000Z"),
+      endDate: new Date("2026-09-13T00:00:00.000Z"),
+      stageRace: { totalStages: 21, stages: [{ number: 1, order: 1, label: "Stage 1", standings: [{ place: "1", rider: "A" }] }] },
+    };
+    await enrichStageProfiles([race], new Date("2026-12-01T00:00:00.000Z"), { loadProfile: async (url) => { requested.push(url); return null; } });
+    assert.deepEqual(requested, []);
+    assert.equal(race.stageRace.stages[0].profile.elevationGainM, 80);
+    assert.equal(loadPersistedStageProfiles(path.join(__dirname, "fixtures", "does-not-exist.json")), 0);
+  } finally {
+    fs.unlinkSync(file);
+    stageProfileCache.clear();
+  }
 });

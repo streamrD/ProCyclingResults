@@ -5691,7 +5691,7 @@ async function buildRaceData(metadata, options = {}) {
   // dominate cold-start latency; failures degrade silently to no link.
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
-  await enrichStageProfiles(liveStageRaces);
+  await enrichStageProfiles([...liveStageRaces, ...finalizedStageRaces, ...recentResults]);
   // Fire-and-forget: these races already render from Wikipedia, and their provider is
   // still in flight rather than re-requested.
   applyLateOfficialSnapshots(lateOfficialLookups);
@@ -6561,6 +6561,34 @@ const STAGE_PROFILE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const STAGE_PROFILE_MISS_TTL_MS = 60 * 60 * 1000;
 const STAGE_PROFILE_POINT_COUNT = 120;
 const stageProfileCache = new Map();
+const PERSISTED_STAGE_PROFILE_PATH = path.join(process.cwd(), "data", "stage-profiles.json");
+
+// The in-memory cache dies with every deploy and Railway's disk is ephemeral, so
+// profiles that have been fetched once are also committed to data/stage-profiles.json
+// by scripts/refresh-stage-profiles.js and seeded from there at startup. A seeded entry
+// never expires: a published profile does not change. Runtime fetches still happen for
+// anything the file lacks, so a live race stays current between refreshes.
+function loadPersistedStageProfiles(filePath = PERSISTED_STAGE_PROFILE_PATH) {
+  let entries;
+  try {
+    // `fs` here is fs/promises; the seed has to be synchronous so it lands before the
+    // first build.
+    entries = JSON.parse(require("fs").readFileSync(filePath, "utf8"));
+  } catch (error) {
+    return 0;
+  }
+
+  let seeded = 0;
+  Object.entries(entries?.profiles || {}).forEach(([key, entry]) => {
+    if (entry?.profile && Array.isArray(entry.profile.points) && entry.profile.points.length > 1) {
+      stageProfileCache.set(key, { fetchedAt: Date.now(), profile: entry.profile, persistent: true });
+      seeded += 1;
+    }
+  });
+  return seeded;
+}
+
+loadPersistedStageProfiles();
 
 function extractKomootTourReference(html) {
   const match = String(html || "").match(/komoot\.com\/tour\/(\d+)\/embed\?share_token=([A-Za-z0-9_-]+)/);
@@ -6687,7 +6715,7 @@ async function enrichStageProfiles(races, now = new Date(), options = {}) {
       const cacheKey = getStageProfileCacheKey(race, stage);
       const cached = stageProfileCache.get(cacheKey);
       const ttl = cached?.profile ? STAGE_PROFILE_CACHE_TTL_MS : STAGE_PROFILE_MISS_TTL_MS;
-      if (cached && now.getTime() - cached.fetchedAt < ttl) {
+      if (cached && (cached.persistent || now.getTime() - cached.fetchedAt < ttl)) {
         if (cached.profile) {
           stage.profile = cached.profile;
         }
