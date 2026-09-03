@@ -527,6 +527,10 @@ The design system is encoded directly in the inline `<style>` block:
 - card-based layouts
 - responsive grid breakpoints
 
+### Stage podium times
+
+Stage results show each rider's finishing time and, beside it, the gap to the stage winner; whichever half a source omits is derived from the winner's time, and a rider on the same time reads "s.t.". The general classification keeps its leader-time-then-gaps form.
+
 ### Stage profiles
 
 Every stage panel opens with a profile block. A stage with a measured trace (see "Stage profiles" under Data Sources) renders compact by default — a colour thumbnail beside type, distance, climbing, source and the km/mi toggle — and expands to a tall chart with an altitude-coloured fill, gridlines, km ticks and start/finish towns. The fill is the site's rainbow strip mapped to height: green valley floor, blue lower slopes, yellow high ground, red summit. A stage without a trace shows a schematic pictogram for its Wikipedia stage type and says so; generic must look generic. Fetched traces are committed to `data/stage-profiles.json` (refresh with `npm run refresh:stage-profiles -- --race "<page title>"`) so deploys and finished races keep them, and a live race gives tomorrow's stage a selectable "next" chip in the strip, a one-line "Up next" row above it, and a preview panel with its course and profile. Full rationale, gaps and the comp history live in `handoff.md` under "Stage Results Feature Map".

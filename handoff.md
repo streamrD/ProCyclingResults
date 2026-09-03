@@ -515,6 +515,13 @@ the race centre (racecenter.lavuelta.es) draws them from an API its bundle obscu
   show has to be *in* that array. `latestStage` is not consulted separately.
 - A team time trial occupies the rider slot with the team's name, so it renders through
   the same podium markup with the team's flag. Nothing downstream needs to know.
+- A stage podium shows every rider's finishing time *and* gap to the winner
+  (`getStageStandingMetrics`, added 2026-09-03). Sources rarely give both — an official
+  provider does, Wikipedia gives the winner's time and everyone else's gap — so the
+  missing half is derived from the winner's time, and a rider on the winner's time reads
+  "s.t.". The gap is always recomputed from the two times when both exist, which is what
+  keeps a provider's *GC* gap from leaking into the stage row. The GC podium is
+  unchanged: leader time, then gaps.
 
 ## Open Threads
 

@@ -114,6 +114,8 @@ function loadParserExports() {
       stageProfileCache,
       loadPersistedStageProfiles,
       buildNextStageRowMarkup,
+      buildPodiumMarkup,
+      getStageStandingMetrics,
       buildNextStagePanelMarkup,
       getNextRouteStage,
       applyRouteDetails,
@@ -3201,8 +3203,10 @@ test("buildStageRaceCard shows stage time separately from cumulative GC timing w
 
   const [stageSection = "", gcSection = ""] = html.split("Overall after stage 4");
   assert.match(html, /stage-winner-rider[^>]*>.*31:38/s);
-  assert.match(stageSection, /Marlen Reusser.*32:42/s);
-  assert.doesNotMatch(stageSection, /\+01:04/);
+  // The stage section shows the stage time, with the stage gap derived from the two
+  // times beside it — not the GC gap, even though the two happen to agree here.
+  assert.match(stageSection, /Marlen Reusser.*32:42<\/span><span class="standing-delta">\+01:04<\/span>/s);
+  assert.doesNotMatch(stageSection, /standing-gap">\+01:04/);
   assert.match(html, /Overall after stage 4/);
   assert.match(gcSection, /11:31:32/);
   assert.match(gcSection, /Marlen Reusser.*\+01:04/s);
@@ -4319,4 +4323,49 @@ test("a live race gives tomorrow's stage a chip, a nudge row and a preview panel
   const measured = buildStageSwitcherMarkup(race, { live: true });
   assert.match(measured, /stage-panel-next[\s\S]*stage-profile is-measured[\s\S]*3,414 m climbing/);
   stageProfileCache.clear();
+});
+
+test("a stage podium shows each rider's finishing time and gap, deriving whichever is missing", () => {
+  const { buildPodiumMarkup, getStageStandingMetrics: rawMetrics } = loadParserExports();
+  const getStageStandingMetrics = (entry, winnerSeconds) => JSON.parse(JSON.stringify(rawMetrics(entry, winnerSeconds)));
+  const winnerSeconds = 4 * 3600 + 29 * 60 + 53;
+
+  // Both known (official provider): shown as given.
+  assert.deepEqual(getStageStandingMetrics({ place: "2", time: "4:31:49", gap: "+01:56" }, winnerSeconds), { time: "4:31:49", gap: "+01:56" });
+  // Gap only (Wikipedia): the time is the winner's plus the gap.
+  assert.deepEqual(getStageStandingMetrics({ place: "3", gap: "+ 2' 13\"" }, winnerSeconds), { time: "4:32:06", gap: "+02:13" });
+  // Time only: the gap is the difference.
+  assert.deepEqual(getStageStandingMetrics({ place: "4", time: "4:32:42" }, winnerSeconds), { time: "4:32:42", gap: "+02:49" });
+  // Same time as the winner, whether written as a time or as "s.t.".
+  assert.deepEqual(getStageStandingMetrics({ place: "2", time: "4:29:53" }, winnerSeconds), { time: "4:29:53", gap: "s.t." });
+  assert.deepEqual(getStageStandingMetrics({ place: "2", gap: "s.t." }, winnerSeconds), { time: "4:29:53", gap: "s.t." });
+  // The winner shows the time alone; a rider with nothing shows nothing.
+  assert.deepEqual(getStageStandingMetrics({ place: "1", time: "4:29:53" }, winnerSeconds), { time: "4:29:53", gap: "" });
+  assert.deepEqual(getStageStandingMetrics({ place: "5" }, winnerSeconds), { time: "", gap: "" });
+  // No winner time: nothing can be derived, so the source values stand.
+  assert.deepEqual(getStageStandingMetrics({ place: "2", gap: "+00:07" }, null), { time: "", gap: "+00:07" });
+
+  const html = buildPodiumMarkup(
+    [
+      { place: "1", rider: "Jakob Omrzel", time: "4:29:53" },
+      { place: "2", rider: "Urko Berrade", gap: "+01:56" },
+      { place: "3", rider: "Santiago Buitrago", time: "4:32:06" },
+    ],
+    { metricContext: "stage" },
+  );
+  assert.match(html, /Jakob Omrzel<\/span><span class="standing-gap">4:29:53<\/span><\/span>/);
+  assert.match(html, /Urko Berrade<\/span><span class="standing-gap">4:31:49<\/span><span class="standing-delta">\+01:56<\/span>/);
+  assert.match(html, /Santiago Buitrago<\/span><span class="standing-gap">4:32:06<\/span><span class="standing-delta">\+02:13<\/span>/);
+
+  // The GC podium is untouched: leader time, then gaps.
+  const gc = buildPodiumMarkup(
+    [
+      { place: "1", rider: "Enric Mas", time: "40:31:51" },
+      { place: "2", rider: "Primož Roglič", gap: "+01:45" },
+    ],
+    { metricContext: "gc" },
+  );
+  assert.match(gc, /Enric Mas<\/span><span class="standing-gap">40:31:51<\/span>/);
+  assert.match(gc, /Roglič<\/span><span class="standing-gap">\+01:45<\/span>/);
+  assert.doesNotMatch(gc, /standing-delta/);
 });

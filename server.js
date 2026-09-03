@@ -6135,6 +6135,64 @@ function buildHomepageDataPayload(data) {
   };
 }
 
+function parseClockSeconds(value) {
+  const parts = String(value || "").split(":").map((part) => Number.parseInt(part, 10));
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !Number.isFinite(part))) {
+    return null;
+  }
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+function formatClock(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatGap(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `+${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `+${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+// A stage result shows both the finishing time and the gap to the winner. Sources
+// rarely give both — an official provider does, Wikipedia gives the winner's time and
+// everyone else's gap — so whichever half is missing is derived from the winner's time.
+// A rider on the winner's time reads "s.t.", the convention every fan knows.
+function getStageStandingMetrics(entry, winnerSeconds) {
+  const time = normalizeStandingTime(entry?.time || "");
+  const gap = normalizeStandingGap(entry?.gap || "");
+  const rawGap = cleanFeedText(String(entry?.gap || "")).trim();
+  const isWinner = String(entry?.place || "") === "1";
+  const seconds = parseClockSeconds(time);
+  const gapSeconds = gap ? parseClockSeconds(gap.slice(1)) : null;
+
+  if (isWinner) {
+    return { time, gap: "" };
+  }
+
+  if (seconds !== null && winnerSeconds !== null) {
+    const delta = seconds - winnerSeconds;
+    return { time, gap: delta > 0 ? formatGap(delta) : delta === 0 ? "s.t." : gap };
+  }
+
+  if (gapSeconds !== null && winnerSeconds !== null) {
+    return { time: formatClock(winnerSeconds + gapSeconds), gap };
+  }
+
+  if (!time && !gap && winnerSeconds !== null && /^(s\.?t\.?|same time)$/i.test(rawGap)) {
+    return { time: formatClock(winnerSeconds), gap: "s.t." };
+  }
+
+  return { time, gap };
+}
+
 function getStandingMetric(entry, context = "default") {
   const time = normalizeStandingTime(entry?.time || "");
   const gap = normalizeStandingGap(entry?.gap || "");
@@ -6152,13 +6210,15 @@ function getStandingMetric(entry, context = "default") {
 
 function buildPodiumMarkup(entries, options = {}) {
   const metricContext = options.metricContext || "default";
+  const winner = entries.find((entry) => String(entry?.place || "") === "1") || entries[0];
+  const winnerSeconds = metricContext === "stage" ? parseClockSeconds(normalizeStandingTime(winner?.time || "")) : null;
   const podium = entries
     .filter((entry) => entry?.rider)
     .map(
       (entry) => `
         <li class="podium-item">
           <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
-          ${buildRiderMarkup(entry, "podium-rider", { metricContext })}
+          ${buildRiderMarkup(entry, "podium-rider", { metricContext, winnerSeconds })}
         </li>`,
     )
     .join("");
@@ -7516,8 +7576,16 @@ function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
   const flagMarkup = flag
     ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
     : "";
-  const metric = getStandingMetric(entry, options.metricContext || "default");
-  const gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
+  let gapMarkup = "";
+  if (options.metricContext === "stage" && options.winnerSeconds !== undefined) {
+    const metrics = getStageStandingMetrics(entry, options.winnerSeconds);
+    gapMarkup =
+      (metrics.time ? `<span class="standing-gap">${escapeHtml(metrics.time)}</span>` : "") +
+      (metrics.gap ? `<span class="standing-delta">${escapeHtml(metrics.gap)}</span>` : "");
+  } else {
+    const metric = getStandingMetric(entry, options.metricContext || "default");
+    gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
+  }
 
   return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span class="rider-text">${escapeHtml(rider)}</span>${gapMarkup}</span>`;
 }
@@ -8810,6 +8878,19 @@ function buildHtmlPage(data, view) {
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
         color: var(--muted);
+      }
+
+      /* A stage result's gap to the winner, shown beside the finishing time. */
+      .standing-delta {
+        flex: 0 0 auto;
+        padding: 0.08rem 0.42rem;
+        border-radius: 999px;
+        background: rgba(0, 51, 160, 0.08);
+        color: var(--uci-blue);
+        font-size: 0.8em;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
 
       .race-finish-link {
