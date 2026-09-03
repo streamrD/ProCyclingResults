@@ -7224,6 +7224,9 @@ function buildStageSwitcherMarkup(race, options = {}) {
 
   const racedNumbers = new Set(stages.map((stage) => stage.number));
   const currentNumber = stages[stages.length - 1].number;
+  // On a live race the following stage gets a chip of its own: it previews the course
+  // rather than a result, and a one-line row above the strip points readers at it.
+  const nextStage = options.live ? getNextRouteStage(race) : null;
   const totalStages = Math.max(race.stageRace?.totalStages || 0, ...stages.map((stage) => stage.number));
   const raceSlug = buildStageSlug(race.id || race.pageTitle || race.title);
   const stageId = (stageNumber) => `${raceSlug}-stage-${stageNumber}`;
@@ -7235,6 +7238,14 @@ function buildStageSwitcherMarkup(race, options = {}) {
   const chips = [...(hasPrologue ? [0] : []), ...Array.from({ length: numberedStageCount }, (unused, index) => index + 1)]
     .map((stageNumber) => {
       const chipLabel = stageNumber === 0 ? "P" : String(stageNumber);
+      if (nextStage && stageNumber === nextStage.number) {
+        return `<button type="button" class="stage-chip is-next" role="tab" aria-selected="false" aria-controls="${escapeHtml(
+          stageId(stageNumber),
+        )}" data-stage-target="${escapeHtml(stageId(stageNumber))}" title="${escapeHtml(
+          `Up next: ${nextStage.label || `Stage ${nextStage.number}`}${nextStage.course ? ` — ${nextStage.course}` : ""}`,
+        )}">${escapeHtml(chipLabel)}<span class="stage-chip-next-tag">next</span></button>`;
+      }
+
       if (!racedNumbers.has(stageNumber)) {
         // A gap below the current stage is a stage we have no rider result for — a
         // team time trial, say — not a stage that has yet to happen. Both are
@@ -7270,40 +7281,68 @@ function buildStageSwitcherMarkup(race, options = {}) {
           Load full stage results
         </button>`;
 
-  const upNext = options.live ? buildUpNextMarkup(race) : "";
+  const nextRow = nextStage ? buildNextStageRowMarkup(nextStage, stageId(nextStage.number)) : "";
+  const nextPanel = nextStage ? buildNextStagePanelMarkup(race, nextStage, stageId(nextStage.number)) : "";
 
   return `
       <div class="card-subsection stage-switcher" data-stage-switcher>
-        <div class="detail-label">Stage results</div>
+        <div class="detail-label">Stage results</div>${nextRow}
         <div class="stage-strip" role="tablist" aria-label="${escapeHtml(race.title)} stages">${chips}</div>
-        ${panels}
-        ${stageResultsControl}${upNext}
+        ${panels}${nextPanel}
+        ${stageResultsControl}
       </div>`;
 }
 
-// What a fan checks the night before: the next stage's date, course, type, distance
-// and — when the organiser has published the trace — its profile. Rendered only for a
-// live race with a route entry for the following stage.
-function buildUpNextMarkup(race) {
-  const next = getNextRouteStage(race);
-  if (!next) {
-    return "";
-  }
+// What a fan checks the night before. The row above the strip names tomorrow's stage
+// in one line and, like the chip, selects its panel; the panel shows the date, course,
+// type, distance and — when the organiser has published the trace — the profile, plus
+// a note that results land after the finish. Live races only: "next" has no meaning
+// once a race is over.
+function describeNextStage(nextStage) {
+  return [
+    nextStage.course,
+    STAGE_TYPE_LABELS[nextStage.stageType] ? STAGE_TYPE_LABELS[nextStage.stageType].replace(/ stage$/, "") : "",
+  ].filter(Boolean);
+}
 
-  const profileMarkup = buildStageProfileMarkup({
-    number: next.number,
-    stageType: next.stageType,
-    distanceKm: next.distanceKm,
-    course: next.course,
-    profile: getCachedStageProfile(race, next.number),
-  });
-  const meta = [next.date, next.course].filter(Boolean).join(" • ");
+function buildNextStageRowMarkup(nextStage, panelId) {
+  const label = nextStage.label || `Stage ${nextStage.number}`;
+  const parts = describeNextStage(nextStage).map((part) => escapeHtml(part));
+  const distance =
+    Number(nextStage.distanceKm) > 0
+      ? `<span data-unit-metric="${escapeHtml(formatStageDistance(nextStage.distanceKm, "metric"))}" data-unit-imperial="${escapeHtml(
+          formatStageDistance(nextStage.distanceKm, "imperial"),
+        )}">${escapeHtml(formatStageDistance(nextStage.distanceKm, "metric"))}</span>`
+      : "";
 
   return `
-        <div class="stage-upnext" data-stage-upnext>
-          <div class="detail-label">Up next · ${escapeHtml(next.label || `Stage ${next.number}`)}</div>
-          ${meta ? `<p class="stage-panel-meta">${escapeHtml(meta)}</p>` : ""}${profileMarkup}
-        </div>`;
+        <button type="button" class="stage-next-row" data-stage-target="${escapeHtml(panelId)}" aria-controls="${escapeHtml(panelId)}">
+          <span class="stage-next-row-label">Up next</span>
+          <span class="stage-next-row-text">${[escapeHtml(label), ...parts, distance].filter(Boolean).join(" · ")}</span>
+          <span class="stage-next-row-arrow" aria-hidden="true">▸</span>
+        </button>`;
+}
+
+function buildNextStagePanelMarkup(race, nextStage, panelId) {
+  const label = nextStage.label || `Stage ${nextStage.number}`;
+  const meta = [nextStage.date, nextStage.course].filter(Boolean).join(" • ");
+  const profileMarkup = buildStageProfileMarkup({
+    number: nextStage.number,
+    stageType: nextStage.stageType,
+    distanceKm: nextStage.distanceKm,
+    course: nextStage.course,
+    profile: getCachedStageProfile(race, nextStage.number),
+  });
+  const finish = nextStage.date ? ` on ${nextStage.date}` : "";
+
+  return `
+      <div class="stage-panel stage-panel-next" id="${escapeHtml(panelId)}" data-stage-panel role="tabpanel" aria-label="${escapeHtml(
+        label,
+      )} preview" hidden>
+        <div class="detail-label">Up next · ${escapeHtml(label)}</div>
+        ${meta ? `<p class="stage-panel-meta">${escapeHtml(meta)}</p>` : ""}${profileMarkup}
+        <p class="stage-panel-meta stage-panel-next-note">Results will appear here once the stage finishes${escapeHtml(finish)}.</p>
+      </div>`;
 }
 
 function buildStageRaceCard(race, options = {}) {
@@ -8916,18 +8955,100 @@ function buildHtmlPage(data, view) {
         display: none;
       }
 
-      .stage-upnext {
-        margin-top: 1rem;
-        padding-top: 0.85rem;
-        border-top: 1px dashed var(--line-strong);
+      /* Tomorrow's stage: a selectable chip wearing a "next" tag in the live-race
+         yellow, a one-line row above the strip that selects the same panel, and a
+         preview panel that carries the course instead of a result. */
+      .stage-chip.is-next {
+        position: relative;
+        border-style: solid;
+        border-color: rgba(255, 204, 0, 0.95);
+        background: rgba(255, 204, 0, 0.16);
+        color: var(--uci-blue-deep);
       }
 
-      .stage-upnext .stage-panel-meta {
+      .stage-chip.is-next:hover {
+        border-color: rgba(255, 204, 0, 0.95);
+        background: rgba(255, 204, 0, 0.32);
+      }
+
+      .stage-chip.is-next.is-active {
+        border-color: var(--uci-blue);
+        background: var(--uci-blue);
+        color: white;
+      }
+
+      .stage-chip-next-tag {
+        position: absolute;
+        top: -0.55rem;
+        right: -0.35rem;
+        padding: 0.05rem 0.3rem;
+        border-radius: 999px;
+        background: #9b6500;
+        color: white;
+        font-size: 0.5rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        line-height: 1.2;
+      }
+
+      .stage-chip.is-next.is-active .stage-chip-next-tag {
+        background: var(--uci-yellow);
+        color: var(--uci-blue-deep);
+      }
+
+      .stage-next-row {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        width: 100%;
+        margin: 0.55rem 0 0.2rem;
+        padding: 0.45rem 0.7rem;
+        border: 1px solid rgba(255, 204, 0, 0.9);
+        border-radius: 10px;
+        background: rgba(255, 204, 0, 0.14);
+        color: var(--uci-blue-deep);
+        font: 500 0.88rem "Manrope", "Segoe UI", sans-serif;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .stage-next-row:hover,
+      .stage-next-row:focus-visible {
+        background: rgba(255, 204, 0, 0.28);
+        outline: none;
+      }
+
+      .stage-next-row.is-active {
+        background: rgba(255, 204, 0, 0.32);
+      }
+
+      .stage-next-row-label {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-weight: 800;
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #9b6500;
+      }
+
+      .stage-next-row-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .stage-next-row-arrow {
+        margin-left: auto;
+        font-weight: 800;
+      }
+
+      .stage-panel-next .stage-panel-meta {
         margin-bottom: 0.55rem;
       }
 
-      .stage-upnext .stage-profile {
-        margin-bottom: 0;
+      .stage-panel-next-note {
+        margin-top: 0.7rem;
       }
 
       .stage-profile {
@@ -9889,13 +10010,16 @@ function buildHtmlPage(data, view) {
           return;
         }
 
-        switcher.querySelectorAll("[data-stage-target]").forEach((stageChip) => {
-          const isActive = stageChip === chip;
-          stageChip.classList.toggle("is-active", isActive);
-          stageChip.setAttribute("aria-selected", isActive ? "true" : "false");
+        const target = chip.dataset.stageTarget;
+        switcher.querySelectorAll("[data-stage-target]").forEach((control) => {
+          const isActive = control.dataset.stageTarget === target;
+          control.classList.toggle("is-active", isActive);
+          if (control.getAttribute("role") === "tab") {
+            control.setAttribute("aria-selected", isActive ? "true" : "false");
+          }
         });
         switcher.querySelectorAll("[data-stage-panel]").forEach((panel) => {
-          panel.hidden = panel.id !== chip.dataset.stageTarget;
+          panel.hidden = panel.id !== target;
         });
       });
 

@@ -428,7 +428,7 @@ km/mi toggle. Two data paths feed it.
   coordinate trace from komoot's public API. The trace is resampled to 120 points by
   distance and stored on the stage as `profile`. Only lavuelta.es embedded komoot when
   this was built; letour.fr and the women's sites ship static profile images, so they
-  fall through to the pictogram. Current edition only, live races only, budgeted like
+  fall through to the pictogram. Current edition only — live, finished and recent races alike — budgeted like
   the official providers (`STAGE_PROFILE_BLOCKING_BUDGET_MS`, `STAGE_PROFILE_LOOKUP_LIMIT`),
   and cached for a week in `stageProfileCache` because a published profile never
   changes. Late arrivals write onto the cached race, so the next render has them.
@@ -466,10 +466,21 @@ production then never re-fetches those stages, and a finished race keeps its cha
 Runtime fetches still cover anything the file lacks. Enrichment runs for live,
 finished and recent races alike, gated to the current year and a matching source.
 
-*Up next.* A live race previews the following stage under its results:
-`buildUpNextMarkup` reads it off `stageRace.route` and draws its profile from the cache
-(`getCachedStageProfile`); `enrichStageProfiles` also fetches that one stage so the
-preview is measured even before a refresh. Nothing renders once the final stage is raced.
+*Up next (revised 2026-09-03).* On a live race the following stage — `getNextRouteStage`
+reads it off `stageRace.route` — gets three things from `buildStageSwitcherMarkup`: its
+chip in the strip becomes selectable and wears a small "next" tag in the live-race
+yellow; a one-line row above the strip (`buildNextStageRowMarkup`) names the stage,
+course, type and distance and selects the same panel; and a hidden preview panel
+(`buildNextStagePanelMarkup`) carries the date, course, profile (from the cache via
+`getCachedStageProfile`; `enrichStageProfiles` fetches that one stage too) and a note
+that results land after the finish. The card's height does not change and only one
+profile is visible at a time. This replaced a separate always-visible block under the
+results, which cost a full profile row and shared the expand control with the current
+stage. Three placements were comped with real data —
+https://claude.ai/code/artifact/2b15b13e-8da7-4973-90f3-5c5736ba0c7c — and the user chose
+the chip plus the row, with the chip alone ("B") as the fallback if the row proves busy:
+dropping it is deleting the `nextRow` line in `buildStageSwitcherMarkup` and nothing else.
+Nothing renders once the final stage is raced or on a finished race.
 
 *Axes.* Gridlines and distance ticks are built twice — round metres/kilometres and round
 feet/miles — tagged `data-unit-system`; the client stamps `data-units` on `<html>` and
@@ -497,6 +508,9 @@ the race centre (racecenter.lavuelta.es) draws them from an API its bundle obscu
   oversight — revisit it only if asked.
 - Both click handlers are delegated at `document`, so markup swapped in by
   `/api/race-stages` or revealed by "Load more races" works without rebinding.
+- Any control carrying `data-stage-target` selects a panel — the strip's chips and the
+  "Up next" row alike — and the active state follows the *target*, so the row lights
+  chip 13 and chip 13 lights the row. Only `role="tab"` controls get `aria-selected`.
 - The strip renders `stageRace.stages` and nothing else, so anything the card should
   show has to be *in* that array. `latestStage` is not consulted separately.
 - A team time trial occupies the rider slot with the team's name, so it renders through
@@ -678,8 +692,11 @@ it. Folding companion blocks into the shared block list regressed the GC on the 
 attempt. They now feed `stageResults` only, and `findOverallRaceResult` never sees them
 — otherwise a `Stage 1 Result` block gets read as the race's overall result.
 
-**Deep stage history is worth a cold-start budget only for live races.**
+**Deep stage history was once budgeted to live races only (no longer).**
 Reading companion articles for every recent race too added ~2s to a ~20s cold start.
+Since 2026-08-23 the official providers are budgeted and the build is ~6s, so companion
+articles are read for every stage race again — item 3 of the feature map is current;
+this paragraph is history.
 The split that survived: live races read them during the build, finished races render
 the route table's winner-per-stage history and offer `/api/race-stages` on demand,
 cached six hours and written back onto the cached race so the next page render already
@@ -776,7 +793,7 @@ stage that has not happened, so the two carry different titles.
 - Wikipedia live race pages often update unevenly; stage results and GC can be out of sync.
 - Wikipedia page *shape* varies as much as page freshness. Grand Tours, smaller stage races, and women's editions of the same race do not all use the same templates or table layouts, and a shape the parsers do not know about yields an empty race rather than an error. See "Parser Traps Learned On 2026-08-06".
 - A stage race's per-stage history depends on the main article's route table, which is not uniform: a team time trial has no rider winner (2026 Tour stage 1), and some tables drop the final stage row (2026 Tour stage 21). Both recover when the companion stage articles are read; until then those chips render disabled.
-- Companion stage articles and per-stage finish videos are fetched at build time for live races only. A finished race looking shallow is the design, not a regression — see "Stage Results Feature Map".
+- Per-stage finish videos are fetched at build time for live races only; companion stage articles are read for live and finished races alike. A finished race that is still winner-only has no companion article on Wikipedia — see "Stage Results Feature Map".
 - Official race pages can expose current data under stale metadata or stale URLs.
 - Article scoring is heuristic and division-sensitive; changes can improve one race and hurt another.
 - `BUILD_INFO` now reads Railway's `RAILWAY_GIT_COMMIT_SHA` when present and falls back to a hardcoded marker otherwise. Check `source` in the payload: `railway-env` is the live commit, `hardcoded-fallback` means you are looking at a local run or the env var went missing.

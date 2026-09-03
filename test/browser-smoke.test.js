@@ -63,12 +63,15 @@ function buildPage() {
         { number: 11, order: 11, label: "Stage 11", stageType: "flat", distanceKm: 156.1, winner: "A", standings: [{ place: "1", rider: "A" }] },
         { number: 12, order: 12, label: "Stage 12", stageType: "mountain", distanceKm: 166.5, course: "Vera to Calar Alto", profile, winner: "B", standings: [{ place: "1", rider: "B" }] },
       ],
+      route: [
+        { number: 13, order: 13, label: "Stage 13", date: "4 September", course: "Almuñécar to Loja", stageType: "medium-mountain", distanceKm: 192.8 },
+      ],
     },
   };
   const switcher = buildStageSwitcherMarkup(race, { live: true });
   const probe = `
     const out = { errors: window.__errors };
-    const chip = document.querySelector('[data-stage-target]:not(.is-active)');
+    const chip = document.querySelector('.stage-chip[data-stage-target]:not(.is-active):not(.is-next)');
     chip.click();
     out.otherPanelShown = !document.getElementById(chip.dataset.stageTarget).hidden;
     out.hiddenPanels = [...document.querySelectorAll('[data-stage-panel]')].filter((panel) => panel.hidden).length;
@@ -85,6 +88,19 @@ function buildPage() {
     out.storedView = localStorage.getItem('pcr-profile-view');
     out.imperialAxisVisible = getComputedStyle(document.querySelector('.stage-profile-gridlabel[data-unit-system="imperial"]')).display !== 'none';
     out.metricAxisVisible = getComputedStyle(document.querySelector('.stage-profile-gridlabel[data-unit-system="metric"]')).display !== 'none';
+
+    // The nudge row selects tomorrow's preview and lights the matching chip.
+    document.querySelector('.stage-next-row').click();
+    out.previewShown = !document.getElementById('2026-vuelta-a-espana-stage-13').hidden;
+    out.previewChipActive = document.querySelector('.stage-chip.is-next').classList.contains('is-active');
+    out.previewChipSelected = document.querySelector('.stage-chip.is-next').getAttribute('aria-selected');
+    out.rowActive = document.querySelector('.stage-next-row').classList.contains('is-active');
+    out.resultPanelsHidden = [...document.querySelectorAll('[data-stage-panel]:not(.stage-panel-next)')].every((panel) => panel.hidden);
+    document.querySelector('.stage-chip.is-next').click();
+    out.chipAgainStillShown = !document.getElementById('2026-vuelta-a-espana-stage-13').hidden;
+    document.querySelector('[data-stage-target="2026-vuelta-a-espana-stage-12"]').click();
+    out.backToResult = !document.getElementById('2026-vuelta-a-espana-stage-12').hidden && document.getElementById('2026-vuelta-a-espana-stage-13').hidden;
+    out.rowInactive = !document.querySelector('.stage-next-row').classList.contains('is-active');
 
     // Markup that lands later must pick up both preferences from the observer.
     const late = document.querySelector('.stage-profile.is-measured').cloneNode(true);
@@ -131,16 +147,27 @@ test("the stage card's client script works in a real browser", (t) => {
 
   assert.deepEqual(out.errors, []);
   assert.equal(out.otherPanelShown, true);
-  assert.equal(out.hiddenPanels, 1);
+  // Three panels: stages 11 and 12 plus the stage 13 preview; one shows at a time.
+  assert.equal(out.hiddenPanels, 2);
   assert.equal(out.activeChip, "11");
   assert.equal(out.units, "imperial");
   assert.equal(out.distance, "103.5 mi");
   assert.equal(out.storedUnits, "imperial");
-  assert.equal(out.expanded, 1);
+  // Stage 12 and the stage 13 preview both carry a measured profile (the preview is
+  // seeded from data/stage-profiles.json), and the preference applies to every one.
+  assert.equal(out.expanded, 2);
   assert.equal(out.toggleLabel, "Collapse profile");
   assert.equal(out.storedView, "expanded");
   assert.equal(out.imperialAxisVisible, true);
   assert.equal(out.metricAxisVisible, false);
+  assert.equal(out.previewShown, true);
+  assert.equal(out.previewChipActive, true);
+  assert.equal(out.previewChipSelected, "true");
+  assert.equal(out.rowActive, true);
+  assert.equal(out.resultPanelsHidden, true);
+  assert.equal(out.chipAgainStillShown, true);
+  assert.equal(out.backToResult, true);
+  assert.equal(out.rowInactive, true);
   assert.equal(out.lateExpanded, true);
   assert.equal(out.lateDistance, "103.5 mi");
 });

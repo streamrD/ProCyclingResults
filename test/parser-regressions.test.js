@@ -113,7 +113,8 @@ function loadParserExports() {
       attachCachedStageProfiles,
       stageProfileCache,
       loadPersistedStageProfiles,
-      buildUpNextMarkup,
+      buildNextStageRowMarkup,
+      buildNextStagePanelMarkup,
       getNextRouteStage,
       applyRouteDetails,
       buildStageProfileMarkup,
@@ -4263,7 +4264,7 @@ test("a persisted stage profile seeds the cache and is never re-fetched", async 
   }
 });
 
-test("a live race previews the next stage under its results, with its profile when cached", async () => {
+test("a live race gives tomorrow's stage a chip, a nudge row and a preview panel", async () => {
   const { buildStageSwitcherMarkup, stageProfileCache, enrichStageProfiles } = loadParserExports();
   stageProfileCache.clear();
   const race = {
@@ -4285,13 +4286,26 @@ test("a live race previews the next stage under its results, with its profile wh
     },
   };
 
-  const generic = buildStageSwitcherMarkup(race, { live: true });
-  assert.match(generic, /Up next · Stage 13/);
-  assert.match(generic, /4 September • Almuñécar to Loja/);
-  assert.match(generic, /stage-upnext[\s\S]*stage-profile is-generic[\s\S]*Medium mountain stage/);
-  // The preview is the last thing in the switcher, and never shown on a finished race.
-  assert.ok(generic.indexOf("stage-upnext") > generic.indexOf("Stage 12 winner"));
-  assert.doesNotMatch(buildStageSwitcherMarkup(race), /stage-upnext/);
+  const live = buildStageSwitcherMarkup(race, { live: true });
+  // Chip 13 is a selectable "next" chip rather than a disabled upcoming one.
+  assert.match(live, /<button type="button" class="stage-chip is-next"[^>]*data-stage-target="2026-vuelta-a-espana-stage-13"[^>]*title="Up next: Stage 13 — Almuñécar to Loja">13<span class="stage-chip-next-tag">next<\/span><\/button>/);
+  assert.doesNotMatch(live, /title="Not raced yet">13</);
+  assert.match(live, /title="Not raced yet">14</);
+  // The nudge row sits above the strip and targets the same panel.
+  const row = live.indexOf('class="stage-next-row"');
+  assert.ok(row >= 0 && row < live.indexOf('class="stage-strip"'));
+  assert.match(live, /stage-next-row" data-stage-target="2026-vuelta-a-espana-stage-13"/);
+  assert.match(live, /stage-next-row-text">Stage 13 · Almuñécar to Loja · Medium mountain · <span data-unit-metric="192.8 km" data-unit-imperial="119.8 mi">192.8 km<\/span></);
+  // The preview panel is hidden until chosen, carries the course, and says when results land.
+  assert.match(live, /<div class="stage-panel stage-panel-next" id="2026-vuelta-a-espana-stage-13"[^>]*hidden>[\s\S]*Up next · Stage 13[\s\S]*4 September • Almuñécar to Loja[\s\S]*stage-profile is-generic[\s\S]*Results will appear here once the stage finishes on 4 September\./);
+  // Stage 12 stays the selected stage.
+  assert.match(live, /class="stage-chip is-active" role="tab" aria-selected="true" aria-controls="2026-vuelta-a-espana-stage-12"/);
+  assert.doesNotMatch(live, /stage-upnext/);
+
+  // A finished race has no "next": chip 13 is the usual disabled chip and nothing else renders.
+  const finished = buildStageSwitcherMarkup(race);
+  assert.match(finished, /title="Not raced yet">13</);
+  assert.doesNotMatch(finished, /stage-next-row|stage-panel-next|is-next/);
 
   // The enrichment fetches tomorrow's stage into the cache; the preview then draws it.
   const requested = [];
@@ -4303,6 +4317,6 @@ test("a live race previews the next stage under its results, with its profile wh
   });
   assert.ok(requested.includes("https://www.lavuelta.es/en/stage-13"));
   const measured = buildStageSwitcherMarkup(race, { live: true });
-  assert.match(measured, /stage-upnext[\s\S]*stage-profile is-measured[\s\S]*3,414 m climbing/);
+  assert.match(measured, /stage-panel-next[\s\S]*stage-profile is-measured[\s\S]*3,414 m climbing/);
   stageProfileCache.clear();
 });
