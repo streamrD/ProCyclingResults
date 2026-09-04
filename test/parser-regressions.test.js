@@ -85,6 +85,7 @@ function loadParserExports() {
       parseTourOfGreeceOfficialStandings,
       extractTourOfGreeceLatestStageNumber,
       buildRaceCard,
+      buildUpcomingCard,
       buildStageRaceCard,
       getRaceFinishVideoUrl,
       isMultiDayRace,
@@ -98,6 +99,14 @@ function loadParserExports() {
       getCountryFlagEmojiByName,
       buildNationalChampionshipEventCard,
       buildNationalChampionshipsSection,
+      groupNationalChampionshipsByContinent,
+      getNationalChampionshipContinent,
+      buildSeasonCalendar,
+      buildSeasonCalendarSection,
+      createRaceAnchorId,
+      packSeasonCalendarRows,
+      COUNTRY_NAME_ALPHA2,
+      CONTINENT_BY_ALPHA2,
       getCompetitionGroups,
       buildRecentResultsBlock,
       extractStageArticleTitles,
@@ -2466,9 +2475,15 @@ test("buildNationalChampionshipsSection renders source-backed champion table", (
   assert.match(markup, /Taylor Knibb/);
   assert.match(markup, /Lauren Stephens/);
   assert.match(markup, /Watch race finish/);
-  assert.match(markup, /national-country-filter/);
-  assert.match(markup, /national-event-filter/);
+  assert.match(markup, /data-national-search/);
+  assert.match(markup, /data-national-category="meRoadRace"/);
+  assert.match(markup, /data-national-group-id="europe"/);
+  assert.match(markup, /data-national-group-id="north-america"/);
+  assert.doesNotMatch(markup, /data-national-group-id="asia"/);
   assert.match(markup, /Great Britain/);
+  assert.match(markup, /data-champions=""/);
+  assert.match(markup, /Confirmed dates for 2 of 3 federations/);
+  assert.match(markup, /Next window: January 2027|Next window: June 2026/);
   assert.match(markup, /hidden/);
   assert.match(markup, /Cyclingnews/);
   assert.match(markup, /2026-road-national-champions-index/);
@@ -4712,4 +4727,175 @@ test("buildStageRaceCard lists the jersey holders under the general classificati
   assert.match(buildJerseyHoldersMarkup(race, { finalized: true }), /Final jersey winners/);
   assert.equal(buildJerseyHoldersMarkup({ stageRace: { ...race.stageRace, classificationLeaders: null } }), "");
   assert.ok(!buildStageRaceCard({ ...race, stageRace: { ...race.stageRace, classificationLeaders: null } }).includes("jersey-holders"));
+});
+
+test("every federation in the flag map has a continent for the championships almanac", () => {
+  const { COUNTRY_NAME_ALPHA2, CONTINENT_BY_ALPHA2, getNationalChampionshipContinent } = loadParserExports();
+  const missing = [...new Set(Object.values(COUNTRY_NAME_ALPHA2))].filter((alpha2) => !CONTINENT_BY_ALPHA2[alpha2]);
+  assert.equal(missing.join(","), "");
+  assert.equal(getNationalChampionshipContinent("United States"), "north-america");
+  assert.equal(getNationalChampionshipContinent("Colombia"), "south-america");
+  assert.equal(getNationalChampionshipContinent("Hong Kong, China"), "asia");
+  assert.equal(getNationalChampionshipContinent("Atlantis"), "");
+});
+
+test("groupNationalChampionshipsByContinent buckets federations in continent order with counts and confirmed dates", () => {
+  const { parseNationalChampionshipsIndex, groupNationalChampionshipsByContinent } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE ITT</th><th>WE Road Race</th></tr>
+      <tr><th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+      <tr><th>Sweden</th><td>Axel K&auml;llberg</td><td></td><td>Zo&euml; Andersson</td><td></td></tr>
+      <tr><th>Great Britain</th><td></td><td></td><td></td><td></td></tr>
+      <tr><th>Australia</th><td>Jay Vine</td><td>Patrick Eddy</td><td></td><td></td></tr>
+    </table>`);
+  const groups = groupNationalChampionshipsByContinent(parsed.events);
+
+  assert.deepEqual([...groups.map((group) => group.id)], ["europe", "north-america", "oceania"]);
+  const europe = groups[0];
+  assert.equal(europe.federationCount, 2);
+  assert.equal(europe.reportingCount, 1);
+  assert.deepEqual([...europe.federations.map((federation) => federation.country)], ["Great Britain", "Sweden"]);
+  assert.deepEqual([...europe.federations[1].championKeys], ["meItt", "weItt"]);
+  assert.equal(europe.federations[1].champions.meItt, "Axel Källberg");
+  assert.equal(europe.federations[1].flag, "🇸🇪");
+  // Hand-entered metadata gives Great Britain and the US a date line even without a champion.
+  assert.match(europe.federations[0].detail, /Jun 25, 2026 – Jun 28, 2026 · Lampeter, Wales \/ Aberystwyth, Wales/);
+  assert.match(groups[1].federations[0].detail, /Jun 17, 2026 – Jun 21, 2026 · Charleston, West Virginia/);
+  assert.equal(groups[2].championCount, 2);
+});
+
+test("createRaceAnchorId slugs the race id without accents", () => {
+  const { createRaceAnchorId } = loadParserExports();
+  assert.equal(createRaceAnchorId({ id: "2026 Vuelta a España" }), "race-2026-vuelta-a-espana");
+  assert.equal(createRaceAnchorId({ title: "Liège–Bastogne–Liège" }), "race-liege-bastogne-liege");
+  assert.equal(createRaceAnchorId({}), "");
+});
+
+function buildCalendarFixture() {
+  const race = (title, series, start, end, extra = {}) => ({
+    id: `2026 ${title}`,
+    pageTitle: `2026 ${title}`,
+    title,
+    series,
+    startDate: new Date(`${start}T00:00:00Z`),
+    endDate: new Date(`${end}T00:00:00Z`),
+    date: start === end ? start : `${start} – ${end}`,
+    location: "Somewhere",
+    countryCode: "ESP",
+    ...extra,
+  });
+  return [
+    race("Tour Down Under", "Men's WorldTour", "2026-01-20", "2026-01-25", { winner: "Jay Vine", winnerCountryCode: "AUS" }),
+    race("Milan–San Remo", "Men's WorldTour", "2026-03-21", "2026-03-21", { winner: "Tadej Pogačar", winnerCountryCode: "SLO" }),
+    race("Tour de France", "Men's WorldTour", "2026-07-04", "2026-07-26", { winner: "Tadej Pogačar", winnerCountryCode: "SLO" }),
+    race("Vuelta a España", "Men's WorldTour", "2026-08-22", "2026-09-13"),
+    race("Il Lombardia", "Men's WorldTour", "2026-10-10", "2026-10-10"),
+    race("Tour de France Femmes", "Women's WorldTour", "2026-08-01", "2026-08-09", { winner: "Demi Vollering", winnerCountryCode: "NED" }),
+    race("Tour of Chongming Island", "Women's WorldTour", "2026-10-13", "2026-10-15"),
+    race("Tour of Greece", "Men's Europe Tour", "2026-05-01", "2026-05-05"),
+  ];
+}
+
+test("buildSeasonCalendar classifies WorldTour races by status and tier and pads the range to whole months", () => {
+  const { buildSeasonCalendar } = loadParserExports();
+  const calendar = buildSeasonCalendar(buildCalendarFixture(), new Date("2026-09-04T12:00:00Z"));
+
+  assert.equal(calendar.year, 2026);
+  assert.equal(calendar.today, "2026-09-04");
+  assert.equal(calendar.rangeStart, "2026-01-01");
+  assert.equal(calendar.rangeEnd, "2026-10-31");
+  assert.equal(calendar.races.length, 7, "the Europe Tour race is out of scope");
+  assert.deepEqual(
+    [...calendar.races.map((race) => `${race.title}:${race.status}:${race.tier}`)],
+    [
+      "Tour Down Under:finished:stage-race",
+      "Milan–San Remo:finished:monument",
+      "Tour de France:finished:grand-tour",
+      "Tour de France Femmes:finished:grand-tour",
+      "Vuelta a España:live:grand-tour",
+      "Il Lombardia:upcoming:monument",
+      "Tour of Chongming Island:upcoming:stage-race",
+    ],
+  );
+  assert.equal(calendar.finishedCount, 4);
+  assert.equal(calendar.liveCount, 1);
+  assert.equal(calendar.upcomingCount, 2);
+  assert.equal(calendar.races[4].anchor, "race-2026-vuelta-a-espana");
+  assert.equal(calendar.races[0].seriesId, "mens");
+  assert.equal(calendar.races[3].seriesId, "womens");
+  assert.equal(buildSeasonCalendar([], new Date("2026-09-04T00:00:00Z")).races.length, 0);
+});
+
+test("packSeasonCalendarRows keeps overlapping bars on separate rows", () => {
+  const { buildSeasonCalendar, packSeasonCalendarRows } = loadParserExports();
+  const calendar = buildSeasonCalendar(buildCalendarFixture(), new Date("2026-09-04T00:00:00Z"));
+  const scale = 4;
+  const X = (isoDay) => Math.round((Date.parse(`${isoDay}T00:00:00Z`) - Date.parse("2026-01-01T00:00:00Z")) / 86400000) * scale;
+  const { placed, rowCount } = packSeasonCalendarRows(
+    calendar.races.filter((race) => race.seriesId === "mens"),
+    X,
+    scale,
+    (race) => (race.tier === "grand-tour" ? race.title : ""),
+  );
+  assert.equal(placed.length, 5);
+  // The Tour de France label runs past the Vuelta's start, so the Vuelta drops a row.
+  const tour = placed.find((entry) => entry.race.title === "Tour de France");
+  const vuelta = placed.find((entry) => entry.race.title === "Vuelta a España");
+  assert.equal(tour.row, 0);
+  assert.equal(vuelta.row, 1);
+  assert.ok(rowCount >= 2);
+  for (const entry of placed) {
+    for (const other of placed) {
+      if (entry === other || entry.row !== other.row) continue;
+      const apart = entry.x + entry.width <= other.x || other.x + other.width <= entry.x;
+      assert.ok(apart, `${entry.race.title} overlaps ${other.race.title}`);
+    }
+  }
+});
+
+test("buildSeasonCalendarSection links bars to cards on the page, pins live races on the phone list and lists what is next", () => {
+  const { buildSeasonCalendar, buildSeasonCalendarSection } = loadParserExports();
+  const fixture = buildCalendarFixture();
+  const calendar = buildSeasonCalendar(fixture, new Date("2026-09-04T00:00:00Z"));
+  const markup = buildSeasonCalendarSection(calendar, {
+    liveStageRaces: [fixture[3]],
+    upcomingRaces: [fixture[4]],
+    recentResults: [],
+    finalizedStageRaces: [],
+  });
+
+  assert.match(markup, /id="season-calendar"/);
+  assert.match(markup, /Vuelta a España in progress · 4 of 7 WorldTour races run · next: Il Lombardia, 10 Oct/);
+  // A race with a card on the page is a link; one without is a focusable group.
+  assert.match(markup, /<a class="season-bar" href="#race-2026-vuelta-a-espana"/);
+  assert.match(markup, /<g class="season-bar" tabindex="0" data-season-bar data-tip-title="Tour de France"/);
+  assert.match(markup, /data-tip-detail="Tadej Pogačar 🇸🇮"/);
+  assert.match(markup, /data-tip-detail="In progress"/);
+  assert.match(markup, /season-bar-progress/);
+  assert.match(markup, /TODAY/);
+  assert.match(markup, /Nationals week · Europe &amp; N\. America/);
+  // Three full views plus the compact strip.
+  assert.equal((markup.match(/data-season-view="/g) || []).length, 3);
+  assert.match(markup, /data-season-compact/);
+  // Phone list: live pinned once, August folded away as finished, October open.
+  const monthList = markup.slice(markup.indexOf("data-season-months"), markup.indexOf("</section>"));
+  assert.equal((monthList.match(/Vuelta a España/g) || []).length, 1);
+  assert.match(monthList, /<h3>Live now<\/h3>/);
+  const monthBlocks = monthList.split('<div class="season-month"').slice(1);
+  const august = monthBlocks.find((block) => block.includes("<h3>August</h3>"));
+  const october = monthBlocks.find((block) => block.includes("<h3>October</h3>"));
+  assert.ok(august.startsWith(" data-season-past"), "August should be folded as finished");
+  assert.ok(!october.startsWith(" data-season-past"), "October should stay open");
+  assert.match(august, /season-month-folded/);
+  assert.match(markup, /Up next[\s\S]*?Il Lombardia[\s\S]*?Tour of Chongming Island/);
+  assert.equal(buildSeasonCalendarSection({ races: [] }, {}), "");
+});
+
+test("race cards carry the anchor the season calendar links to", () => {
+  const { buildRaceCard, buildUpcomingCard } = loadParserExports();
+  const race = { id: "2026 Il Lombardia", title: "Il Lombardia", series: "Men's WorldTour", date: "10 October 2026", location: "Italy", winner: "" };
+  assert.match(buildUpcomingCard(race), /<article class="card upcoming-card" id="race-2026-il-lombardia">/);
+  assert.match(buildRaceCard(race), /<article class="card result-card" id="race-2026-il-lombardia">/);
 });

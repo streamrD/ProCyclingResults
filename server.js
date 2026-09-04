@@ -94,6 +94,79 @@ const NATIONAL_CHAMPIONSHIP_FEATURED_COUNTRIES = [
 const NATIONAL_CHAMPION_NAME_CORRECTIONS = {
   "Artem Schmidt": "Artem Shmidt",
 };
+// Continent buckets for the National Championships almanac. Geographic rather than
+// UCI confederation so the Americas split the way their championship windows do:
+// South America mostly races in January and February, North America in late June.
+// The hints are typical timing, not confirmed dates — the UI says "usually".
+const SEASON_YEAR = 2026;
+const NATIONAL_CHAMPIONSHIP_CONTINENTS = [
+  { id: "europe", label: "Europe", hint: "Usually the last week of June" },
+  { id: "north-america", label: "North & Central America", hint: "Usually late June" },
+  { id: "south-america", label: "South America", hint: "Mostly January and February" },
+  { id: "asia", label: "Asia", hint: "Spread across the year" },
+  { id: "africa", label: "Africa", hint: "Spread across the year" },
+  { id: "oceania", label: "Oceania", hint: "Usually January" },
+];
+const CONTINENT_BY_ALPHA2 = {
+  AL: "europe", AT: "europe", BA: "europe", BE: "europe", BG: "europe", BY: "europe", CH: "europe",
+  CY: "europe", CZ: "europe", DE: "europe", DK: "europe", EE: "europe", ES: "europe", FI: "europe",
+  FR: "europe", GB: "europe", GR: "europe", HR: "europe", HU: "europe", IE: "europe", IS: "europe",
+  IT: "europe", LT: "europe", LU: "europe", LV: "europe", ME: "europe", MK: "europe", MT: "europe",
+  NL: "europe", NO: "europe", PL: "europe", PT: "europe", RO: "europe", RS: "europe", SE: "europe",
+  SI: "europe", SK: "europe", TR: "europe", UA: "europe", XK: "europe",
+  AE: "asia", AF: "asia", CN: "asia", HK: "asia", ID: "asia", IN: "asia", IR: "asia", JP: "asia",
+  KR: "asia", KZ: "asia", LA: "asia", MN: "asia", MO: "asia", MY: "asia", PH: "asia", PK: "asia",
+  SG: "asia", TH: "asia", UZ: "asia",
+  BF: "africa", CM: "africa", CV: "africa", DZ: "africa", EG: "africa", ER: "africa", ET: "africa",
+  KE: "africa", LS: "africa", MA: "africa", MU: "africa", NA: "africa", RW: "africa", TN: "africa",
+  UG: "africa", ZA: "africa", ZW: "africa",
+  AG: "north-america", BM: "north-america", BZ: "north-america", CA: "north-america", CR: "north-america",
+  CU: "north-america", DO: "north-america", GD: "north-america", GT: "north-america", HN: "north-america",
+  MX: "north-america", PA: "north-america", PR: "north-america", SV: "north-america", TT: "north-america",
+  US: "north-america", VC: "north-america",
+  AR: "south-america", BO: "south-america", BR: "south-america", CL: "south-america", CO: "south-america",
+  EC: "south-america", PE: "south-america", PY: "south-america", UY: "south-america", VE: "south-america",
+  AU: "oceania", NZ: "oceania",
+};
+// Windows drawn hatched on both calendar strips. They are schematic: the Cyclingnews
+// index carries no dates, so confirmed dates come only from
+// NATIONAL_CHAMPIONSHIP_EVENT_METADATA and these bands are labelled "typical".
+const NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS = [
+  { start: `${SEASON_YEAR}-01-05`, end: `${SEASON_YEAR}-02-20`, label: "Nationals · southern hemisphere" },
+  { start: `${SEASON_YEAR}-06-18`, end: `${SEASON_YEAR}-06-29`, label: "Nationals week · Europe & N. America" },
+];
+const NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS = [
+  { key: "meRoadRace", label: "Men's road race", chip: "Men RR" },
+  { key: "meItt", label: "Men's time trial", chip: "Men TT" },
+  { key: "weRoadRace", label: "Women's road race", chip: "Women RR" },
+  { key: "weItt", label: "Women's time trial", chip: "Women TT" },
+];
+// The season calendar emphasises a fixed, hand-curated set: three Grand Tours per
+// series and the Monuments (with their women's editions). Everything else is drawn by
+// duration only, so no other tier is invented.
+const SEASON_CALENDAR_GRAND_TOURS = new Set([
+  "Giro d'Italia",
+  "Tour de France",
+  "Vuelta a España",
+  "Giro d'Italia Women",
+  "Tour de France Femmes",
+  "La Vuelta Femenina",
+]);
+const SEASON_CALENDAR_MONUMENTS = new Set([
+  "Milan–San Remo",
+  "Tour of Flanders",
+  "Paris–Roubaix",
+  "Liège–Bastogne–Liège",
+  "Il Lombardia",
+  "Milan–San Remo Women",
+  "Paris–Roubaix Femmes",
+  "Liège–Bastogne–Liège Femmes",
+]);
+const SEASON_CALENDAR_SERIES = [
+  { id: "mens", label: "Men's WorldTour" },
+  { id: "womens", label: "Women's WorldTour" },
+];
+const SEASON_DAY_MS = 24 * 60 * 60 * 1000;
 const NATIONAL_CHAMPIONSHIP_EVENT_METADATA = {
   "United States": {
     meItt: {
@@ -1354,6 +1427,76 @@ function selectNationalChampionshipHighlights(rows, limit = 6) {
     })
     .slice(0, limit)
     .map((entry) => entry.row);
+}
+
+function getNationalChampionshipContinent(countryName) {
+  const alpha2 = COUNTRY_NAME_ALPHA2[String(countryName || "").trim().toLowerCase()];
+  return CONTINENT_BY_ALPHA2[alpha2] || "";
+}
+
+function isFeaturedNationalChampionshipEvent(event) {
+  return (
+    event?.status === "completed" &&
+    ((event.podium?.length || 0) > 1 || Boolean(event.sourceUrl) || Boolean(event.finishVideoUrl))
+  );
+}
+
+function describeNationalChampionshipFederation(events) {
+  const dated = events.filter((event) => event.date).sort((left, right) => left.date.localeCompare(right.date));
+  if (!dated.length) {
+    return "";
+  }
+  const first = dated[0].dateLabel;
+  const last = dated[dated.length - 1].dateLabel;
+  const locations = [...new Set(dated.map((event) => event.location).filter(Boolean))];
+  return [first === last ? first : `${first} – ${last}`, locations.join(" / ")].filter(Boolean).join(" · ");
+}
+
+// One row per federation, bucketed by continent in NATIONAL_CHAMPIONSHIP_CONTINENTS
+// order. Federations the map does not know land in a trailing "Other" group rather
+// than disappearing.
+function groupNationalChampionshipsByContinent(events) {
+  const byCountry = new Map();
+  (events || []).forEach((event) => {
+    if (!event?.country) {
+      return;
+    }
+    if (!byCountry.has(event.country)) {
+      byCountry.set(event.country, []);
+    }
+    byCountry.get(event.country).push(event);
+  });
+
+  const groups = NATIONAL_CHAMPIONSHIP_CONTINENTS.map((continent) => ({ ...continent, federations: [] }));
+  const other = { id: "other", label: "Other federations", hint: "", federations: [] };
+
+  [...byCountry.keys()]
+    .sort((left, right) => left.localeCompare(right))
+    .forEach((country) => {
+      const countryEvents = byCountry.get(country);
+      const continentId = getNationalChampionshipContinent(country);
+      const group = groups.find((entry) => entry.id === continentId) || other;
+      const champions = {};
+      NATIONAL_CHAMPIONSHIP_EVENT_KEYS.forEach((key) => {
+        champions[key] = countryEvents.find((event) => event.eventKey === key)?.champion || "";
+      });
+      group.federations.push({
+        country,
+        flag: getCountryFlagEmojiByName(country),
+        champions,
+        championKeys: NATIONAL_CHAMPIONSHIP_EVENT_KEYS.filter((key) => champions[key]),
+        detail: describeNationalChampionshipFederation(countryEvents),
+      });
+    });
+
+  return [...groups, other]
+    .filter((group) => group.federations.length > 0)
+    .map((group) => ({
+      ...group,
+      federationCount: group.federations.length,
+      reportingCount: group.federations.filter((federation) => federation.championKeys.length > 0).length,
+      championCount: group.federations.reduce((sum, federation) => sum + federation.championKeys.length, 0),
+    }));
 }
 
 function buildEmptyNationalChampionships(error) {
@@ -5930,6 +6073,94 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
   };
 }
 
+function createRaceAnchorId(race) {
+  const slug = String(race?.id || race?.pageTitle || race?.title || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug ? `race-${slug}` : "";
+}
+
+function getSeasonCalendarTier(race) {
+  if (SEASON_CALENDAR_GRAND_TOURS.has(race?.title)) {
+    return "grand-tour";
+  }
+  if (SEASON_CALENDAR_MONUMENTS.has(race?.title)) {
+    return "monument";
+  }
+  return isMultiDayRace(race) ? "stage-race" : "one-day";
+}
+
+function toIsoDay(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function seasonDayIndex(isoDay, isoBase) {
+  return Math.round((Date.parse(`${isoDay}T00:00:00Z`) - Date.parse(`${isoBase}T00:00:00Z`)) / SEASON_DAY_MS);
+}
+
+// The whole WorldTour season as one JSON-friendly list, padded to month boundaries so
+// the timeline axis starts on the 1st. Status is by date against todayUtc; a race is
+// "live" from its first day through its last.
+function buildSeasonCalendar(allRaces, todayUtc = new Date()) {
+  const todayIso = toIsoDay(todayUtc);
+  const races = (allRaces || [])
+    .filter((race) => race?.startDate && race?.endDate && SEASON_CALENDAR_SERIES.some((series) => series.label === race.series))
+    .map((race) => {
+      const startDate = toIsoDay(race.startDate);
+      const endDate = toIsoDay(race.endDate);
+      const status = race.isCancelled
+        ? "cancelled"
+        : endDate < todayIso
+        ? "finished"
+        : startDate <= todayIso
+        ? "live"
+        : "upcoming";
+      return {
+        id: race.id || race.pageTitle || race.title,
+        anchor: createRaceAnchorId(race),
+        title: race.title || "",
+        series: race.series,
+        seriesId: SEASON_CALENDAR_SERIES.find((series) => series.label === race.series)?.id || "",
+        startDate,
+        endDate,
+        date: race.date || "",
+        location: race.location || "",
+        countryCode: race.countryCode || "",
+        winner: race.winner || "",
+        winnerCountryCode: race.winnerCountryCode || "",
+        status,
+        tier: getSeasonCalendarTier(race),
+      };
+    })
+    .filter((race) => race.startDate && race.endDate && race.endDate >= race.startDate)
+    .sort((left, right) => left.startDate.localeCompare(right.startDate) || right.endDate.localeCompare(left.endDate));
+
+  if (!races.length) {
+    return { year: SEASON_YEAR, today: todayIso, rangeStart: "", rangeEnd: "", finishedCount: 0, liveCount: 0, upcomingCount: 0, races: [] };
+  }
+
+  const first = new Date(`${races[0].startDate}T00:00:00Z`);
+  const lastEnd = races.reduce((max, race) => (race.endDate > max ? race.endDate : max), races[0].endDate);
+  const last = new Date(`${lastEnd}T00:00:00Z`);
+  const rangeStart = toIsoDay(new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1)));
+  const rangeEnd = toIsoDay(new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)));
+
+  return {
+    year: first.getUTCFullYear(),
+    today: todayIso,
+    rangeStart,
+    rangeEnd,
+    finishedCount: races.filter((race) => race.status === "finished").length,
+    liveCount: races.filter((race) => race.status === "live").length,
+    upcomingCount: races.filter((race) => race.status === "upcoming").length,
+    races,
+  };
+}
+
 function dedupeRacesByPageTitle(races) {
   const seen = new Set();
   return (races || []).filter((race) => {
@@ -6181,6 +6412,7 @@ async function buildRaceData(metadata, options = {}) {
     europeTourLiveStageRaces: selectedEuropeTourLiveStageRaces,
     europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
     nationalChampionships,
+    seasonCalendar: buildSeasonCalendar(allRaces.filter(isWorldTourRace), todayUtc),
     buildTimings: {
       totalMs: Date.now() - startedAt,
       recentStandingsMs,
@@ -6605,6 +6837,7 @@ function buildHomepageDataPayload(data) {
     liveStageRaces: data.liveStageRaces,
     upcomingRaces: data.upcomingRaces,
     nationalChampionships: data.nationalChampionships,
+    seasonCalendar: data.seasonCalendar,
   };
 }
 
@@ -7984,7 +8217,7 @@ function buildStageRaceCard(race, options = {}) {
     : `${stageContent}${gcContent}`;
 
   return `
-    <article class="card result-card stage-race-card">
+    <article class="card result-card stage-race-card" id="${escapeHtml(createRaceAnchorId(race))}">
       <div class="card-kicker">${escapeHtml(race.series)} ${statusBadge}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
@@ -8008,7 +8241,7 @@ function buildRaceCard(race) {
   );
 
   return `
-    <article class="card result-card">
+    <article class="card result-card" id="${escapeHtml(createRaceAnchorId(race))}">
       <div class="card-kicker">${escapeHtml(race.series)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
@@ -8023,7 +8256,7 @@ function buildLiveStageRaceCard(race) {
 
 function buildUpcomingCard(race) {
   return `
-    <article class="card upcoming-card">
+    <article class="card upcoming-card" id="${escapeHtml(createRaceAnchorId(race))}">
       <div class="card-kicker">${escapeHtml(race.series)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
@@ -8418,10 +8651,6 @@ function buildCompetitionSection(group, coverageView) {
     </section>`;
 }
 
-function buildNationalChampionValue(value) {
-  return value ? escapeHtml(value) : `<span class="champion-tbd">TBD</span>`;
-}
-
 function buildNationalChampionshipPodium(event) {
   if (!event.podium?.length) {
     return `
@@ -8486,66 +8715,248 @@ function buildNationalChampionshipEventCard(event) {
     </article>`;
 }
 
-function buildNationalChampionshipFilters(events) {
-  if (!events?.length) {
-    return "";
+function svgText(x, y, text, attributes) {
+  return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" ${attributes}>${escapeHtml(text)}</text>`;
+}
+
+const CALENDAR_MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CALENDAR_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const CALENDAR_LABEL_FONT = 'font-family="Barlow Semi Condensed, Arial Narrow, sans-serif"';
+const CALENDAR_HATCH_DEFS = (id) =>
+  `<defs><pattern id="${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(239, 51, 64, 0.05)"></rect><line x1="0" y1="0" x2="0" y2="6" stroke="rgba(239, 51, 64, 0.35)" stroke-width="1.5"></line></pattern></defs>`;
+
+// Month bands, labels and gridlines between two ISO days. Shared by both calendar strips.
+function buildCalendarMonthMarkup(rangeStart, rangeEnd, X, top, bottom, compact) {
+  const parts = [];
+  const start = new Date(`${rangeStart}T00:00:00Z`);
+  const end = new Date(`${rangeEnd}T00:00:00Z`);
+  for (
+    let cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    cursor <= end;
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1))
+  ) {
+    const next = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    const xa = X(toIsoDay(cursor));
+    const xb = X(toIsoDay(next));
+    if (cursor.getUTCMonth() % 2 === 1) {
+      parts.push(`<rect x="${xa.toFixed(1)}" y="${top}" width="${(xb - xa).toFixed(1)}" height="${bottom - top}" fill="rgba(0, 51, 160, 0.035)"></rect>`);
+    }
+    parts.push(
+      svgText(
+        xa + 6,
+        compact ? 14 : 18,
+        CALENDAR_MONTH_LABELS[cursor.getUTCMonth()].toUpperCase(),
+        `${CALENDAR_LABEL_FONT} font-size="${compact ? 11 : 13}" font-weight="700" letter-spacing="0.12em" fill="#4f6188"`,
+      ),
+    );
+    parts.push(`<line x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${top}" y2="${bottom}" stroke="rgba(0, 51, 160, 0.12)"></line>`);
+  }
+  return parts.join("");
+}
+
+function buildCalendarWindowMarkup(X, top, bottom, patternId, labelY) {
+  return NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS.map((window) => {
+    const xa = X(window.start);
+    const xb = X(window.end);
+    const label = labelY
+      ? svgText(xa + 4, labelY, window.label, `font-family="Manrope, sans-serif" font-size="10.5" font-weight="700" fill="#c9252f"`)
+      : "";
+    return `<g><title>${escapeHtml(`${window.label} — typical window, not confirmed dates`)}</title><rect x="${xa.toFixed(1)}" y="${top}" width="${(xb - xa).toFixed(1)}" height="${bottom - top}" fill="url(#${patternId})" stroke="rgba(239, 51, 64, 0.35)" stroke-dasharray="4 3"></rect>${label}</g>`;
+  }).join("");
+}
+
+function buildCalendarTodayMarkup(x, top, bottom, badgeY) {
+  return `
+    <line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${top}" y2="${bottom}" stroke="#ffcc00" stroke-width="2.5"></line>
+    <circle class="season-today-dot" cx="${x.toFixed(1)}" cy="${bottom - 4}" r="4" fill="#ffcc00"></circle>
+    <rect x="${(x - 24).toFixed(1)}" y="${badgeY}" width="48" height="16" rx="8" fill="#ffcc00"></rect>
+    ${svgText(x, badgeY + 12, "TODAY", `text-anchor="middle" ${CALENDAR_LABEL_FONT} font-size="10.5" font-weight="800" letter-spacing="0.08em" fill="#00184d"`)}`;
+}
+
+function buildNationalChampionshipScheduleMarkup(events, today = new Date()) {
+  const width = 800;
+  const height = 96;
+  const x0 = 6;
+  const x1 = width - 6;
+  const rangeStart = `${SEASON_YEAR}-01-01`;
+  const rangeEnd = `${SEASON_YEAR}-12-31`;
+  const totalDays = seasonDayIndex(rangeEnd, rangeStart) + 1;
+  const scale = (x1 - x0) / totalDays;
+  const X = (isoDay) => x0 + seasonDayIndex(isoDay, rangeStart) * scale;
+  const top = 26;
+  const bottom = 90;
+  const parts = [CALENDAR_HATCH_DEFS("national-hatch")];
+  parts.push(buildCalendarMonthMarkup(rangeStart, rangeEnd, X, top, bottom, false));
+  parts.push(buildCalendarWindowMarkup(X, top, bottom, "national-hatch", bottom - 6));
+
+  const byDate = new Map();
+  (events || [])
+    .filter((event) => event.date)
+    .forEach((event) => {
+      if (!byDate.has(event.date)) {
+        byDate.set(event.date, []);
+      }
+      byDate.get(event.date).push(event);
+    });
+  [...byDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([date, dateEvents], index) => {
+      const label = dateEvents.map((event) => `${event.country} ${event.eventLabel}`).join(", ");
+      parts.push(
+        `<g><title>${escapeHtml(`${formatNationalChampionshipDate(date)} · ${label}`)}</title><circle cx="${X(date).toFixed(1)}" cy="${44 + (index % 2) * 16}" r="6" fill="#0033a0" stroke="white" stroke-width="2"></circle></g>`,
+      );
+    });
+
+  const todayIso = toIsoDay(today);
+  if (todayIso >= rangeStart && todayIso <= rangeEnd) {
+    parts.push(buildCalendarTodayMarkup(X(todayIso), top - 4, bottom, 10));
   }
 
-  const countries = [...new Set(events.map((event) => event.country).filter(Boolean))].sort((left, right) =>
-    left.localeCompare(right),
-  );
-  const countryOptions = countries
-    .map((country) => `<option value="${escapeHtml(country)}">${escapeHtml(country)}</option>`)
-    .join("");
-  const eventOptions = NATIONAL_CHAMPIONSHIP_EVENT_KEYS
-    .map((eventKey) => `<option value="${escapeHtml(eventKey)}">${escapeHtml(NATIONAL_CHAMPIONSHIP_EVENT_LABELS[eventKey])}</option>`)
-    .join("");
+  return `<svg class="national-schedule-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Championship dates across the ${SEASON_YEAR} calendar year">${parts.join("")}</svg>`;
+}
+
+function describeConfirmedNationalChampionshipDates(events) {
+  const byCountry = new Map();
+  (events || [])
+    .filter((event) => event.date)
+    .forEach((event) => {
+      if (!byCountry.has(event.country)) {
+        byCountry.set(event.country, new Set());
+      }
+      byCountry.get(event.country).add(event.date);
+    });
+  if (!byCountry.size) {
+    return "No confirmed dates yet.";
+  }
+  const entries = [...byCountry.entries()].map(([country, dates]) => {
+    const labels = [...dates].sort().map((date) => formatNationalChampionshipDate(date).replace(/, \d{4}$/, ""));
+    return `${country} (${labels.join(", ")})`;
+  });
+  return `Confirmed ${SEASON_YEAR} dates: ${entries.join("; ")}.`;
+}
+
+function describeNextNationalChampionshipWindow(today = new Date()) {
+  const todayIso = toIsoDay(today);
+  const next = NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS.find((window) => window.end >= todayIso);
+  if (next) {
+    const start = new Date(`${next.start}T00:00:00Z`);
+    return `Next window: ${CALENDAR_MONTH_NAMES[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
+  }
+  return `Next window: January ${SEASON_YEAR + 1}`;
+}
+
+function buildNationalChampionshipStatusMarkup(data, events, today = new Date()) {
+  const total = data.totalCountryCount || 0;
+  const reporting = data.reportingCountryCount || 0;
+  const completed = data.completedEventCount || events.filter((event) => event.status === "completed").length;
+  const upcoming = events.filter((event) => event.status === "upcoming").length;
+  const headline =
+    reporting === 0
+      ? "Season not started"
+      : upcoming > 0
+      ? `${upcoming} title${upcoming === 1 ? "" : "s"} still to come`
+      : total > 0 && reporting / total >= 0.75
+      ? "Essentially complete"
+      : "In progress";
+  const sourceUpdatedLabel = data.sourceLastModified
+    ? `Source updated ${formatTimestamp(data.sourceLastModified)} Eastern Time.`
+    : `Source fetched ${formatTimestamp(data.fetchedAt)} Eastern Time.`;
 
   return `
-    <div class="national-filter-bar">
-      <label class="national-filter">
-        <span>Country</span>
-        <select id="national-country-filter" data-national-filter="country">
-          <option value="">All countries</option>
-          ${countryOptions}
-        </select>
-      </label>
-      <label class="national-filter">
-        <span>Category</span>
-        <select id="national-event-filter" data-national-filter="event">
-          <option value="">All categories</option>
-          ${eventOptions}
-        </select>
-      </label>
+    <div class="national-status">
+      <div>
+        <span class="national-status-label">${escapeHtml(String(SEASON_YEAR))} season status</span>
+        <strong class="national-status-headline">${escapeHtml(headline)}</strong>
+      </div>
+      <div class="national-status-grid">
+        <div>
+          <span class="national-status-label">Federations with champions</span>
+          <strong class="national-status-figure">${escapeHtml(String(reporting))} of ${escapeHtml(String(total))}</strong>
+        </div>
+        <div>
+          <span class="national-status-label">Titles decided</span>
+          <strong class="national-status-figure">${escapeHtml(String(completed))}</strong>
+        </div>
+      </div>
+      <p class="meta national-status-note">${escapeHtml(describeNextNationalChampionshipWindow(today))}. ${escapeHtml(sourceUpdatedLabel)} <a href="${escapeHtml(data.sourceUrl || NATIONAL_CHAMPIONSHIPS_SOURCE_URL)}" target="_blank" rel="noreferrer">View source</a>.</p>
     </div>`;
+}
+
+function buildNationalChampionshipGroupMarkup(group) {
+  const rows = group.federations
+    .map((federation) => {
+      const search = [federation.country, ...federation.championKeys.map((key) => federation.champions[key])]
+        .join(" ")
+        .toLowerCase();
+      const cells = NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS.map((column) =>
+        federation.champions[column.key]
+          ? `<td data-event-key="${column.key}"><span class="national-champion">${escapeHtml(federation.champions[column.key])}</span></td>`
+          : `<td data-event-key="${column.key}"><span class="national-cell-empty" aria-label="No result recorded">—</span></td>`,
+      ).join("");
+      const flag = federation.flag ? `<span class="national-flag" aria-hidden="true">${escapeHtml(federation.flag)}</span>` : "";
+      const detail = federation.detail ? `<span class="national-federation-detail">${escapeHtml(federation.detail)}</span>` : "";
+      return `
+        <tr data-national-row data-champions="${escapeHtml(federation.championKeys.join(" "))}" data-search="${escapeHtml(search)}">
+          <th scope="row"><span class="national-federation">${flag}<span>${escapeHtml(federation.country)}</span></span>${detail}</th>
+          ${cells}
+        </tr>`;
+    })
+    .join("");
+  const head = NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS.map(
+    (column) => `<th scope="col" data-event-key="${column.key}">${escapeHtml(column.label)}</th>`,
+  ).join("");
+  const hint = group.hint ? `<span class="national-group-hint">${escapeHtml(group.hint)}</span>` : "";
+
+  return `
+    <details class="national-group" data-national-group data-national-group-id="${escapeHtml(group.id)}">
+      <summary class="national-group-summary">
+        <span class="national-group-chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"></path></svg></span>
+        <span class="national-group-name">${escapeHtml(group.label)}</span>
+        <span class="national-group-count">${escapeHtml(String(group.reportingCount))} of ${escapeHtml(String(group.federationCount))} federations with champions<span data-national-group-visible></span></span>
+        ${hint}
+      </summary>
+      <div class="national-table-wrap">
+        <table class="national-table">
+          <thead><tr><th scope="col">Federation</th>${head}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </details>`;
 }
 
 function buildNationalChampionshipsSection(nationalChampionships) {
   const data = nationalChampionships || buildEmptyNationalChampionships();
   const events = sortNationalChampionshipEvents(data.events || buildNationalChampionshipEventRecords(data.rows || []));
-  const eventMarkup = events.map(buildNationalChampionshipEventCard).join("");
-  const filterMarkup = buildNationalChampionshipFilters(events);
-  const sourceUpdatedLabel = data.sourceLastModified
-    ? `Source updated ${formatTimestamp(data.sourceLastModified)} Eastern Time.`
-    : `Source fetched ${formatTimestamp(data.fetchedAt)} Eastern Time.`;
-  const summaryMarkup = `
-    <div class="national-summary-grid">
-      <div class="national-summary-card">
-        <span>Countries Listed</span>
-        <strong>${escapeHtml(String(data.totalCountryCount || 0))}</strong>
-      </div>
-      <div class="national-summary-card">
-        <span>Completed Events</span>
-        <strong>${escapeHtml(String(data.completedEventCount || events.filter((event) => event.status === "completed").length))}</strong>
-      </div>
-      <div class="national-summary-card">
-        <span>Scheduled/TBD</span>
-        <strong>${escapeHtml(String(events.filter((event) => event.status !== "completed").length))}</strong>
-      </div>
-    </div>`;
+  const featured = events.filter(isFeaturedNationalChampionshipEvent);
+  const groups = groupNationalChampionshipsByContinent(events);
+  const federationCount = groups.reduce((sum, group) => sum + group.federationCount, 0);
+  const reportingCount = groups.reduce((sum, group) => sum + group.reportingCount, 0);
+  const datedCountryCount = new Set(events.filter((event) => event.date).map((event) => event.country)).size;
   const errorMarkup = data.error
     ? `<p class="meta national-error">National championship data is temporarily unavailable: ${escapeHtml(data.error)}</p>`
     : "";
+  const featuredMarkup = featured.length
+    ? `
+        <div class="competition-block national-featured-block">
+          <div class="competition-block-head">
+            <h3>Featured</h3>
+            <p>Titles with a full podium, a report or a finish video.</p>
+          </div>
+          <div class="grid competition-grid national-featured-grid">
+            ${featured.map(buildNationalChampionshipEventCard).join("")}
+          </div>
+        </div>`
+    : "";
+  const chips = [{ key: "", chip: "All" }, ...NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS]
+    .map(
+      (column) => `
+        <button type="button" class="national-chip${column.key ? "" : " is-active"}" data-national-category="${escapeHtml(column.key)}" aria-pressed="${column.key ? "false" : "true"}">${escapeHtml(column.chip)}</button>`,
+    )
+    .join("");
+  const emptyFederationCount = federationCount - reportingCount;
 
   return `
     <section class="section national-section" id="national-championships">
@@ -8557,20 +8968,376 @@ function buildNationalChampionshipsSection(nationalChampionships) {
         </div>
       </div>
       <div class="competition-stack">
-        ${summaryMarkup}
         ${errorMarkup}
-        <div class="competition-block national-results-block">
-          <div class="competition-block-head">
-            <h3>Results</h3>
-            <p>${escapeHtml(data.sourceLabel)}. ${escapeHtml(sourceUpdatedLabel)} <a href="${escapeHtml(data.sourceUrl)}" target="_blank" rel="noreferrer">View source</a>.</p>
+        <div class="national-almanac-grid">
+          <div class="competition-block national-schedule-block">
+            <div class="competition-block-head national-schedule-head">
+              <h3>When the championships happen</h3>
+              <p>Confirmed dates for ${escapeHtml(String(datedCountryCount))} of ${escapeHtml(String(federationCount))} federations.</p>
+            </div>
+            ${buildNationalChampionshipScheduleMarkup(events)}
+            <p class="meta national-schedule-note">${escapeHtml(describeConfirmedNationalChampionshipDates(events))} Hatched windows show when most federations usually race and are not confirmed dates.</p>
           </div>
-          ${filterMarkup}
-          <div class="grid competition-grid competition-grid-three national-event-grid" data-national-event-grid>
-            ${eventMarkup}
+          <div class="competition-block national-status-block">
+            ${buildNationalChampionshipStatusMarkup(data, events)}
           </div>
-          <p class="meta national-empty-state" data-national-empty-state hidden>No national championship entries match those filters.</p>
+        </div>
+        ${featuredMarkup}
+        <div class="competition-block national-results-block" data-national-almanac data-category="" data-include-empty="0">
+          <div class="competition-block-head national-results-head">
+            <div>
+              <h3>All ${escapeHtml(String(SEASON_YEAR))} champions</h3>
+              <p>One row per federation, grouped by continent. Type a country or a rider.</p>
+            </div>
+            <p class="meta national-source-line">${escapeHtml(data.sourceLabel)}. <a href="${escapeHtml(data.sourceUrl)}" target="_blank" rel="noreferrer">View source</a>.</p>
+          </div>
+          <div class="national-search-bar">
+            <label class="national-search">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="9" r="6"></circle><path d="M14 14l4 4"></path></svg>
+              <span class="visually-hidden">Search a country or rider</span>
+              <input type="search" data-national-search placeholder="Search a country or rider, e.g. Slovenia or Vollering" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="national-chip-row" role="group" aria-label="Category">${chips}</div>
+          </div>
+          <div class="national-groups">
+            ${groups.map(buildNationalChampionshipGroupMarkup).join("")}
+          </div>
+          <p class="meta national-empty-state" data-national-empty-state hidden>No federation or rider matches that search.</p>
+          ${
+            emptyFederationCount > 0
+              ? `<div class="national-results-foot"><button type="button" class="national-chip national-chip-muted" data-national-include-empty aria-pressed="false">Include ${escapeHtml(String(emptyFederationCount))} federations without a recorded result</button></div>`
+              : ""
+          }
         </div>
       </div>
+    </section>`;
+}
+
+// ---------------------------------------------------------------------------
+// Season calendar
+
+function formatSeasonRaceDates(race) {
+  const start = new Date(`${race.startDate}T00:00:00Z`);
+  const end = new Date(`${race.endDate}T00:00:00Z`);
+  const month = (date) => CALENDAR_MONTH_LABELS[date.getUTCMonth()];
+  if (race.startDate === race.endDate) {
+    return `${start.getUTCDate()} ${month(start)}`;
+  }
+  if (start.getUTCMonth() === end.getUTCMonth()) {
+    return `${start.getUTCDate()}–${end.getUTCDate()} ${month(start)}`;
+  }
+  return `${start.getUTCDate()} ${month(start)} – ${end.getUTCDate()} ${month(end)}`;
+}
+
+function describeSeasonRace(race) {
+  if (race.status === "cancelled") {
+    return "Cancelled";
+  }
+  if (race.status === "live") {
+    return "In progress";
+  }
+  if (race.status === "finished") {
+    const flag = getCountryFlagEmoji(race.winnerCountryCode);
+    return race.winner ? `${race.winner}${flag ? ` ${flag}` : ""}` : "Result pending";
+  }
+  return race.location ? `Upcoming · ${race.location}` : "Upcoming";
+}
+
+function seasonRaceFill(race) {
+  if (race.status === "live") {
+    return "#ffcc00";
+  }
+  if (race.status !== "finished") {
+    return "rgba(255, 255, 255, 0.7)";
+  }
+  if (race.tier === "grand-tour") {
+    return "#0033a0";
+  }
+  if (race.tier === "monument") {
+    return "#ef3340";
+  }
+  return "#0078c7";
+}
+
+// Greedy row packing: each race takes the first row whose last bar (plus label) ends
+// before it starts, so a crowded April stacks instead of overlapping.
+function packSeasonCalendarRows(races, X, scale, labelFor) {
+  const rowEnds = [];
+  const placed = [];
+  races.forEach((race) => {
+    const x = X(race.startDate);
+    const width = Math.max(12, (seasonDayIndex(race.endDate, race.startDate) + 1) * scale);
+    const label = labelFor(race);
+    const labelWidth = label ? label.length * (race.tier === "grand-tour" ? 7.6 : 6.4) : 0;
+    const labelInside = Boolean(label) && race.tier === "grand-tour" && width > labelWidth + 12;
+    const extent = label && !labelInside ? width + 5 + labelWidth : width;
+    let row = rowEnds.findIndex((end) => end + 6 <= x);
+    if (row < 0) {
+      row = rowEnds.length;
+      rowEnds.push(0);
+    }
+    rowEnds[row] = x + extent;
+    placed.push({ race, x, width, row, label, labelInside });
+  });
+  return { placed, rowCount: rowEnds.length };
+}
+
+function buildSeasonCalendarSvg(calendar, options = {}) {
+  const compact = options.compact === true;
+  const seriesFilter = options.series || "both";
+  const presentAnchors = options.presentAnchors || new Set();
+  const width = options.width || (compact ? 900 : 1170);
+  const x0 = 8;
+  const x1 = width - 8;
+  const totalDays = seasonDayIndex(calendar.rangeEnd, calendar.rangeStart) + 1;
+  const scale = (x1 - x0) / totalDays;
+  const X = (isoDay) => x0 + seasonDayIndex(isoDay, calendar.rangeStart) * scale;
+  const axisHeight = compact ? 22 : 30;
+  const rowHeight = compact ? 12 : 24;
+  const laneGap = compact ? 4 : 18;
+  const laneLabelHeight = compact ? 0 : 22;
+  const labelFor = (race) =>
+    compact ? "" : race.tier === "grand-tour" || race.tier === "monument" ? race.title : "";
+
+  const lanes = SEASON_CALENDAR_SERIES.filter((series) => seriesFilter === "both" || series.id === seriesFilter).map((series) => {
+    const laneRaces = calendar.races.filter((race) => race.seriesId === series.id);
+    return { series, ...packSeasonCalendarRows(laneRaces, X, scale, labelFor) };
+  });
+
+  let cursorY = axisHeight + 10;
+  const laneTops = lanes.map((lane) => {
+    const top = cursorY;
+    cursorY += laneLabelHeight + lane.rowCount * rowHeight + laneGap;
+    return top;
+  });
+  const height = cursorY + (compact ? 4 : 8);
+  const bandTop = axisHeight - 4;
+  const patternId = compact ? "season-hatch-compact" : `season-hatch-${seriesFilter}`;
+  const parts = [CALENDAR_HATCH_DEFS(patternId)];
+  parts.push(buildCalendarMonthMarkup(calendar.rangeStart, calendar.rangeEnd, X, bandTop, height, compact));
+  parts.push(buildCalendarWindowMarkup(X, bandTop, height, patternId, compact ? 0 : height - 4));
+
+  let barIndex = 0;
+  lanes.forEach((lane, laneIndex) => {
+    const top = laneTops[laneIndex];
+    const barsTop = top + laneLabelHeight;
+    if (!compact) {
+      parts.push(
+        svgText(x0, top + 12, lane.series.label.toUpperCase(), `${CALENDAR_LABEL_FONT} font-size="13" font-weight="800" letter-spacing="0.1em" fill="#0078c7"`),
+      );
+    }
+    lane.placed.forEach((entry) => {
+      const { race } = entry;
+      const grand = race.tier === "grand-tour";
+      const barHeight = grand ? rowHeight - 4 : rowHeight - 8;
+      const y = barsTop + entry.row * rowHeight + (rowHeight - barHeight) / 2;
+      const radius = Math.min(6, barHeight / 2);
+      const fill = seasonRaceFill(race);
+      const outlined = race.status === "upcoming" || race.status === "cancelled";
+      const stroke = race.status === "live" ? "#b78f00" : outlined ? "rgba(0, 51, 160, 0.5)" : "none";
+      const dash = outlined ? ' stroke-dasharray="3 2"' : "";
+      const tip = `${race.title} · ${formatSeasonRaceDates(race)} · ${describeSeasonRace(race)}`;
+      const anchor = presentAnchors.has(race.anchor) ? race.anchor : "";
+      const dataAttributes = `data-season-bar data-tip-title="${escapeHtml(race.title)}" data-tip-dates="${escapeHtml(formatSeasonRaceDates(race))}" data-tip-detail="${escapeHtml(describeSeasonRace(race))}" data-status="${escapeHtml(race.status)}" style="--i:${barIndex}"`;
+      barIndex += 1;
+      const open = anchor
+        ? `<a class="season-bar" href="#${escapeHtml(anchor)}" ${dataAttributes}>`
+        : `<g class="season-bar" tabindex="0" ${dataAttributes}>`;
+      const close = anchor ? "</a>" : "</g>";
+      const pieces = [`<title>${escapeHtml(tip)}</title>`];
+      pieces.push(
+        `<rect class="season-bar-fill" x="${entry.x.toFixed(1)}" y="${y.toFixed(1)}" width="${entry.width.toFixed(1)}" height="${barHeight}" rx="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="1.2"${dash}></rect>`,
+      );
+      if (race.status === "live") {
+        const doneWidth = Math.max(4, (seasonDayIndex(calendar.today, race.startDate) + 1) * scale);
+        pieces.push(
+          `<rect class="season-bar-fill season-bar-progress" x="${entry.x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.min(doneWidth, entry.width).toFixed(1)}" height="${barHeight}" rx="${radius}" fill="#0033a0"></rect>`,
+        );
+      }
+      if (entry.label) {
+        const inside = entry.labelInside;
+        const labelX = inside ? entry.x + 8 : entry.x + entry.width + 5;
+        const labelFill = inside ? (race.status === "live" ? "#09214c" : "white") : "#09214c";
+        pieces.push(
+          svgText(labelX, y + barHeight / 2 + 4, entry.label, `class="season-bar-label" ${CALENDAR_LABEL_FONT} font-size="${grand ? 13 : 11.5}" font-weight="${grand ? 800 : 700}" fill="${labelFill}"`),
+        );
+      }
+      parts.push(`${open}${pieces.join("")}${close}`);
+    });
+  });
+
+  if (calendar.today >= calendar.rangeStart && calendar.today <= calendar.rangeEnd) {
+    parts.push(buildCalendarTodayMarkup(X(calendar.today), bandTop - 2, height, compact ? height - 18 : bandTop - 12));
+  }
+
+  const description = compact
+    ? `${calendar.year} WorldTour season strip`
+    : `${calendar.year} WorldTour calendar, ${lanes.map((lane) => lane.series.label).join(" and ")}`;
+  return `<svg class="season-svg${compact ? " season-svg-compact" : ""}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(description)}">${parts.join("")}</svg>`;
+}
+
+function buildSeasonRaceRowMarkup(race, presentAnchors) {
+  const fill = seasonRaceFill(race);
+  const outlined = race.status === "upcoming" || race.status === "cancelled";
+  const dotStyle = `background:${outlined ? "transparent" : fill}; border:${outlined ? "1.5px dashed rgba(0, 51, 160, 0.5)" : "none"};${race.tier === "grand-tour" ? " height:22px;" : ""}`;
+  const title = presentAnchors.has(race.anchor)
+    ? `<a href="#${escapeHtml(race.anchor)}" data-season-race-link>${escapeHtml(race.title)}</a>`
+    : escapeHtml(race.title);
+  const detail = race.status === "upcoming" ? race.series : describeSeasonRace(race);
+  return `
+    <div class="season-month-row" data-status="${escapeHtml(race.status)}">
+      <span class="season-month-dot" style="${dotStyle}" aria-hidden="true"></span>
+      <div class="season-month-copy">
+        <div class="season-month-title">${title}</div>
+        <div class="season-month-detail">${escapeHtml(detail)}</div>
+      </div>
+      <span class="season-month-date">${escapeHtml(formatSeasonRaceDates(race))}</span>
+    </div>`;
+}
+
+// Phone layout: the strip is unreadable at 390px, so the same races become a list
+// grouped by month, live races pinned first and finished months folded away until the
+// section is expanded.
+function buildSeasonMonthListMarkup(calendar, presentAnchors) {
+  const live = calendar.races.filter((race) => race.status === "live");
+  const todayMonth = calendar.today.slice(0, 7);
+  const byMonth = new Map();
+  calendar.races.forEach((race) => {
+    if (race.status === "live") {
+      return;
+    }
+    const month = race.startDate.slice(0, 7);
+    if (!byMonth.has(month)) {
+      byMonth.set(month, []);
+    }
+    byMonth.get(month).push(race);
+  });
+  const liveMarkup = live.length
+    ? `
+      <div class="season-month">
+        <div class="season-month-head"><h3>Live now</h3></div>
+        ${live.map((race) => buildSeasonRaceRowMarkup(race, presentAnchors)).join("")}
+      </div>`
+    : "";
+  const months = [...byMonth.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, races]) => {
+      const past = month < todayMonth && races.every((race) => race.status !== "upcoming");
+      const monthIndex = Number.parseInt(month.slice(5, 7), 10) - 1;
+      const rows = past ? "" : races.map((race) => buildSeasonRaceRowMarkup(race, presentAnchors)).join("");
+      return `
+        <div class="season-month"${past ? " data-season-past" : ""}>
+          <div class="season-month-head">
+            <h3>${escapeHtml(CALENDAR_MONTH_NAMES[monthIndex])}</h3>
+            <span class="season-month-count">${escapeHtml(String(races.length))} race${races.length === 1 ? "" : "s"}${past ? " · finished" : ""}</span>
+          </div>
+          ${rows || `<div class="season-month-folded">${races.map((race) => escapeHtml(race.title)).join(" · ")}</div>`}
+        </div>`;
+    })
+    .join("");
+  return `${liveMarkup}${months}`;
+}
+
+function buildSeasonCalendarSection(calendar, data = {}) {
+  if (!calendar?.races?.length || !calendar.rangeStart || !calendar.rangeEnd) {
+    return "";
+  }
+  const presentAnchors = new Set(
+    [
+      ...(data.recentResults || []),
+      ...(data.finalizedStageRaces || []),
+      ...(data.liveStageRaces || []),
+      ...(data.upcomingRaces || []),
+    ]
+      .map(createRaceAnchorId)
+      .filter(Boolean),
+  );
+  const liveTitles = calendar.races.filter((race) => race.status === "live").map((race) => race.title);
+  const upcoming = calendar.races.filter((race) => race.status === "upcoming").slice(0, 3);
+  const summary = [
+    liveTitles.length ? `${liveTitles.join(" and ")} in progress` : "",
+    `${calendar.finishedCount} of ${calendar.races.length} WorldTour races run`,
+    upcoming[0] ? `next: ${upcoming[0].title}, ${formatSeasonRaceDates(upcoming[0])}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const upNextMarkup = upcoming.length
+    ? `
+      <aside class="competition-block season-upnext">
+        <div class="card-kicker">Up next</div>
+        ${upcoming
+          .map(
+            (race) => `
+          <div class="season-upnext-row">
+            ${
+              presentAnchors.has(race.anchor)
+                ? `<a href="#${escapeHtml(race.anchor)}" data-season-race-link>${escapeHtml(race.title)}</a>`
+                : `<span>${escapeHtml(race.title)}</span>`
+            }
+            <span class="season-upnext-date">${escapeHtml(formatSeasonRaceDates(race))}</span>
+          </div>`,
+          )
+          .join("")}
+      </aside>`
+    : "";
+  const legend = [
+    ["season-swatch-grand", "Grand Tour"],
+    ["season-swatch-monument", "Monument"],
+    ["season-swatch-finished", "Finished"],
+    ["season-swatch-live", "Live now"],
+    ["season-swatch-upcoming", "Upcoming"],
+    ["season-swatch-window", "National championship window (typical, not confirmed)"],
+  ]
+    .map(([swatch, label]) => `<span class="season-legend-item"><span class="season-swatch ${swatch}"></span>${escapeHtml(label)}</span>`)
+    .join("");
+  const seriesChips = [
+    ["both", "Both series"],
+    ["mens", "Men"],
+    ["womens", "Women"],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="national-chip${id === "both" ? " is-active" : ""}" data-season-series="${id}" aria-pressed="${id === "both" ? "true" : "false"}">${escapeHtml(label)}</button>`,
+    )
+    .join("");
+  const fullViews = ["both", "mens", "womens"]
+    .map(
+      (id) =>
+        `<div class="season-full-view" data-season-view="${id}"${id === "both" ? "" : " hidden"}>${buildSeasonCalendarSvg(calendar, { series: id, presentAnchors })}</div>`,
+    )
+    .join("");
+
+  return `
+    <section class="section season-section" id="season-calendar" data-season-calendar>
+      <div class="season-head">
+        <div>
+          <div class="section-tag">Season at a glance</div>
+          <h2>Where we are in ${escapeHtml(String(calendar.year))}</h2>
+          <p class="meta season-summary">${escapeHtml(summary)}</p>
+        </div>
+        <button type="button" class="season-toggle" data-season-toggle aria-expanded="false" aria-controls="season-calendar-full">
+          <span data-season-toggle-label>Open the full calendar</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+        </button>
+      </div>
+      <div class="season-body">
+        <div class="season-main">
+          <div class="season-strip" data-season-compact>
+            ${buildSeasonCalendarSvg(calendar, { compact: true })}
+          </div>
+          <div class="season-full" id="season-calendar-full" data-season-full hidden>
+            <div class="season-series-row" role="group" aria-label="Series">${seriesChips}</div>
+            ${fullViews}
+            <div class="season-legend">${legend}</div>
+            <p class="meta season-note">Race dates and winners come from the Wikipedia ${escapeHtml(String(calendar.year))} season pages the site already reads. Hover or focus a bar for the result; click one to jump to its card. Hatched windows show when national championships usually fall; confirmed dates live in the National Championships section.</p>
+          </div>
+          <div class="season-month-list" data-season-months>
+            ${buildSeasonMonthListMarkup(calendar, presentAnchors)}
+          </div>
+        </div>
+        ${upNextMarkup}
+      </div>
+      <div class="season-tooltip" data-season-tooltip role="tooltip" hidden></div>
     </section>`;
 }
 
@@ -8624,16 +9391,18 @@ function buildHtmlPage(data, view) {
     .filter(Boolean)
     .join("");
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
+  const seasonCalendarSection = buildSeasonCalendarSection(data.seasonCalendar, data);
   const heroSubheader = [
     "TOP-FIVE RACE RESULTS",
     "NATIONAL CHAMPIONS",
-    "UPCOMING RACE CALENDARS",
+    "SEASON CALENDAR",
     "LATEST RACE NEWS",
     "FEATURED STAGE RACES",
   ].join(" • ");
   const heroMenu = [
     ...competitionGroups,
     { id: "national-championships", label: "National Championships" },
+    { id: "season-calendar", label: "Season Calendar" },
   ]
     .map(
       (group) => `
@@ -9116,67 +9885,6 @@ function buildHtmlPage(data, view) {
         background: var(--rainbow);
       }
 
-      .national-summary-grid {
-        display: grid;
-        gap: 0.85rem;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .national-summary-card {
-        padding: 1rem;
-        border-radius: 20px;
-        border: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(0, 120, 199, 0.05));
-      }
-
-      .national-summary-card span,
-      .champion-line span {
-        display: block;
-        color: var(--muted);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
-        font-size: 0.74rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .national-summary-card strong {
-        display: block;
-        margin-top: 0.2rem;
-        color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
-        font-size: 2rem;
-        line-height: 1;
-      }
-
-      .champion-lines {
-        display: grid;
-        gap: 0.65rem;
-        margin-top: 1rem;
-      }
-
-      .champion-line {
-        display: grid;
-        gap: 0.18rem;
-        padding-top: 0.65rem;
-        border-top: 1px solid var(--line);
-      }
-
-      .champion-line:first-child {
-        border-top: 0;
-        padding-top: 0;
-      }
-
-      .champion-line strong {
-        color: var(--ink);
-        font-size: 0.98rem;
-        line-height: 1.35;
-      }
-
-      .champion-tbd {
-        color: rgba(79, 97, 136, 0.68);
-        font-weight: 600;
-      }
 
       .national-error {
         padding: 0.85rem 1rem;
@@ -9195,19 +9903,7 @@ function buildHtmlPage(data, view) {
         text-decoration: underline;
       }
 
-      .national-filter-bar {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.85rem;
-        margin-bottom: 1rem;
-      }
 
-      .national-filter {
-        display: grid;
-        gap: 0.35rem;
-      }
-
-      .national-filter span,
       .national-event-meta span,
       .national-event-empty span {
         color: var(--muted);
@@ -9218,17 +9914,6 @@ function buildHtmlPage(data, view) {
         text-transform: uppercase;
       }
 
-      .national-filter select {
-        width: 100%;
-        min-height: 2.8rem;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background: white;
-        color: var(--ink);
-        font: inherit;
-        font-weight: 700;
-        padding: 0.65rem 0.8rem;
-      }
 
       .national-event-card[hidden] {
         display: none;
@@ -9283,56 +9968,689 @@ function buildHtmlPage(data, view) {
         background: rgba(255, 255, 255, 0.62);
       }
 
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      .national-almanac-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        align-items: stretch;
+      }
+
+      .national-schedule-block {
+        padding-bottom: 0.6rem;
+      }
+
+      .national-schedule-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+      }
+
+      .national-schedule-svg,
+      .season-svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .national-schedule-note,
+      .season-note {
+        font-size: 0.82rem;
+      }
+
+      .national-status {
+        display: grid;
+        gap: 0.9rem;
+        align-content: center;
+        height: 100%;
+      }
+
+      .national-status-label,
+      .season-upnext-date,
+      .season-month-date,
+      .season-month-count,
+      .national-group-count {
+        display: block;
+        color: var(--muted);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .national-status-headline,
+      .national-status-figure {
+        display: block;
+        margin-top: 0.2rem;
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-weight: 800;
+        line-height: 1;
+      }
+
+      .national-status-headline {
+        font-size: 2rem;
+      }
+
+      .national-status-figure {
+        font-size: 1.6rem;
+      }
+
+      .national-status-grid {
+        display: grid;
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .national-status-note {
+        margin: 0;
+        font-size: 0.85rem;
+      }
+
+      .national-featured-grid {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+
+      .national-results-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+      }
+
+      .national-source-line {
+        margin: 0;
+        font-size: 0.82rem;
+        text-align: right;
+      }
+
+      .national-search-bar {
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+      }
+
+      .national-search {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        min-height: 2.8rem;
+        padding: 0 0.9rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: white;
+        color: var(--muted);
+      }
+
+      .national-search:focus-within {
+        border-color: var(--uci-blue-bright);
+        box-shadow: 0 0 0 3px rgba(0, 120, 199, 0.16);
+      }
+
+      .national-search input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .national-search input::placeholder {
+        color: rgba(79, 97, 136, 0.7);
+      }
+
+      .national-chip-row,
+      .season-series-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .national-chip,
+      .season-toggle {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        height: 2.1rem;
+        padding: 0 0.8rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.75);
+        color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.92rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .national-chip:hover,
+      .season-toggle:hover {
+        background: rgba(0, 51, 160, 0.08);
+      }
+
+      .national-chip.is-active {
+        background: var(--uci-blue);
+        border-color: var(--uci-blue);
+        color: white;
+      }
+
+      .national-chip-muted {
+        border-style: dashed;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .national-chip-muted.is-active {
+        border-style: solid;
+        background: var(--uci-blue-deep);
+        border-color: var(--uci-blue-deep);
+        color: white;
+      }
+
+      .national-groups {
+        display: grid;
+        gap: 0.7rem;
+        margin-top: 1rem;
+      }
+
+      .national-group {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .national-group[hidden] {
+        display: none;
+      }
+
+      .national-group-summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem 1rem;
+        padding: 0.85rem 1rem;
+        list-style: none;
+        cursor: pointer;
+      }
+
+      .national-group-summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .national-group-summary:hover {
+        background: rgba(0, 51, 160, 0.03);
+      }
+
+      .national-group-chevron {
+        display: inline-flex;
+        color: var(--uci-blue);
+        transition: transform 0.15s ease;
+      }
+
+      .national-group[open] .national-group-chevron {
+        transform: rotate(90deg);
+      }
+
+      .national-group-name {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        text-transform: uppercase;
+      }
+
+      .national-group-count {
+        display: inline;
+      }
+
+      .national-group-hint {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
       .national-table-wrap {
         overflow-x: auto;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.94);
+        border-top: 1px solid var(--line);
       }
 
       .national-table {
         width: 100%;
-        min-width: 760px;
+        min-width: 720px;
         border-collapse: collapse;
       }
 
       .national-table th,
       .national-table td {
-        padding: 0.82rem 0.9rem;
-        border-bottom: 1px solid var(--line);
+        padding: 0.62rem 0.9rem;
+        border-top: 1px solid var(--line);
         color: var(--ink);
-        font-size: 0.92rem;
+        font-size: 0.95rem;
         line-height: 1.35;
         text-align: left;
         vertical-align: top;
       }
 
       .national-table thead th {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-        background: var(--uci-blue-deep);
-        color: white;
+        padding-top: 0.55rem;
+        padding-bottom: 0.45rem;
+        border-top: 0;
+        color: var(--muted);
         font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
-        font-size: 0.78rem;
+        font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
 
+      .national-table tbody tr:nth-child(even) {
+        background: rgba(0, 51, 160, 0.025);
+      }
+
       .national-table tbody th {
-        width: 14rem;
-        color: var(--uci-blue-deep);
+        white-space: nowrap;
+      }
+
+      .national-federation {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.05rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .national-federation .national-flag {
+        font-size: 1.35rem;
+      }
+
+      .national-federation-detail {
+        display: block;
+        margin-top: 0.15rem;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        white-space: normal;
+      }
+
+      .national-champion {
+        font-weight: 700;
+      }
+
+      .national-cell-empty {
+        color: rgba(79, 97, 136, 0.45);
+      }
+
+      .national-results-foot {
+        display: flex;
+        justify-content: center;
+        margin-top: 0.9rem;
+        padding-top: 0.9rem;
+        border-top: 1px solid var(--line);
+      }
+
+      [data-national-almanac]:not([data-include-empty="1"]) [data-national-row][data-champions=""] {
+        display: none;
+      }
+
+      [data-national-almanac] [data-national-row][hidden] {
+        display: none;
+      }
+
+      [data-national-almanac][data-category="meRoadRace"] [data-event-key]:not([data-event-key="meRoadRace"]),
+      [data-national-almanac][data-category="meItt"] [data-event-key]:not([data-event-key="meItt"]),
+      [data-national-almanac][data-category="weRoadRace"] [data-event-key]:not([data-event-key="weRoadRace"]),
+      [data-national-almanac][data-category="weItt"] [data-event-key]:not([data-event-key="weItt"]) {
+        display: none;
+      }
+
+      [data-national-almanac][data-category]:not([data-category=""]) .national-table {
+        min-width: 0;
+      }
+
+      /* Season calendar */
+
+      .season-section {
+        margin-top: 1.25rem;
+        padding: 1.1rem 1.35rem;
+      }
+
+      .season-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+      }
+
+      .season-head h2 {
+        margin-top: 0.2rem;
+        font-size: 1.9rem;
+        text-transform: uppercase;
+      }
+
+      .season-summary {
+        margin-top: 0.35rem;
+        font-size: 0.9rem;
+      }
+
+      .season-toggle {
+        flex: 0 0 auto;
+      }
+
+      .season-body {
+        display: grid;
+        gap: 1.2rem;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        align-items: start;
+        margin-top: 0.8rem;
+      }
+
+      .season-main {
+        min-width: 0;
+      }
+
+      .season-strip[hidden],
+      .season-full[hidden],
+      .season-full-view[hidden] {
+        display: none;
+      }
+
+      .season-full {
+        display: grid;
+        gap: 0.8rem;
+      }
+
+      .season-full-view {
+        padding: 1rem 1.1rem 0.6rem;
+        border-radius: 24px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(0, 51, 160, 0.03), rgba(255, 255, 255, 0.94));
+      }
+
+      .season-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.1rem;
+        padding: 0 0.3rem;
+      }
+
+      .season-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .season-swatch {
+        display: inline-block;
+        width: 22px;
+        height: 12px;
+        border-radius: 6px;
+      }
+
+      .season-swatch-grand {
+        background: #0033a0;
+      }
+
+      .season-swatch-monument {
+        background: #ef3340;
+      }
+
+      .season-swatch-finished {
+        background: #0078c7;
+      }
+
+      .season-swatch-live {
+        background: #ffcc00;
+      }
+
+      .season-swatch-upcoming {
+        background: rgba(255, 255, 255, 0.7);
+        border: 1.2px dashed rgba(0, 51, 160, 0.5);
+      }
+
+      .season-swatch-window {
+        border: 1px dashed rgba(239, 51, 64, 0.5);
+        background: repeating-linear-gradient(45deg, rgba(239, 51, 64, 0.35) 0 1.5px, rgba(239, 51, 64, 0.05) 1.5px 6px);
+      }
+
+      .season-upnext {
+        padding: 0.9rem 1rem;
+      }
+
+      .season-upnext .card-kicker {
+        margin-bottom: 0.3rem;
+      }
+
+      .season-upnext-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.8rem;
+        padding: 0.45rem 0;
+        border-top: 1px solid var(--line);
         font-weight: 800;
       }
 
-      .national-table tbody tr:last-child th,
-      .national-table tbody tr:last-child td {
-        border-bottom: 0;
+      .season-upnext-row a {
+        color: var(--ink);
+        text-decoration: none;
       }
 
-      .national-table tbody tr:nth-child(even) {
-        background: rgba(0, 120, 199, 0.035);
+      .season-upnext-row a:hover {
+        color: var(--uci-blue);
+      }
+
+      .season-upnext-date,
+      .season-month-date {
+        color: var(--uci-blue);
+        white-space: nowrap;
+      }
+
+      .season-bar {
+        cursor: pointer;
+        outline: none;
+      }
+
+      .season-bar:hover .season-bar-fill,
+      .season-bar:focus-visible .season-bar-fill {
+        filter: brightness(1.12);
+        stroke: #00184d;
+        stroke-width: 1.5;
+      }
+
+      .season-bar-fill {
+        transform-box: fill-box;
+        transform-origin: left center;
+        animation: season-draw 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+        animation-delay: calc(var(--i, 0) * 9ms);
+      }
+
+      .season-bar-label {
+        animation: season-fade 400ms ease-out both;
+        animation-delay: calc(var(--i, 0) * 9ms + 250ms);
+      }
+
+      .season-today-dot {
+        animation: season-pulse 1.8s ease-in-out infinite;
+      }
+
+      @keyframes season-draw {
+        from {
+          transform: scaleX(0);
+        }
+        to {
+          transform: scaleX(1);
+        }
+      }
+
+      @keyframes season-fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes season-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      .season-tooltip {
+        position: absolute;
+        z-index: 5;
+        max-width: 260px;
+        padding: 0.6rem 0.8rem;
+        border-radius: 14px;
+        background: var(--uci-blue-deep);
+        color: white;
+        box-shadow: 0 14px 40px rgba(0, 31, 98, 0.28);
+        pointer-events: none;
+      }
+
+      .season-tooltip[hidden] {
+        display: none;
+      }
+
+      .season-tooltip strong {
+        display: block;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.98rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .season-tooltip span {
+        display: block;
+        margin-top: 0.15rem;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+
+      .season-month-list {
+        display: none;
+      }
+
+      .season-month {
+        margin-top: 0.9rem;
+      }
+
+      .season-month[data-season-past] {
+        display: none;
+      }
+
+      .season-section.is-expanded .season-month[data-season-past] {
+        display: block;
+      }
+
+      .season-month-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.8rem;
+      }
+
+      .season-month-head h3 {
+        font-size: 1.25rem;
+        text-transform: uppercase;
+      }
+
+      .season-month-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.7rem 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .season-month-dot {
+        flex: 0 0 auto;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+      }
+
+      .season-month-copy {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .season-month-title {
+        font-size: 0.98rem;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .season-month-title a {
+        color: var(--ink);
+        text-decoration: none;
+      }
+
+      .season-month-detail {
+        margin-top: 0.15rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .season-month-row[data-status="live"] .season-month-detail {
+        color: #b78f00;
+      }
+
+      .season-month-folded {
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      .is-calendar-target {
+        outline: 3px solid var(--uci-yellow);
+        outline-offset: 4px;
+        transition: outline-color 0.6s ease;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .season-bar-fill,
+        .season-bar-label,
+        .season-today-dot,
+        .national-group-chevron {
+          animation: none;
+          transition: none;
+        }
       }
 
       .card,
@@ -10449,24 +11767,55 @@ function buildHtmlPage(data, view) {
           min-width: 100%;
         }
 
-        .national-summary-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .national-filter-bar {
-          grid-template-columns: 1fr;
-        }
       }
 
       @media (max-width: 960px) {
         .competition-grid-three {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+
+        .national-almanac-grid,
+        .season-body {
+          grid-template-columns: 1fr;
+        }
+
+        .national-results-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .national-source-line {
+          text-align: left;
+        }
       }
 
       @media (max-width: 720px) {
         .competition-grid-three {
           grid-template-columns: 1fr;
+        }
+
+        .national-search-bar {
+          grid-template-columns: 1fr;
+        }
+
+        .national-schedule-head,
+        .season-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .national-group-hint {
+          margin-left: 0;
+          flex-basis: 100%;
+        }
+
+        .season-strip,
+        .season-full {
+          display: none;
+        }
+
+        .season-month-list {
+          display: block;
         }
       }
     </style>
@@ -10485,6 +11834,7 @@ function buildHtmlPage(data, view) {
         </div>
       </section>
 
+      ${seasonCalendarSection}
       ${competitionSections}
       ${nationalChampionshipsSection}
       ${deferredSectionButtons}
@@ -10595,39 +11945,212 @@ function buildHtmlPage(data, view) {
       }
 
       function bindNationalChampionshipFilters() {
-        const countrySelect = document.getElementById("national-country-filter");
-        const eventSelect = document.getElementById("national-event-filter");
-        const cards = Array.from(document.querySelectorAll("[data-national-event-card]"));
-        const emptyState = document.querySelector("[data-national-empty-state]");
-        if (!countrySelect || !eventSelect || cards.length === 0) {
+        const root = document.querySelector("[data-national-almanac]");
+        if (!root) {
           return;
         }
+        const search = root.querySelector("[data-national-search]");
+        const groups = Array.prototype.slice.call(root.querySelectorAll("[data-national-group]"));
+        const chips = Array.prototype.slice.call(root.querySelectorAll("[data-national-category]"));
+        const includeToggle = root.querySelector("[data-national-include-empty]");
+        const emptyState = root.querySelector("[data-national-empty-state]");
+        const state = { query: "", category: "", includeEmpty: false };
+
+        const rowMatches = (row) => {
+          const champions = row.dataset.champions || "";
+          if (!state.includeEmpty && champions === "") {
+            return false;
+          }
+          if (state.category && champions.split(" ").indexOf(state.category) < 0) {
+            return false;
+          }
+          return !state.query || (row.dataset.search || "").indexOf(state.query) >= 0;
+        };
 
         const applyFilters = () => {
-          const selectedCountry = countrySelect.value;
-          const selectedEvent = eventSelect.value;
-          const includePending = Boolean(selectedCountry);
-          let visibleCount = 0;
-
-          cards.forEach((card) => {
-            const matchesCountry = !selectedCountry || card.dataset.country === selectedCountry;
-            const matchesEvent = !selectedEvent || card.dataset.eventKey === selectedEvent;
-            const matchesStatus = includePending || card.dataset.status === "completed";
-            const shouldShow = matchesCountry && matchesEvent && matchesStatus;
-            card.hidden = !shouldShow;
-            if (shouldShow) {
-              visibleCount += 1;
+          const filtering = Boolean(state.query || state.category);
+          let totalVisible = 0;
+          root.dataset.category = state.category;
+          root.dataset.includeEmpty = state.includeEmpty ? "1" : "0";
+          groups.forEach((group) => {
+            const rows = Array.prototype.slice.call(group.querySelectorAll("[data-national-row]"));
+            let visible = 0;
+            rows.forEach((row) => {
+              const show = rowMatches(row);
+              row.hidden = !show;
+              if (show) {
+                visible += 1;
+              }
+            });
+            totalVisible += visible;
+            group.hidden = filtering && visible === 0;
+            const counter = group.querySelector("[data-national-group-visible]");
+            if (counter) {
+              counter.textContent = filtering && visible > 0 ? " · " + visible + " match" + (visible === 1 ? "" : "es") : "";
+            }
+            if (state.query) {
+              group.open = visible > 0;
             }
           });
-
           if (emptyState) {
-            emptyState.hidden = visibleCount !== 0;
+            emptyState.hidden = totalVisible !== 0;
           }
         };
 
-        countrySelect.addEventListener("change", applyFilters);
-        eventSelect.addEventListener("change", applyFilters);
+        if (search) {
+          let lastQuery = "";
+          search.addEventListener("input", () => {
+            state.query = search.value.trim().toLowerCase();
+            if (lastQuery && !state.query) {
+              groups.forEach((group) => {
+                group.open = false;
+              });
+            }
+            lastQuery = state.query;
+            applyFilters();
+          });
+        }
+        chips.forEach((chip) => {
+          chip.addEventListener("click", () => {
+            state.category = chip.dataset.nationalCategory || "";
+            chips.forEach((other) => {
+              const active = other === chip;
+              other.classList.toggle("is-active", active);
+              other.setAttribute("aria-pressed", active ? "true" : "false");
+            });
+            applyFilters();
+          });
+        });
+        if (includeToggle) {
+          includeToggle.addEventListener("click", () => {
+            state.includeEmpty = !state.includeEmpty;
+            includeToggle.classList.toggle("is-active", state.includeEmpty);
+            includeToggle.setAttribute("aria-pressed", state.includeEmpty ? "true" : "false");
+            applyFilters();
+          });
+        }
         applyFilters();
+      }
+
+      // Season calendar: the compact strip swaps for the full calendar in place, bars
+      // carry their own tooltip, and a click on a race whose card is hidden behind
+      // "Load more races" reveals it before the browser jumps.
+      function bindSeasonCalendar() {
+        const section = document.querySelector("[data-season-calendar]");
+        if (!section) {
+          return;
+        }
+        const toggle = section.querySelector("[data-season-toggle]");
+        const toggleLabel = section.querySelector("[data-season-toggle-label]");
+        const compact = section.querySelector("[data-season-compact]");
+        const full = section.querySelector("[data-season-full]");
+        const tooltip = section.querySelector("[data-season-tooltip]");
+
+        const setExpanded = (expanded) => {
+          section.classList.toggle("is-expanded", expanded);
+          if (compact) {
+            compact.hidden = expanded;
+          }
+          if (full) {
+            full.hidden = !expanded;
+          }
+          if (toggle) {
+            toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+          }
+          if (toggleLabel) {
+            toggleLabel.textContent = expanded ? "Close the full calendar" : "Open the full calendar";
+          }
+        };
+
+        if (toggle) {
+          toggle.addEventListener("click", () => {
+            setExpanded(!section.classList.contains("is-expanded"));
+          });
+        }
+        if (window.location.hash === "#season-calendar") {
+          setExpanded(true);
+        }
+
+        Array.prototype.forEach.call(section.querySelectorAll("[data-season-series]"), (chip) => {
+          chip.addEventListener("click", () => {
+            const wanted = chip.dataset.seasonSeries;
+            Array.prototype.forEach.call(section.querySelectorAll("[data-season-series]"), (other) => {
+              const active = other === chip;
+              other.classList.toggle("is-active", active);
+              other.setAttribute("aria-pressed", active ? "true" : "false");
+            });
+            Array.prototype.forEach.call(section.querySelectorAll("[data-season-view]"), (view) => {
+              view.hidden = view.dataset.seasonView !== wanted;
+            });
+          });
+        });
+
+        const showTooltip = (bar) => {
+          if (!tooltip) {
+            return;
+          }
+          tooltip.textContent = "";
+          const title = document.createElement("strong");
+          title.textContent = bar.dataset.tipTitle || "";
+          const dates = document.createElement("span");
+          dates.textContent = bar.dataset.tipDates || "";
+          const detail = document.createElement("span");
+          detail.textContent = bar.dataset.tipDetail || "";
+          tooltip.appendChild(title);
+          tooltip.appendChild(dates);
+          tooltip.appendChild(detail);
+          tooltip.hidden = false;
+          const sectionBox = section.getBoundingClientRect();
+          const barBox = bar.getBoundingClientRect();
+          const tipBox = tooltip.getBoundingClientRect();
+          let left = barBox.left - sectionBox.left + barBox.width / 2 - tipBox.width / 2;
+          left = Math.max(8, Math.min(left, sectionBox.width - tipBox.width - 8));
+          let top = barBox.top - sectionBox.top - tipBox.height - 10;
+          if (top < 0) {
+            top = barBox.bottom - sectionBox.top + 10;
+          }
+          tooltip.style.left = left + "px";
+          tooltip.style.top = top + "px";
+        };
+        const hideTooltip = () => {
+          if (tooltip) {
+            tooltip.hidden = true;
+          }
+        };
+        Array.prototype.forEach.call(section.querySelectorAll("[data-season-bar]"), (bar) => {
+          bar.addEventListener("mouseenter", () => showTooltip(bar));
+          bar.addEventListener("mouseleave", hideTooltip);
+          bar.addEventListener("focus", () => showTooltip(bar));
+          bar.addEventListener("blur", hideTooltip);
+        });
+
+        section.addEventListener("click", (event) => {
+          const link = event.target.closest("a[data-season-bar], a[data-season-race-link]");
+          if (!link) {
+            return;
+          }
+          const href = link.getAttribute("href") || "";
+          if (href.charAt(0) !== "#") {
+            return;
+          }
+          const target = document.getElementById(href.slice(1));
+          if (!target) {
+            return;
+          }
+          const hiddenSlot = target.closest("[data-recent-slot][hidden]");
+          if (hiddenSlot) {
+            const block = hiddenSlot.closest("[data-recent-block]");
+            let guard = 0;
+            while (hiddenSlot.hidden && block && guard < 12) {
+              revealMoreRecentRaces(block.dataset.recentBlock);
+              guard += 1;
+            }
+          }
+          target.classList.add("is-calendar-target");
+          window.setTimeout(() => {
+            target.classList.remove("is-calendar-target");
+          }, 2400);
+        });
       }
 
       function getRecentBlock(groupId) {
@@ -10971,6 +12494,7 @@ function buildHtmlPage(data, view) {
       bindArticleControls();
       bindLoadMoreRaces();
       bindNationalChampionshipFilters();
+      bindSeasonCalendar();
     </script>
   </body>
 </html>`;

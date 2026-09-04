@@ -24,7 +24,8 @@ The app is a live race desk for selected 2026 UCI calendars. It surfaces:
 - Live multi-stage race standings
 - Finalized stage-race classifications
 - Upcoming races
-- Elite road national champions by country
+- A season calendar: every WorldTour race drawn to scale on one timeline
+- Elite road national champions by country, grouped by continent
 - Race-specific article coverage
 
 The current content model is intentionally focused on three sections:
@@ -176,7 +177,9 @@ National championship results are parsed from the Cyclingnews 2026 Road National
 
 - `https://www.cyclingnews.com/pro-cycling/racing/2026-road-national-champions-index/`
 
-The parser reads the `2026 Elite Road National Champions` table and extracts country-level elite men's and women's individual time trial and road race winners. Empty placeholder cells are treated as missing results. The app then expands each country row into four event-level records so the UI can prioritize completed results and filter by country or category.
+The parser reads the `2026 Elite Road National Champions` table and extracts country-level elite men's and women's individual time trial and road race winners. Empty placeholder cells are treated as missing results. The app then expands each country row into four event-level records; `groupNationalChampionshipsByContinent()` folds those back into one row per federation, bucketed by `CONTINENT_BY_ALPHA2` (geographic continents, so the Americas split the way their championship windows do).
+
+The index carries no dates. The schedule strip therefore draws two hatched "typical" windows from `NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS` (southern hemisphere in January–February, Europe and North America in late June) and plots confirmed dates only where `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` has them. The hatching and the "typical, not confirmed" wording are deliberate: a band that looked like measured data would mislead.
 
 Some championship event records have small local metadata overrides for known date, location, podium, source report, or finish-video information. Keep these narrow and source-backed; the broad winner list should continue to come from the Cyclingnews index.
 
@@ -261,6 +264,7 @@ The returned JSON shape currently contains:
 - `liveStageRaces`
 - `upcomingRaces`
 - `nationalChampionships`
+- `seasonCalendar` — every WorldTour race of the season with ISO `startDate`/`endDate`, `status` (`finished`, `live`, `upcoming`, `cancelled`), `tier` (`grand-tour`, `monument`, `stage-race`, `one-day`), winner and the `anchor` id of its card; built by `buildSeasonCalendar()` from `metadata.allRaces`, so it costs no extra fetch
 
 Legacy `europeTour*` keys may still appear internally as empty backward-compatible fields while the retired code is being preserved, but they are not active UI sections.
 
@@ -513,11 +517,12 @@ Major rendering helpers include:
 - `buildCoverageBlock()`
 - `buildRaceCard()`
 - `buildStageRaceCard()`
-- `buildNationalChampionshipsSection()`
+- `buildNationalChampionshipsSection()` (schedule strip, season status, featured cards and the continent-grouped champions table)
+- `buildSeasonCalendarSection()` (compact strip, three full views, phone month list, up-next column)
 - `buildUpcomingCard()`
 - `buildArticleCard()`
 
-Result and stage-race cards now render rider names with country-flag emoji when a normalized rider country code is available. Recent-result and stage-race cards can also show a race-specific external finish/highlights link via `getRaceFinishVideoUrl()` and `buildRaceFinishLink()`. National Championships country headers render a larger national flag via `getCountryFlagEmojiByName()` (backed by `COUNTRY_NAME_ALPHA2`, which covers every federation in the Cyclingnews index); individual podium riders in that section are intentionally left flag-free.
+Every race card carries `id="race-<slug>"` from `createRaceAnchorId()` so the season calendar can link to it. Result and stage-race cards now render rider names with country-flag emoji when a normalized rider country code is available. Recent-result and stage-race cards can also show a race-specific external finish/highlights link via `getRaceFinishVideoUrl()` and `buildRaceFinishLink()`. National Championships country headers render a larger national flag via `getCountryFlagEmojiByName()` (backed by `COUNTRY_NAME_ALPHA2`, which covers every federation in the Cyclingnews index); individual podium riders in that section are intentionally left flag-free.
 
 Finish-video links resolve in priority order: curated `RACE_FINISH_VIDEO_URLS` overrides, then an official-provider video on the race (e.g. the Giro livefeed `Last Km`), then an automatic YouTube search. The YouTube step runs during the data build (`enrichFinishVideos()`): for recently finished races and the latest stage of a live stage race that lack a curated/official video, it searches `youtube.com/results`, parses the `ytInitialData` JSON (no API key or dependency), and attaches the best match. Selection enforces the exact stage, race year, and division, prefers the race's own official channel and trusted broadcasters, and caches results so the lookup stays cheap. It is strictly additive — it never overrides a curated or official link and degrades silently to no link on failure.
 
@@ -543,7 +548,8 @@ Every stage panel opens with a profile block. A stage with a measured trace (see
 Client-side JS is still intentionally small, but it now does more than simple form submission:
 
 - Polls `/api/homepage-data` while the homepage is warming
-- Filters National Championships cards by country and category; the default view shows completed events first, while country-specific selections can reveal scheduled or TBD events.
+- Filters the National Championships almanac: a search box matches federation or rider names across every continent group (opening the groups with matches and hiding the rest), category chips narrow the table to one title via a `data-category` attribute the CSS reads, and an "include federations without a recorded result" toggle reveals the rows the default view hides.
+- Runs the season calendar: "Open the full calendar" swaps the compact strip for the full view in place (also when the page loads on `#season-calendar`), series chips switch between three pre-rendered SVGs, each bar has a tooltip fed from its `data-tip-*` attributes, and clicking a bar whose card is hidden behind "Load more races" reveals it before the jump and flashes the card.
 - Keeps deferred-section loading utilities available for future sections, though none are active right now
 - Reveals recent results a row at a time: each WorldTour section shows the first `WORLDTOUR_RECENT_RESULTS_STEP` (3) races, and a "Load more races" button reveals the next row up to `WORLDTOUR_RECENT_RESULTS` (12), after which the button removes itself. Revealing more races also adds them to that section's coverage race selector.
 - Loads the full stage podiums for a finished stage race on demand, replacing the switcher with the deeper markup returned by `/api/race-stages`. The control appears only when the card's history is winner-only, and never on a live card, whose companion articles were already read at build time.
@@ -634,6 +640,8 @@ Typical files/areas:
 - section copy / labels in render helpers
 - national championship parser/render helpers when changing championship coverage
 - `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` for narrow date, location, podium, source-report, and finish-video overrides
+- `CONTINENT_BY_ALPHA2` when a new federation appears in the index (a test fails if any alpha-2 code lacks a continent)
+- `SEASON_CALENDAR_GRAND_TOURS` / `SEASON_CALENDAR_MONUMENTS` for the only two emphasised tiers on the season calendar
 
 Examples:
 
@@ -692,7 +700,7 @@ The UCI ProSeries and Europe Tour Spotlight sections were implemented previously
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection and per-stage video resolution, national championship parsing/rendering and country-header flags, the recent-results row reveal, snapshot merging, cache-TTL behavior, stage-race card rendering, and the per-stage history — companion-article discovery, stage-strip markup, the on-demand load control, and `findStageRaceById` rejecting anything not already on the page — plus stage profiles: route-table distance and type parsing, the komoot trace resampler, the budgeted enrichment and its persisted store, the measured/generic profile markup with both axis sets, and the next-stage chip, row and panel — and jersey holders: the rowspan-aware table grid, the leadership parser against a real 2026 Vuelta table (stage 3 cancelled, every column spanned), the merge bounds, and the card markup. `test/browser-smoke.test.js` drives the real client script in headless Chrome. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, Tour de France Femmes (letourfemmes.fr) rankings / stage / GC HTML plus a live Femmes race wikitext page, Vuelta a España (lavuelta.es) rankings / stage / GC HTML, a trimmed 2026 Vuelta main article and its companion stage article, the 2026 Vuelta's classification leadership section as of stage 13, and a synthetic YouTube `ytInitialData` search result.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection and per-stage video resolution, national championship parsing/rendering, continent grouping and country-header flags, the season calendar (status and tier classification, row packing, the section markup with card links and the phone month list, and the card anchors), the recent-results row reveal, snapshot merging, cache-TTL behavior, stage-race card rendering, and the per-stage history — companion-article discovery, stage-strip markup, the on-demand load control, and `findStageRaceById` rejecting anything not already on the page — plus stage profiles: route-table distance and type parsing, the komoot trace resampler, the budgeted enrichment and its persisted store, the measured/generic profile markup with both axis sets, and the next-stage chip, row and panel — and jersey holders: the rowspan-aware table grid, the leadership parser against a real 2026 Vuelta table (stage 3 cancelled, every column spanned), the merge bounds, and the card markup. `test/browser-smoke.test.js` drives the real client script in headless Chrome. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, Tour de France Femmes (letourfemmes.fr) rankings / stage / GC HTML plus a live Femmes race wikitext page, Vuelta a España (lavuelta.es) rankings / stage / GC HTML, a trimmed 2026 Vuelta main article and its companion stage article, the 2026 Vuelta's classification leadership section as of stage 13, and a synthetic YouTube `ytInitialData` search result.
 
 Run it with:
 

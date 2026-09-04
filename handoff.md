@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-04
+Updated: 2026-09-04 (season calendar and championships almanac)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -135,6 +135,7 @@ npm run benchmark:load -- --runs=5 --include-coverage
 
 - `/`: server-rendered homepage. During cold warmup it can return a warmup page.
 - `/api/homepage-data`: active homepage JSON payload. During cold warmup it can return `202`.
+  Carries `seasonCalendar` alongside the race buckets and `nationalChampionships`.
 - `/api/races`: active race JSON payload. Use `?debug=1` for additional timing/debug payload.
 - `/api/build-info`: manual `BUILD_INFO` payload from `server.js`. It is not automatically tied to the current commit.
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
@@ -171,6 +172,7 @@ Major areas (anchored to symbols rather than line numbers, which drift on every 
 - Finish-video resolution and YouTube search: `getRaceFinishVideoUrl`, `getStageFinishVideoUrl`, `enrichFinishVideos`, `enrichStageFinishVideos`, `buildStageFinishVideoSubject`, `parseYouTubeSearchVideos`, `selectFinishVideo`
 - Recent-results row reveal: `buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script — shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (12) and then removes itself once all rows are shown; revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync. Finished stage races are enriched even when not in the most-recent few and are never dropped for lacking a snapshot, so Grand Tours like the Giro stay in the grid. Note: both `.recent-race-slot` and `.load-more-races` set `display` in CSS, so each needs an explicit `[hidden]` rule for the JS `hidden` toggle to take effect
 - National Championships rendering and header flags: `buildNationalChampionshipsSection`, `getCountryFlagEmojiByName`
+- Season calendar: `buildSeasonCalendar`, `packSeasonCalendarRows`, `buildSeasonCalendarSvg`, `buildSeasonCalendarSection`, `createRaceAnchorId`, and `bindSeasonCalendar` in the inline script
 - Competition group definitions: `getCompetitionGroups`
 - Full HTML page, inline CSS, and inline browser JS: `buildHtmlPage`
 - Warmup page: `buildWarmupPage`
@@ -220,32 +222,81 @@ Notable official/special providers currently in code:
 
 ## National Championships UX State
 
-Current behavior:
+Rebuilt on 2026-09-04 as an almanac rather than a results feed. The old view rendered
+293 completed titles as a three-column card grid (about 98 rows, roughly 29 screens) with
+290 of them carrying a single name and "TBD / Location TBD". Current behavior:
 
-- Default UI prioritizes completed National Championship events.
-- Completed events sort ahead of upcoming or pending events.
-- More recent known dates appear first.
-- Country and category dropdowns filter the event cards.
-- Selecting a country can reveal upcoming or TBD events for that country.
-- Completed events show top three places when known.
-- Each country card header shows a national flag (larger than the rider flags used in the WorldTour sections); individual podium riders are intentionally left flag-free since the header flag covers the whole card.
-- Known event dates, locations, podiums, source reports, and finish videos are metadata overrides, not broad replacement data.
+- A schedule strip (`buildNationalChampionshipScheduleMarkup`) draws the calendar year
+  with two hatched *typical* windows from `NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS` and
+  solid dots for the few confirmed dates in `NATIONAL_CHAMPIONSHIP_EVENT_METADATA`. The
+  caption lists the confirmed dates by federation. Hatching means "not confirmed" on
+  purpose — see the honest-graphics rule in the stage-profile notes.
+- A season-status card (`buildNationalChampionshipStatusMarkup`) says whether the
+  season is essentially complete, how many federations have champions, and the next
+  typical window.
+- Featured cards (`isFeaturedNationalChampionshipEvent`) render only titles with a full
+  podium, a report or a finish video — the existing event card, unchanged, including its
+  flag header and flag-free podium. Today that is the four US titles.
+- Everything else is one row per federation inside a `<details>` per continent
+  (`groupNationalChampionshipsByContinent`, `buildNationalChampionshipGroupMarkup`),
+  collapsed by default, ordered Europe, North & Central America, South America, Asia,
+  Africa, Oceania, with a per-continent "usually late June"-style hint. Federations with
+  no recorded result stay in the table but are hidden by CSS until the
+  "include federations without a recorded result" toggle is pressed.
+- Search matches federation or rider names (`data-search` on each row); category chips
+  set `data-category` on the almanac root and CSS hides the other columns.
+- Fully expanded, the table is about 83 rows (~4.5 screens); collapsed it is six lines.
 
-Country-header flags come from `getCountryFlagEmojiByName()`, backed by `COUNTRY_NAME_ALPHA2`, which covers every federation name in the Cyclingnews index (the rider `COUNTRY_FLAG_CODES` table only covers race nations). Styling: `.national-title` / `.national-flag`.
+Continent buckets are geographic, not UCI confederations, so the Americas split the way
+their championship windows do. `CONTINENT_BY_ALPHA2` is checked by a test against
+`COUNTRY_NAME_ALPHA2`; a new federation in the index needs both entries.
 
 Key functions/constants:
 
-- `NATIONAL_CHAMPIONSHIP_EVENT_KEYS`
+- `NATIONAL_CHAMPIONSHIP_EVENT_KEYS`, `NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS`
 - `NATIONAL_CHAMPIONSHIP_EVENT_METADATA`
+- `NATIONAL_CHAMPIONSHIP_CONTINENTS`, `CONTINENT_BY_ALPHA2`, `NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS`
 - `parseNationalChampionshipsIndex()`
 - `buildNationalChampionshipEventRecords()`
 - `sortNationalChampionshipEvents()`
+- `groupNationalChampionshipsByContinent()`
 - `buildNationalChampionshipsSection()`
 - `bindNationalChampionshipFilters()` inside the inline browser script
 
 Known current video override:
 
 - USA men's road race finish: `https://www.youtube.com/watch?v=hSVSHs9lPPI`
+
+The design was chosen from a mockup canvas rendered with the site's real stylesheet and
+real 2026 data: https://claude.ai/code/artifact/b690e73e-e87a-4e6e-a7a2-e1883bb8698c
+
+## Season Calendar
+
+Added 2026-09-04. A "Season at a glance" section sits between the hero and the men's
+WorldTour section so the daily results stay one scroll away.
+
+- Data: `buildSeasonCalendar(allRaces, todayUtc)` in `buildRaceData` turns
+  `metadata.allRaces` (both WorldTours, already fetched from the season pages) into the
+  `seasonCalendar` payload field — no new upstream request. Status is by date; tier is
+  duration plus the hand-curated `SEASON_CALENDAR_GRAND_TOURS` and
+  `SEASON_CALENDAR_MONUMENTS` sets. Nothing else is given a tier on purpose.
+- Rendering: `buildSeasonCalendarSection` draws a compact strip (both series, no labels)
+  and three full views (both / men / women) with `buildSeasonCalendarSvg`, plus a
+  month-grouped list for phones (`buildSeasonMonthListMarkup`, live races pinned once,
+  finished months folded until expanded) and an "Up next" column. Bars are packed into
+  rows by `packSeasonCalendarRows`, which reserves label width so a Grand Tour label can
+  push the next race down a row instead of overlapping it. The live bar fills to today.
+- Links: a bar is an SVG `<a>` to `#race-<slug>` when the race has a card on the page
+  (`createRaceAnchorId`, stamped on every card), otherwise a focusable `<g>`. The inline
+  `bindSeasonCalendar` handles the expand toggle, series chips, the tooltip fed from
+  `data-tip-*` attributes, and revealing a hidden "Load more" slot before the jump.
+- Motion: bars draw in via `transform-box: fill-box` scaleX with a per-bar `--i` delay;
+  the today marker pulses; both stop under `prefers-reduced-motion`.
+- The hatched national-championship windows appear here too, so the two features share
+  one explanation of why the championships section goes quiet by September.
+
+Known gap: the hero and page already overflow a 390px viewport in headless Chrome on
+production; this section did not cause it and does not fix it.
 
 ## Finish Video Links
 
