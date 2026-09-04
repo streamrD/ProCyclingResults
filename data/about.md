@@ -1,6 +1,6 @@
 > This site was developed and is being maintained by the Grupetto Committee purely for the love of the sport and is offered entirely free, for all to use and enjoy.
 
-The Grupetto Committee takes its name from the group of riders who, having been dropped on the first climb, band together at the back of a mountain stage and ride in as one so that everybody finishes inside the time limit. It meets on the last Tuesday of every month in the back room of a bakery, a quorum being any three members and a bicycle, and it was founded on the principle that somebody ought to write down who finished first, ideally somebody who never did. Its members, in the order they usually arrive:
+The Grupetto Committee meets on the last Tuesday of every month in the back room of a bakery, a quorum being any three members and a bicycle, and it was founded on the principle that somebody ought to write down who finished first, ideally somebody who never did. Its members, in the order they usually arrive:
 
 ## Ambrose Bidon, Chair
 
