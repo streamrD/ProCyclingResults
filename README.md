@@ -280,7 +280,7 @@ Parsed race entries generally include:
 - `startDate`
 - `endDate`
 - `finishedToday`
-- `stageRace` when applicable, including `stages` for multi-day races
+- `stageRace` when applicable, including `stages` for multi-day races and `classificationLeaders` (the jersey holders after the latest stage: `{ stageNumber, stageLabel, entries: [{ key, label, jersey?, rider, countryCode? }] }`)
 - `resultStandings` when richer standings are available
 
 These objects are plain JS objects, not instances or schemas.
@@ -349,6 +349,7 @@ For multi-day races, the app tries to derive:
 - latest completed stage
 - latest stage winner
 - latest general classification
+- the leader of every classification after the latest stage (the jersey holders)
 - final overall result
 - a per-stage history in `stageRace.stages` (see below)
 
@@ -358,6 +359,7 @@ It does this from Wikipedia race pages when possible by parsing:
 - stage result sections
 - GC sections
 - classification standings wikitables captioned `General classification after Stage N`
+- the "Classification leadership" table, one row per stage and one column per jersey, read through a rowspan-aware grid
 - route/stage winner tables
 - infobox first/second/third fields
 
@@ -690,7 +692,7 @@ The UCI ProSeries and Europe Tour Spotlight sections were implemented previously
 
 ## Testing and Gaps
 
-There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection and per-stage video resolution, national championship parsing/rendering and country-header flags, the recent-results row reveal, snapshot merging, cache-TTL behavior, stage-race card rendering, and the per-stage history — companion-article discovery, stage-strip markup, the on-demand load control, and `findStageRaceById` rejecting anything not already on the page — plus stage profiles: route-table distance and type parsing, the komoot trace resampler, the budgeted enrichment and its persisted store, the measured/generic profile markup with both axis sets, and the next-stage chip, row and panel. `test/browser-smoke.test.js` drives the real client script in headless Chrome. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, Tour de France Femmes (letourfemmes.fr) rankings / stage / GC HTML plus a live Femmes race wikitext page, Vuelta a España (lavuelta.es) rankings / stage / GC HTML, a trimmed 2026 Vuelta main article and its companion stage article, and a synthetic YouTube `ytInitialData` search result.
+There is now a small built-in Node test suite under `test/` that covers parser regressions, official race-source parsing (including the letour.fr Tour de France provider), the YouTube finish-video search/selection and per-stage video resolution, national championship parsing/rendering and country-header flags, the recent-results row reveal, snapshot merging, cache-TTL behavior, stage-race card rendering, and the per-stage history — companion-article discovery, stage-strip markup, the on-demand load control, and `findStageRaceById` rejecting anything not already on the page — plus stage profiles: route-table distance and type parsing, the komoot trace resampler, the budgeted enrichment and its persisted store, the measured/generic profile markup with both axis sets, and the next-stage chip, row and panel — and jersey holders: the rowspan-aware table grid, the leadership parser against a real 2026 Vuelta table (stage 3 cancelled, every column spanned), the merge bounds, and the card markup. `test/browser-smoke.test.js` drives the real client script in headless Chrome. Current fixtures include La Vuelta Femenina official rankings HTML, Tour of Greece official results HTML, Giro and Giro Women official standings markup variants, Tour de France (letour.fr) rankings and stage-result HTML, Tour de France Femmes (letourfemmes.fr) rankings / stage / GC HTML plus a live Femmes race wikitext page, Vuelta a España (lavuelta.es) rankings / stage / GC HTML, a trimmed 2026 Vuelta main article and its companion stage article, the 2026 Vuelta's classification leadership section as of stage 13, and a synthetic YouTube `ytInitialData` search result.
 
 Run it with:
 
@@ -716,6 +718,12 @@ If the project grows, the best next quality investment would be fixture-driven t
 - one-day result rendering fallbacks
 - article filtering/ranking behavior
 
+### Jersey holders
+
+Beside the general classification podium, every stage-race card lists who leads each classification after the latest stage: general, points, mountains, young rider, team, and any race-specific column the article carries (the Giro's intermediate-sprint, Red Bull KM and breakaway classifications, Pologne's active-rider and Polish-rider jerseys). Each row has a jersey swatch in the colour Wikipedia's `{{cjersey}}` template names for it — polka dots drawn as dots, an unknown colour drawn as an outlined blank rather than a guess — the classification, and the rider with a flag. The combativity award is left out on purpose because it is a per-stage prize, not a jersey anyone holds.
+
+The data is the article's "Classification leadership" table, the only place Wikipedia states the points, mountains and young-rider leaders. Its cells span rows, so `parseWikiTableGrid` expands the spans into a positional grid before `extractClassificationLeadershipRows` reads the columns; a team cell resolves through the same `{{UCI team code}}` map as team time trials. The merge keeps the field from whichever snapshot has it (only Wikipedia does), bounded by the same calendar rule as the GC; a list one stage behind the official provider is kept and labelled "Jersey holders after stage N" rather than dropped. The layout is a container query on the card: stacked below the podium on a phone, a narrow second column beside it on the usual three-across grid, and two bounded columns packed to the left on a full-width card. Item 7 of "Stage Results Feature Map" in `handoff.md` has the full rules, the layout table and the history.
+
 ## Suggested Near-Term Improvements
 
 If another agent is taking over development, these are strong candidates:
@@ -727,6 +735,7 @@ If another agent is taking over development, these are strong candidates:
 4. Add health-oriented logging around upstream fetch failures and cache refreshes.
 5. Externalize season/year configuration so rolling to a new season is safer.
 6. Move inline HTML/CSS/JS into template/static modules if the app becomes larger.
+7. Read the points and mountains tables the ASO sites publish (lavuelta.es, letour.fr) so the jersey holders update on a live evening before Wikipedia does; today they come from Wikipedia alone.
 
 ## Practical Notes for an LLM Taking Over
 

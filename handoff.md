@@ -543,14 +543,25 @@ same calendar rule as the GC (`isStageRaceProgressPlausible`). Unlike the GC, a 
 stage *behind* the official provider is kept and labelled "Jersey holders after stage N"
 rather than dropped, because it contradicts nothing above it; when the stages match it
 reads simply "Jersey holders", and "Final jersey winners" on a finished race.
-`buildJerseyHoldersMarkup` renders it inside `.gc-columns` beside the podium: a container
-query on the card (`container-type: inline-size`, threshold 340px of content box, about
-a 390px card) puts the list in a second column under 10rem wide so the section keeps the
-podium's height, with the classification label above each name; a narrower card stacks
-it beneath the podium as one row per jersey. Names in both places flow inline rather
-than as the podium's flex row, so a flag never sits alone on a line above a wrapped
-name. The user asked for the side-by-side placement on 2026-09-04 after seeing the
-stacked version. `buildJerseySwatchMarkup` draws the jersey, with
+`buildJerseyHoldersMarkup` renders it inside `.gc-columns` beside the podium. The card
+is a size container (`container-type: inline-size`) and three widths of it get three
+layouts, all measured on the card's content box:
+
+| Card content width | Layout |
+| --- | --- |
+| under 340px (a phone's single column) | Stacked beneath the podium, one row per jersey: swatch, label, rider |
+| 340px to 640px (the usual three-across grid) | A second column under 10rem wide beside the podium, label above each name, so the section keeps the podium's height |
+| 640px and up (a lone live race, whose card spans the page) | Both columns bounded (30rem podium, 22rem jerseys) and packed to the left, with the one-row layout |
+
+The third rule exists because the first release of the side-by-side layout let the podium
+column take all the spare width, which on a full-width card pinned the jersey column to
+the far edge with a gap between — the user spotted it on production the same afternoon.
+Names in every layout flow inline rather than as the podium's flex row, so a flag never
+sits alone on a line above a wrapped name. History: the stacked block shipped first
+(71abef8), the user asked for it beside the overall leaders "instead of taking up more
+row space" (d9ac1d5), and the wide-card fix followed (b6a1dfb), all on 2026-09-04.
+Rendered checks were done with headless Chrome at 330px, 430px and 1400px card widths.
+`buildJerseySwatchMarkup` draws the jersey, with
 polka dots on white for the `polkadot` variants and an outlined, unfilled jersey for any
 colour name outside `JERSEY_FILL_COLOURS` — generic on purpose, not a guess. Tests:
 "extractClassificationLeadership resolves rowspan columns…" (real 2026 Vuelta fixture,
