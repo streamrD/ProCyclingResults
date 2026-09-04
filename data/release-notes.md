@@ -2,7 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 4 September 2026
 
-- **Release notes and an About page.** This page and the About page added. The footer of the results page links to them.
+- **Release notes and an About page.** This page and the About page added. The footer of the results page links to them. The About page introduces the Grupetto Committee, the five people who keep the site.
 - **A season calendar.** Timeline view of the men's and women's WorldTour race year. Grand Tours and Monuments labelled, finished races filled in, the live race filling up day by day, and a hover for each winner. On phones it becomes a month-by-month list.
 - **National Championships rebuilt as an almanac.** Instead of nearly three hundred cards, the section now shows when the championships happen, whether the season is over, a handful of featured titles with full podiums, and one searchable row per federation grouped by continent. Type a country or a rider to find a champion.
 - **Jersey holders.** Each stage race's general classification now lists who holds every jersey, drawn from the race's classification leadership table.
