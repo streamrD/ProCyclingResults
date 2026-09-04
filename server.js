@@ -9559,6 +9559,45 @@ function buildHtmlPage(data, view) {
         }
       }
 
+      /* A full-width card (a lone live race) would otherwise pin the narrow jersey
+         column to its far edge with a gap between. Bound both columns and keep them
+         together on the left, and give the jersey list its roomier one-row layout. */
+      @container (min-width: 640px) {
+        .gc-columns {
+          grid-template-columns: minmax(0, 30rem) minmax(0, 22rem);
+          justify-content: start;
+          column-gap: 1.5rem;
+        }
+
+        .gc-columns .jersey-holders {
+          padding-left: 1.5rem;
+        }
+
+        .gc-columns .jersey-list {
+          gap: 0.5rem;
+        }
+
+        .gc-columns .jersey-item {
+          grid-template-columns: 1.5rem 6.6rem minmax(0, 1fr);
+          grid-template-rows: auto;
+          column-gap: 0.6rem;
+        }
+
+        .gc-columns .jersey-swatch {
+          grid-row: auto;
+          width: 1.5rem;
+          height: 1.5rem;
+        }
+
+        .gc-columns .jersey-classification {
+          font-size: 0.8rem;
+        }
+
+        .gc-columns .jersey-holder {
+          font-size: 0.98rem;
+        }
+      }
+
       .jersey-list {
         list-style: none;
         margin: 0.5rem 0 0;
