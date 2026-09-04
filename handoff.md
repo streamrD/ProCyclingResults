@@ -141,6 +141,8 @@ npm run benchmark:load -- --runs=5 --include-coverage
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
 - `/api/competition-coverage?group=<id>`: lazy article coverage for active groups. Retired groups return `410`.
 - `/api/race-stages?race=<race id>`: reads a finished stage race's companion stage articles on request and returns `{ raceId, html }` with a re-rendered stage switcher. The id must resolve through `findStageRaceById` against the current homepage payload, so it cannot be pointed at an arbitrary Wikipedia page; anything else returns `404`.
+- `/release-notes`, `/about`: editable site pages rendered from `data/*.md`; see "Editable Site Pages".
+- `POST /api/site-content`: saves one of those pages; bearer `SITE_EDIT_TOKEN`, optional GitHub commit.
 - `/assets/*`: static asset serving from `assets/`.
 
 ## Server.js Landmarks
@@ -302,6 +304,30 @@ occupies space until a reader asks for it.
 
 Known gap: the hero and page already overflow a 390px viewport in headless Chrome on
 production; this section did not cause it and does not fix it.
+
+## Editable Site Pages
+
+Added 2026-09-04. `/release-notes` and `/about` render `data/release-notes.md` and
+`data/about.md` with `renderMarkdown` (a deliberate subset, HTML-escaped first) inside
+`buildSiteContentPage`, which carries its own compact stylesheet in the site palette.
+Both are linked from the footer of every page via `buildSiteFooterLinks`.
+
+Editing in place: with `SITE_EDIT_TOKEN` set on the server, the page shows "Edit this
+page"; the key is asked for once and kept in `localStorage` (`pcr-edit-key`). Save
+POSTs to `/api/site-content` (`handleSiteContentUpdate`): `isAuthorizedSiteEdit`
+compares the bearer token in constant time, `writeSiteContent` updates the file so the
+change is live immediately, and `commitSiteContentToGitHub` commits it when
+`GITHUB_CONTENT_TOKEN` is set (contents API: read sha, PUT with base64). Railway then
+redeploys from that commit, so the edit survives. Without the GitHub token the response
+`note` says the edit lives only until the next deploy. A `401` makes the page forget the
+stored key and ask again.
+
+Two habits worth keeping:
+
+- Add a dated entry to `data/release-notes.md` whenever a user-visible change ships;
+  the page is the changelog readers see.
+- The About biography is intentionally fictional (Ambrose Bidon) and says so in its
+  last line; the opening sentence is the one true statement and should stay.
 
 ## Finish Video Links
 

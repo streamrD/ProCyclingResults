@@ -134,6 +134,14 @@ There is currently:
   Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
 - `/api/race-stages?race=<race id>`
   Returns `{ raceId, html }` with a re-rendered stage switcher for one finished stage race, after reading its companion stage articles. The id must match a race already in the homepage payload (`findStageRaceById`), so it cannot be used to fetch an arbitrary Wikipedia page; anything else returns `404`.
+- `/release-notes` and `/about`
+
+  Server-rendered pages built from `data/release-notes.md` and `data/about.md` through a small in-house Markdown renderer (`renderMarkdown`: headings, paragraphs, bullets, rules, bold, italics, inline code and http(s) or site-relative links; everything HTML-escaped first). When `SITE_EDIT_TOKEN` is set the page carries an "Edit this page" control.
+
+- `POST /api/site-content`
+
+  Saves one of those pages. Requires `Authorization: Bearer <SITE_EDIT_TOKEN>` (compared in constant time), a JSON body `{ page, markdown }` under 256 KB, writes `data/<page>.md` so the change is live at once, and, when `GITHUB_CONTENT_TOKEN` is set, commits the file to `GITHUB_CONTENT_REPO` (default `streamrD/ProCyclingResults`) on `GITHUB_CONTENT_BRANCH` (default `main`) through the GitHub Contents API so the next deploy carries it. Without the GitHub token the response says the edit will not survive the next deploy. With no `SITE_EDIT_TOKEN` at all the endpoint answers `403` and the pages render read-only.
+
 - `/assets/*`
   Serves static assets from the local `assets` directory.
 

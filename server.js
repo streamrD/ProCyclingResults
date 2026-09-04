@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs/promises");
 const path = require("path");
+const crypto = require("crypto");
 const { URL } = require("url");
 const STATIC_STAGE_RACE_SNAPSHOT_DATA = require(path.join(process.cwd(), "data", "static-stage-race-snapshots.json"));
 
@@ -11725,6 +11726,33 @@ function buildHtmlPage(data, view) {
         text-align: center;
       }
 
+      .footer-links {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.6rem;
+        margin-top: 0.5rem;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .footer-links a {
+        color: var(--uci-blue);
+        text-decoration: none;
+      }
+
+      .footer-links a:hover {
+        text-decoration: underline;
+      }
+
+      .footer-links span[aria-current],
+      .footer-links-dot {
+        color: var(--muted);
+      }
+
       @media (max-width: 720px) {
         .page {
           width: min(100% - 1rem, 1120px);
@@ -11849,6 +11877,7 @@ function buildHtmlPage(data, view) {
       ${deferredSectionMounts}
 
       <p class="footer-note">WorldTour data refreshes from live season pages when the server cache expires. National champions update from the current championship index.</p>
+      ${buildSiteFooterLinks("/")}
     </main>
     <script>
       const deferredSectionState = new Map();
@@ -12669,6 +12698,534 @@ function buildWarmupPage() {
 </html>`;
 }
 
+// ---------------------------------------------------------------------------
+// Editable site pages: release notes and about.
+//
+// The copy lives in data/*.md and is committed with the code. The maintainer can edit
+// it in place on the live page: a POST to /api/site-content, authorised by
+// SITE_EDIT_TOKEN, writes the file on the server and, when GITHUB_CONTENT_TOKEN is
+// set, commits it to the repo so the next deploy carries it. Without the GitHub token
+// an edit lives only until the next deploy, and the response says so.
+
+const SITE_CONTENT_PAGES = {
+  "release-notes": { file: "release-notes.md", title: "Release Notes", tag: "What changed", path: "/release-notes" },
+  about: { file: "about.md", title: "About", tag: "Who makes this", path: "/about" },
+};
+const SITE_CONTENT_MAX_BYTES = 256 * 1024;
+const SITE_EDIT_TOKEN = process.env.SITE_EDIT_TOKEN || "";
+const GITHUB_CONTENT_TOKEN = process.env.GITHUB_CONTENT_TOKEN || "";
+const GITHUB_CONTENT_REPO = process.env.GITHUB_CONTENT_REPO || "streamrD/ProCyclingResults";
+const GITHUB_CONTENT_BRANCH = process.env.GITHUB_CONTENT_BRANCH || "main";
+
+// Resolved lazily: the test harness runs this file in a VM without __dirname.
+function getSiteContentDir() {
+  return path.join(typeof __dirname === "string" ? __dirname : process.cwd(), "data");
+}
+
+function getSiteContentPage(pageId) {
+  return Object.prototype.hasOwnProperty.call(SITE_CONTENT_PAGES, pageId) ? SITE_CONTENT_PAGES[pageId] : null;
+}
+
+function findSiteContentPageByPath(pathname) {
+  return Object.keys(SITE_CONTENT_PAGES).find((pageId) => SITE_CONTENT_PAGES[pageId].path === pathname) || "";
+}
+
+// A deliberately small Markdown subset: headings, paragraphs, bullet lists, rules,
+// bold, italics, inline code and http(s) or site-relative links. Everything is HTML
+// escaped first, so the editor can never inject markup.
+function renderMarkdownInline(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  html = html.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^\s)]*)\)/g, (match, label, href) => {
+    const external = /^https?:\/\//.test(href);
+    return `<a href="${href}"${external ? ' target="_blank" rel="noreferrer"' : ""}>${label}</a>`;
+  });
+  return html;
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let paragraph = [];
+  let list = null;
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      out.push(`<p>${renderMarkdownInline(paragraph.join(" "))}</p>`);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list) {
+      out.push(`<ul>${list.map((item) => `<li>${renderMarkdownInline(item)}</li>`).join("")}</ul>`);
+      list = null;
+    }
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = heading[1].length + 1;
+      out.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^-{3,}$/.test(line.trim())) {
+      flushParagraph();
+      flushList();
+      out.push("<hr />");
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      list = list || [];
+      list.push(bullet[1]);
+      continue;
+    }
+    flushList();
+    paragraph.push(line.trim());
+  }
+  flushParagraph();
+  flushList();
+  return out.join("\n");
+}
+
+async function readSiteContent(pageId) {
+  const page = getSiteContentPage(pageId);
+  if (!page) {
+    return "";
+  }
+  try {
+    return await fs.readFile(path.join(getSiteContentDir(), page.file), "utf8");
+  } catch (error) {
+    return "";
+  }
+}
+
+async function writeSiteContent(pageId, markdown) {
+  const page = getSiteContentPage(pageId);
+  if (!page) {
+    throw new Error("Unknown site page.");
+  }
+  await fs.writeFile(path.join(getSiteContentDir(), page.file), markdown, "utf8");
+}
+
+function isAuthorizedSiteEdit(authorizationHeader, expectedToken = SITE_EDIT_TOKEN) {
+  if (!expectedToken) {
+    return false;
+  }
+  const match = /^Bearer\s+(.+)$/i.exec(String(authorizationHeader || "").trim());
+  if (!match) {
+    return false;
+  }
+  // Hashing first keeps the comparison constant-time regardless of length and avoids
+  // relying on the Buffer global, which the test harness's VM does not provide.
+  const provided = crypto.createHash("sha256").update(match[1], "utf8").digest();
+  const expected = crypto.createHash("sha256").update(expectedToken, "utf8").digest();
+  return crypto.timingSafeEqual(provided, expected);
+}
+
+async function commitSiteContentToGitHub(pageId, markdown) {
+  const page = getSiteContentPage(pageId);
+  if (!GITHUB_CONTENT_TOKEN || !page) {
+    return { committed: false, reason: "GitHub commits are not configured on this server." };
+  }
+  const apiUrl = `https://api.github.com/repos/${GITHUB_CONTENT_REPO}/contents/data/${page.file}`;
+  const headers = {
+    authorization: `Bearer ${GITHUB_CONTENT_TOKEN}`,
+    accept: "application/vnd.github+json",
+    "user-agent": "ProCyclingResults site editor",
+    "x-github-api-version": "2022-11-28",
+  };
+  const current = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_CONTENT_BRANCH)}`, {
+    headers,
+    signal: AbortSignal.timeout(10000),
+  });
+  let sha = "";
+  if (current.ok) {
+    sha = (await current.json())?.sha || "";
+  } else if (current.status !== 404) {
+    return { committed: false, reason: `GitHub lookup failed (${current.status}).` };
+  }
+  const result = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({
+      message: `Update ${page.title} from the site editor`,
+      content: Buffer.from(markdown, "utf8").toString("base64"),
+      branch: GITHUB_CONTENT_BRANCH,
+      ...(sha ? { sha } : {}),
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!result.ok) {
+    return { committed: false, reason: `GitHub commit failed (${result.status}).` };
+  }
+  const payload = await result.json();
+  return { committed: true, commitUrl: payload?.commit?.html_url || "" };
+}
+
+function readRequestBody(request, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error("Request body too large."));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+async function handleSiteContentUpdate(request, response) {
+  if (!isAuthorizedSiteEdit(request.headers.authorization)) {
+    sendJson(response, SITE_EDIT_TOKEN ? 401 : 403, {
+      ok: false,
+      error: SITE_EDIT_TOKEN ? "That edit key was not accepted." : "Editing is not enabled on this server.",
+    });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readRequestBody(request, SITE_CONTENT_MAX_BYTES));
+  } catch (error) {
+    sendJson(response, 400, { ok: false, error: "The edit could not be read." });
+    return;
+  }
+  const pageId = typeof payload?.page === "string" ? payload.page : "";
+  const page = getSiteContentPage(pageId);
+  const markdown = typeof payload?.markdown === "string" ? payload.markdown.replace(/\r\n?/g, "\n") : null;
+  if (!page || markdown === null) {
+    sendJson(response, 400, { ok: false, error: "Unknown page or missing text." });
+    return;
+  }
+  const normalized = markdown.endsWith("\n") ? markdown : `${markdown}\n`;
+  await writeSiteContent(pageId, normalized);
+  let commit;
+  try {
+    commit = await commitSiteContentToGitHub(pageId, normalized);
+  } catch (error) {
+    commit = { committed: false, reason: `GitHub commit failed: ${error.message}` };
+  }
+  sendJson(response, 200, {
+    ok: true,
+    html: renderMarkdown(normalized),
+    committed: commit.committed,
+    commitUrl: commit.commitUrl || "",
+    note: commit.committed
+      ? "Saved and committed to GitHub. The next deploy will carry it."
+      : `Saved on this server only. ${commit.reason} The change will not survive the next deploy.`,
+  });
+}
+
+function buildSiteFooterLinks(currentPath) {
+  const links = [{ href: "/", label: "Results" }, ...Object.values(SITE_CONTENT_PAGES).map((page) => ({ href: page.path, label: page.title }))];
+  return `<nav class="footer-links" aria-label="Site pages">${links
+    .map((link) =>
+      link.href === currentPath
+        ? `<span aria-current="page">${escapeHtml(link.label)}</span>`
+        : `<a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a>`,
+    )
+    .join('<span class="footer-links-dot" aria-hidden="true">·</span>')}</nav>`;
+}
+
+function buildSiteContentPage(pageId, markdown, options = {}) {
+  const page = getSiteContentPage(pageId);
+  if (!page) {
+    return "";
+  }
+  const editable = options.editable === undefined ? Boolean(SITE_EDIT_TOKEN) : Boolean(options.editable);
+  const editorMarkup = editable
+    ? `
+      <div class="site-edit-bar">
+        <button type="button" class="site-edit-button" data-site-edit>Edit this page</button>
+        <p class="meta site-edit-status" data-site-status aria-live="polite"></p>
+      </div>
+      <div class="site-editor" data-site-editor data-site-page="${escapeHtml(pageId)}" hidden>
+        <label class="site-editor-label" for="site-editor-text">Markdown for ${escapeHtml(page.title)}</label>
+        <textarea id="site-editor-text" class="site-editor-text" spellcheck="true">${escapeHtml(markdown)}</textarea>
+        <p class="meta">Headings with #, bullets with -, **bold**, *italics* and [links](https://…) are supported. Saving publishes immediately.</p>
+        <div class="site-editor-actions">
+          <button type="button" class="site-edit-button is-primary" data-site-save>Save</button>
+          <button type="button" class="site-edit-button" data-site-cancel>Cancel</button>
+        </div>
+      </div>`
+    : "";
+  const editorScript = editable
+    ? `
+    <script>
+      (function () {
+        var editor = document.querySelector("[data-site-editor]");
+        var prose = document.querySelector("[data-site-prose]");
+        var editButton = document.querySelector("[data-site-edit]");
+        var status = document.querySelector("[data-site-status]");
+        if (!editor || !prose || !editButton) {
+          return;
+        }
+        var textarea = editor.querySelector("textarea");
+        var saveButton = editor.querySelector("[data-site-save]");
+        var cancelButton = editor.querySelector("[data-site-cancel]");
+        var page = editor.getAttribute("data-site-page");
+        var original = textarea.value;
+        var KEY = "pcr-edit-key";
+
+        function readKey(force) {
+          var key = "";
+          try {
+            key = window.localStorage.getItem(KEY) || "";
+          } catch (error) {
+            key = "";
+          }
+          if (!key || force) {
+            key = window.prompt("Enter the edit key for this site") || "";
+            try {
+              if (key) {
+                window.localStorage.setItem(KEY, key);
+              }
+            } catch (error) {
+              // Private mode: the key lives for this page only.
+            }
+          }
+          return key;
+        }
+
+        function forgetKey() {
+          try {
+            window.localStorage.removeItem(KEY);
+          } catch (error) {
+            // Nothing to forget.
+          }
+        }
+
+        function setStatus(text) {
+          if (status) {
+            status.textContent = text;
+          }
+        }
+
+        function openEditor() {
+          editor.hidden = false;
+          editButton.hidden = true;
+          textarea.focus();
+        }
+
+        function closeEditor() {
+          editor.hidden = true;
+          editButton.hidden = false;
+        }
+
+        editButton.addEventListener("click", function () {
+          if (!readKey(false)) {
+            return;
+          }
+          openEditor();
+        });
+
+        cancelButton.addEventListener("click", function () {
+          textarea.value = original;
+          closeEditor();
+          setStatus("");
+        });
+
+        saveButton.addEventListener("click", function () {
+          var key = readKey(false);
+          if (!key) {
+            return;
+          }
+          saveButton.disabled = true;
+          setStatus("Saving…");
+          fetch("/api/site-content", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer " + key },
+            body: JSON.stringify({ page: page, markdown: textarea.value }),
+          })
+            .then(function (response) {
+              return response.json().then(function (body) {
+                return { status: response.status, body: body };
+              });
+            })
+            .then(function (result) {
+              saveButton.disabled = false;
+              if (result.status === 401) {
+                forgetKey();
+                setStatus("That edit key was not accepted. Click Save to enter it again.");
+                return;
+              }
+              if (!result.body || !result.body.ok) {
+                setStatus((result.body && result.body.error) || "The edit could not be saved.");
+                return;
+              }
+              prose.innerHTML = result.body.html;
+              original = textarea.value;
+              closeEditor();
+              setStatus(result.body.note || "Saved.");
+            })
+            .catch(function () {
+              saveButton.disabled = false;
+              setStatus("The edit could not be saved. Check the connection and try again.");
+            });
+        });
+      })();
+    </script>`
+    : "";
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <title>${escapeHtml(page.title)} · Pro Cycling Results</title>
+    ${UMAMI_ANALYTICS_SCRIPT}
+    <style>
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/fonts/manrope-500.ttf") format("truetype"); }
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/manrope-700.ttf") format("truetype"); }
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/manrope-800.ttf") format("truetype"); }
+      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-700.ttf") format("truetype"); }
+      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-800.ttf") format("truetype"); }
+      :root {
+        --uci-blue: #0033a0;
+        --uci-blue-bright: #0078c7;
+        --uci-blue-deep: #00184d;
+        --uci-yellow: #ffcc00;
+        --uci-red: #ef3340;
+        --bg: #eef3fb;
+        --ink: #09214c;
+        --muted: #4f6188;
+        --line: rgba(0, 51, 160, 0.12);
+        --line-strong: rgba(0, 51, 160, 0.22);
+        --shadow: 0 22px 60px rgba(0, 31, 98, 0.12);
+        --shadow-strong: 0 32px 90px rgba(0, 31, 98, 0.18);
+        --rainbow: linear-gradient(90deg, #00a651 0%, #00a651 20%, #005bbb 20%, #005bbb 40%, #ef3340 40%, #ef3340 60%, #111111 60%, #111111 80%, #ffcc00 80%, #ffcc00 100%);
+      }
+      * { box-sizing: border-box; }
+      html { background: var(--uci-blue-deep); }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(0, 120, 199, 0.24), transparent 24%),
+          radial-gradient(circle at 85% 12%, rgba(255, 204, 0, 0.22), transparent 18%),
+          linear-gradient(180deg, #f7faff 0%, var(--bg) 52%, #e6eefb 100%);
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+      .page { width: min(880px, calc(100% - 2rem)); margin: 0 auto; padding: 1.25rem 0 3rem; }
+      h1, h2, h3, h4 { margin: 0; line-height: 0.96; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-weight: 800; letter-spacing: -0.02em; }
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 1.6rem 2rem 1.8rem;
+        border-radius: 34px;
+        color: white;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%), linear-gradient(160deg, var(--uci-blue-deep) 0%, var(--uci-blue) 58%, var(--uci-blue-bright) 100%);
+        box-shadow: var(--shadow-strong);
+      }
+      .hero::after { content: ""; position: absolute; left: 2rem; right: 2rem; bottom: 0; height: 6px; border-radius: 999px 999px 0 0; background: var(--rainbow); }
+      .hero-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+      .eyebrow, .section-tag, .hero-back {
+        display: inline-flex; align-items: center; gap: 0.5rem;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      }
+      .eyebrow { padding: 0.45rem 0.8rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18); color: white; font-size: 0.78rem; }
+      .hero-back { color: white; font-size: 0.8rem; text-decoration: none; opacity: 0.85; }
+      .hero-back:hover { opacity: 1; }
+      .hero h1 { margin-top: 1rem; font-size: clamp(2.6rem, 7vw, 4.4rem); text-transform: uppercase; }
+      .hero p { margin: 0.8rem 0 0; max-width: 40rem; color: rgba(255, 255, 255, 0.82); font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 1rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .section {
+        position: relative; margin-top: 1.25rem; padding: 1.6rem 1.8rem; overflow: hidden;
+        border: 1px solid var(--line); border-radius: 28px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 255, 0.92)); box-shadow: var(--shadow);
+      }
+      .section::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: linear-gradient(180deg, var(--uci-blue-bright), var(--uci-blue)); }
+      .site-prose { font-size: 1.02rem; }
+      .site-prose > :first-child { margin-top: 0; }
+      .site-prose h2 { margin-top: 1.8rem; font-size: 2rem; text-transform: uppercase; }
+      .site-prose h3 { margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--uci-blue); font-size: 1.35rem; text-transform: uppercase; }
+      .site-prose h4 { margin-top: 1.2rem; font-size: 1.1rem; }
+      .site-prose p { margin: 0.8rem 0 0; }
+      .site-prose ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+      .site-prose li { margin-top: 0.45rem; }
+      .site-prose li::marker { color: var(--uci-blue-bright); }
+      .site-prose strong { color: var(--uci-blue-deep); }
+      .site-prose a { color: var(--uci-blue); font-weight: 700; text-decoration: none; }
+      .site-prose a:hover { text-decoration: underline; }
+      .site-prose code { padding: 0.1rem 0.35rem; border-radius: 6px; background: rgba(0, 51, 160, 0.07); font-size: 0.9em; }
+      .site-prose hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--line); }
+      .meta { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.9rem; }
+      .site-edit-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+      .site-edit-status { margin: 0; }
+      .site-edit-button {
+        appearance: none; display: inline-flex; align-items: center; justify-content: center; height: 2.4rem; padding: 0 1rem;
+        border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(255, 255, 255, 0.75); color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+      }
+      .site-edit-button:hover { background: rgba(0, 51, 160, 0.08); }
+      .site-edit-button.is-primary { background: var(--uci-blue); border-color: var(--uci-blue); color: white; }
+      .site-edit-button:disabled { opacity: 0.6; cursor: wait; }
+      .site-editor { margin-top: 1rem; }
+      .site-editor[hidden] { display: none; }
+      .site-editor-label { display: block; margin-bottom: 0.4rem; color: var(--muted); font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .site-editor-text {
+        width: 100%; min-height: 26rem; padding: 0.9rem 1rem; border: 1px solid var(--line-strong); border-radius: 18px; background: white; color: var(--ink);
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.5; resize: vertical;
+      }
+      .site-editor-text:focus { outline: none; border-color: var(--uci-blue-bright); box-shadow: 0 0 0 3px rgba(0, 120, 199, 0.16); }
+      .site-editor-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+      .footer-note { margin-top: 1.2rem; padding: 0.95rem 1rem 0; color: rgba(9, 33, 76, 0.66); font-size: 0.9rem; text-align: center; }
+      .footer-links { display: flex; justify-content: center; align-items: center; gap: 0.6rem; margin-top: 0.6rem; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .footer-links a { color: var(--uci-blue); text-decoration: none; }
+      .footer-links a:hover { text-decoration: underline; }
+      .footer-links span[aria-current] { color: var(--muted); }
+      .footer-links-dot { color: var(--muted); }
+      @media (max-width: 720px) {
+        .page { width: min(100% - 1rem, 880px); padding-top: 0.7rem; }
+        .hero { padding: 1.25rem; border-radius: 22px; }
+        .hero::after { left: 1.25rem; right: 1.25rem; }
+        .section { padding: 1.2rem 1.1rem; border-radius: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-top">
+          <span class="eyebrow">Pro Cycling Results</span>
+          <a class="hero-back" href="/">← Back to the results</a>
+        </div>
+        <h1>${escapeHtml(page.title)}</h1>
+        <p>${escapeHtml(page.tag)}</p>
+      </section>
+      <section class="section">
+        <div class="site-prose" data-site-prose>
+          ${renderMarkdown(markdown)}
+        </div>
+        ${editorMarkup}
+      </section>
+      <p class="footer-note">Free, for all to use and enjoy.</p>
+      ${buildSiteFooterLinks(page.path)}
+    </main>
+    ${editorScript}
+  </body>
+</html>`;
+}
+
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
@@ -12757,6 +13314,17 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname !== "/") {
       if (url.pathname === "/api/build-info") {
         sendJson(response, 200, BUILD_INFO);
+        return;
+      }
+
+      if (url.pathname === "/api/site-content" && request.method === "POST") {
+        await handleSiteContentUpdate(request, response);
+        return;
+      }
+
+      const sitePageId = findSiteContentPageByPath(url.pathname);
+      if (sitePageId) {
+        sendHtml(response, 200, buildSiteContentPage(sitePageId, await readSiteContent(sitePageId)));
         return;
       }
 

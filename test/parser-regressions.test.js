@@ -103,6 +103,11 @@ function loadParserExports() {
       getNationalChampionshipContinent,
       buildSeasonCalendar,
       buildSeasonCalendarSection,
+      renderMarkdown,
+      isAuthorizedSiteEdit,
+      buildSiteContentPage,
+      buildSiteFooterLinks,
+      SITE_CONTENT_PAGES,
       createRaceAnchorId,
       packSeasonCalendarRows,
       COUNTRY_NAME_ALPHA2,
@@ -4901,4 +4906,67 @@ test("race cards carry the anchor the season calendar links to", () => {
   const race = { id: "2026 Il Lombardia", title: "Il Lombardia", series: "Men's WorldTour", date: "10 October 2026", location: "Italy", winner: "" };
   assert.match(buildUpcomingCard(race), /<article class="card upcoming-card" id="race-2026-il-lombardia">/);
   assert.match(buildRaceCard(race), /<article class="card result-card" id="race-2026-il-lombardia">/);
+});
+
+test("renderMarkdown handles the small subset the site pages use and escapes everything else", () => {
+  const { renderMarkdown } = loadParserExports();
+  const html = renderMarkdown([
+    "Intro line with **bold**, *italics*, `code` and a [link](https://example.com/a?b=1&c=2).",
+    "",
+    "## 4 September 2026",
+    "",
+    "- **First.** One <script>alert(1)</script> item",
+    "- Second item with a [site link](/about)",
+    "",
+    "---",
+    "",
+    "[bad](javascript:alert(1)) stays text",
+  ].join("\n"));
+
+  assert.match(html, /<p>Intro line with <strong>bold<\/strong>, <em>italics<\/em>, <code>code<\/code> and a <a href="https:\/\/example.com\/a\?b=1&amp;c=2" target="_blank" rel="noreferrer">link<\/a>\.<\/p>/);
+  assert.match(html, /<h3>4 September 2026<\/h3>/);
+  assert.match(html, /<ul><li><strong>First\.<\/strong> One &lt;script&gt;alert\(1\)&lt;\/script&gt; item<\/li><li>Second item with a <a href="\/about">site link<\/a><\/li><\/ul>/);
+  assert.match(html, /<hr \/>/);
+  assert.match(html, /\[bad\]\(javascript:alert\(1\)\) stays text/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.equal(renderMarkdown(""), "");
+});
+
+test("isAuthorizedSiteEdit accepts only the exact bearer token and refuses when none is configured", () => {
+  const { isAuthorizedSiteEdit } = loadParserExports();
+  assert.equal(isAuthorizedSiteEdit("Bearer secret-key", "secret-key"), true);
+  assert.equal(isAuthorizedSiteEdit("bearer secret-key", "secret-key"), true);
+  assert.equal(isAuthorizedSiteEdit("Bearer secret-ke", "secret-key"), false);
+  assert.equal(isAuthorizedSiteEdit("Bearer secret-key-longer", "secret-key"), false);
+  assert.equal(isAuthorizedSiteEdit("secret-key", "secret-key"), false);
+  assert.equal(isAuthorizedSiteEdit("", "secret-key"), false);
+  assert.equal(isAuthorizedSiteEdit("Bearer anything", ""), false);
+});
+
+test("the release notes and about pages render from their committed markdown, with the editor only when enabled", () => {
+  const { buildSiteContentPage, SITE_CONTENT_PAGES, buildSiteFooterLinks } = loadParserExports();
+  for (const pageId of Object.keys(SITE_CONTENT_PAGES)) {
+    const markdown = fs.readFileSync(path.join(__dirname, "..", "data", SITE_CONTENT_PAGES[pageId].file), "utf8");
+    assert.ok(markdown.trim().length > 200, `${pageId} markdown should have content`);
+    const readOnly = buildSiteContentPage(pageId, markdown, { editable: false });
+    assert.match(readOnly, new RegExp(`<title>${SITE_CONTENT_PAGES[pageId].title} · Pro Cycling Results</title>`));
+    assert.match(readOnly, /data-site-prose/);
+    assert.doesNotMatch(readOnly, /data-site-editor|\/api\/site-content/);
+    const editable = buildSiteContentPage(pageId, markdown, { editable: true });
+    assert.match(editable, /data-site-editor/);
+    assert.match(editable, /\/api\/site-content/);
+    assert.match(editable, /<textarea id="site-editor-text"/);
+  }
+  const notes = buildSiteContentPage("release-notes", fs.readFileSync(path.join(__dirname, "..", "data", "release-notes.md"), "utf8"), { editable: false });
+  assert.match(notes, /<h3>4 September 2026<\/h3>/);
+  assert.match(notes, /<h3>15–29 April 2026<\/h3>/);
+  const about = buildSiteContentPage("about", fs.readFileSync(path.join(__dirname, "..", "data", "about.md"), "utf8"), { editable: false });
+  assert.match(about, /amateur cyclist purely for the love of the sport/);
+  assert.match(about, /Ambrose Bidon/);
+  assert.equal(buildSiteContentPage("nope", "x"), "");
+  // Footer links mark the current page and link the others.
+  const footer = buildSiteFooterLinks("/about");
+  assert.match(footer, /<a href="\/">Results<\/a>/);
+  assert.match(footer, /<a href="\/release-notes">Release Notes<\/a>/);
+  assert.match(footer, /<span aria-current="page">About<\/span>/);
 });
