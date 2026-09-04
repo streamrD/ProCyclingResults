@@ -1961,45 +1961,355 @@ function buildStageHistory(routeStageWinners, stageResults) {
     .sort((left, right) => left.order - right.order);
 }
 
-function extractStageLeadershipGcSnapshots(rawText) {
-  const leadershipMatch = String(rawText || "").match(
-    /==\s*Classification leadership table\s*==[\s\S]*?(\{\|[\s\S]*?\n\|\})/i,
+// ---------------------------------------------------------------------------
+// Classification leadership table
+//
+// Every stage-race article carries a "Classification leadership" section (older pages
+// title it "Classification leadership table"; every one captions the table
+// "Classification leadership by stage"): one row per stage, one column per
+// classification, and the rider leading each after that stage. It is the only place
+// Wikipedia states who holds the points, mountains and young-rider jerseys, so it is
+// what the card's jersey list reads. It is also full of `rowspan`: a rider who keeps a
+// jersey for six stages is written once, spanning six rows, and every later row simply
+// omits that cell. Reading cells by index on those rows returns a neighbouring column,
+// which is how an earlier version of this file reported the wrong GC leader. The grid
+// below expands the spans first, so a cell's column is known before its content is read.
+// ---------------------------------------------------------------------------
+
+function extractClassificationLeadershipTable(rawText) {
+  const text = String(rawText || "");
+  const headingMatch = text.match(
+    /==+\s*Classification leadership(?:\s+table)?\s*==+(?:(?!\n==)[\s\S])*?(\{\|[\s\S]*?\n\|\})/i,
   );
-  const leadershipTable = leadershipMatch?.[1] || "";
-  if (!leadershipTable) {
+
+  return headingMatch?.[1] || extractWikiTableByCaption(text, /^classification leadership by stage$/i);
+}
+
+// `| style="..." | content` keeps its attributes before a single pipe; a cell whose
+// first pipe sits inside a link or template (`[[Page#Stage 1|1]]`, `{{font colour|...}}`)
+// has no attributes at all.
+function splitWikiCellSource(source) {
+  const text = String(source || "");
+  const match = text.match(/^([^|\n]*?)\|(?!\|)([\s\S]*)$/);
+  if (match && /=/.test(match[1]) && !/\[\[|\{\{/.test(match[1])) {
+    return { attributes: match[1].trim(), content: match[2].trim() };
+  }
+
+  return { attributes: "", content: text.trim() };
+}
+
+// Expands a wikitable into a grid of cells, resolving `rowspan` and `colspan` so that
+// `grid[row][column]` is the cell that visually occupies that position. A cell that
+// spans several rows is repeated into each of them, flagged `spanned` on the copies.
+function parseWikiTableGrid(tableText) {
+  const sourceRows = [];
+  let cells = [];
+  let current = null;
+  const flushRow = () => {
+    if (cells.length > 0) {
+      sourceRows.push(cells);
+    }
+    cells = [];
+    current = null;
+  };
+
+  String(tableText || "")
+    .split("\n")
+    .forEach((rawLine) => {
+      const line = rawLine.trimStart();
+      if (line.startsWith("{|") || line.startsWith("|+")) {
+        return;
+      }
+      if (line.startsWith("|}") || line.startsWith("|-")) {
+        flushRow();
+        return;
+      }
+      if (line.startsWith("!") || line.startsWith("|")) {
+        const header = line.startsWith("!");
+        line
+          .slice(1)
+          .split(header ? /\s*(?:!!|\|\|)\s*/ : /\s*\|\|\s*/)
+          .forEach((part) => {
+            current = { header, source: part };
+            cells.push(current);
+          });
+        return;
+      }
+      if (current) {
+        current.source += `\n${rawLine}`;
+      }
+    });
+  flushRow();
+
+  const grid = [];
+  const pending = [];
+  sourceRows.forEach((sourceCells) => {
+    const row = [];
+    let column = 0;
+    let index = 0;
+    const hasPendingAhead = () => pending.some((entry, position) => position >= column && entry?.remaining > 0);
+
+    while (column < 64 && (index < sourceCells.length || hasPendingAhead())) {
+      const carried = pending[column];
+      if (carried?.remaining > 0) {
+        row[column] = { ...carried.cell, spanned: true };
+        carried.remaining -= 1;
+        column += 1;
+        continue;
+      }
+
+      if (index >= sourceCells.length) {
+        column += 1;
+        continue;
+      }
+
+      const sourceCell = sourceCells[index];
+      index += 1;
+      const { attributes, content } = splitWikiCellSource(sourceCell.source);
+      const rowspan = Math.max(1, Number(attributes.match(/rowspan\s*=\s*"?(\d+)/i)?.[1] || 1));
+      const colspan = Math.max(1, Number(attributes.match(/colspan\s*=\s*"?(\d+)/i)?.[1] || 1));
+      const cell = { header: sourceCell.header, content, attributes };
+      for (let span = 0; span < colspan; span += 1) {
+        row[column] = cell;
+        if (rowspan > 1) {
+          pending[column] = { remaining: rowspan - 1, cell };
+        }
+        column += 1;
+      }
+    }
+
+    grid.push(row);
+  });
+
+  return grid;
+}
+
+// Removes `{{efn|...}}`-style footnote templates, which nest links and other templates
+// that the flat template stripper in cleanWikiText cannot see past.
+function stripWikiFootnoteTemplates(text) {
+  const source = String(text || "");
+  let output = "";
+  let index = 0;
+
+  while (index < source.length) {
+    const open = source.indexOf("{{", index);
+    if (open < 0) {
+      output += source.slice(index);
+      break;
+    }
+
+    const nameMatch = source.slice(open + 2, open + 24).match(/^\s*(efn|efn-[a-z]+|refn|sfn|notetag|note)\s*(?:\||\})/i);
+    if (!nameMatch) {
+      output += source.slice(index, open + 2);
+      index = open + 2;
+      continue;
+    }
+
+    let depth = 0;
+    let cursor = open;
+    while (cursor < source.length) {
+      const pair = source.slice(cursor, cursor + 2);
+      if (pair === "{{") {
+        depth += 1;
+        cursor += 2;
+        continue;
+      }
+      if (pair === "}}") {
+        depth -= 1;
+        cursor += 2;
+        if (depth === 0) {
+          break;
+        }
+        continue;
+      }
+      cursor += 1;
+    }
+
+    output += source.slice(index, open);
+    index = cursor;
+  }
+
+  return output;
+}
+
+// A leader whose jersey is dark is written `{{font colour|white|Name|link=Name}}`
+// (also `font color` and `fontcolour`); the name is the second argument. An empty
+// cell on an unraced row still carries the template with blank arguments.
+function unwrapWikiFontColour(text) {
+  return String(text || "").replace(/\{\{\s*font\s*colou?r\s*\|((?:[^{}]|\{\{[^{}]*\}\})*)\}\}/gi, (_, inner) => {
+    const args = splitWikiTemplateArgs(inner);
+    return args[1] || "";
+  });
+}
+
+// Order matters: the Giro heads its team column "General Super Team".
+const CLASSIFICATION_LEADERSHIP_COLUMNS = [
+  { key: "team", label: "Team", pattern: /team/ },
+  { key: "general", label: "General", pattern: /general/ },
+  { key: "points", label: "Points", pattern: /points|sprinter/ },
+  { key: "mountains", label: "Mountains", pattern: /mountain|climb|king of the/ },
+  { key: "young", label: "Young rider", pattern: /young|youth/ },
+];
+
+// The stage and winner columns are not classifications, and a combativity award is a
+// per-stage prize rather than a jersey anyone holds, so neither reaches the list.
+const CLASSIFICATION_LEADERSHIP_EXCLUDED_COLUMNS = /^(stage|stage winner|winner|date|course)$|combativ|aggressive|award/i;
+
+function parseClassificationLeadershipColumn(headerCell) {
+  const source = stripWikiFootnoteTemplates(String(headerCell?.content || "")).replace(/\[\[File:[^\]]*\]\]/gi, "");
+  const jersey = source.match(/\{\{\s*cjersey\s*\|\s*([^|}]+?)\s*(?:\||\}\})/i)?.[1] || "";
+  const heading = cleanWikiText(source.replace(/<br\s*\/?>[\s\S]*$/i, ""));
+  if (!heading || CLASSIFICATION_LEADERSHIP_EXCLUDED_COLUMNS.test(heading)) {
+    return null;
+  }
+
+  const rule = CLASSIFICATION_LEADERSHIP_COLUMNS.find((entry) => entry.pattern.test(heading.toLowerCase()));
+  const genericLabel = heading.replace(/\s*classification\s*$/i, "").trim();
+
+  return {
+    key: rule?.key || normalizeSearchText(genericLabel).replace(/\s+/g, "-"),
+    label: rule?.label || genericLabel,
+    ...(jersey ? { jersey: jersey.trim().toLowerCase() } : {}),
+  };
+}
+
+const CLASSIFICATION_LEADERSHIP_EMPTY_CELL = /^(?:no award|not awarded|no winner|none|n\/a|tba|tbc|tbd|stage cancelled|[-–—])$/i;
+
+// A holder is a rider, or on the team column a team. Team cells only ever carry a
+// `{{UCI team code}}`, resolved through the same map the stage results use; a code the
+// map cannot name is left out rather than shown raw.
+function parseClassificationLeadershipHolder(content, teamNames = new Map()) {
+  const text = stripWikiFootnoteTemplates(String(content || ""));
+  const teamReference = parseTeamReference(text);
+  if (teamReference) {
+    const teamName = teamNames.get(getTeamReferenceKey(teamReference)) || "";
+    return teamName
+      ? { rider: teamName, ...(teamReference.countryCode ? { countryCode: teamReference.countryCode } : {}) }
+      : null;
+  }
+
+  const athlete = parseAthleteDetails(unwrapWikiFontColour(text));
+  const rider = String(athlete.rider || "").trim();
+  if (!isPlausibleRiderName(rider) || CLASSIFICATION_LEADERSHIP_EMPTY_CELL.test(rider)) {
+    return null;
+  }
+
+  const countryCode = normalizeCountryCode(athlete.countryCode || getRiderCountryCode(rider));
+  return { rider, ...(countryCode ? { countryCode } : {}) };
+}
+
+function parseClassificationLeadershipStage(cell) {
+  const cleaned = cleanWikiText(stripWikiFootnoteTemplates(String(cell?.content || "")));
+  if (/^final$/i.test(cleaned)) {
+    return null;
+  }
+
+  const bareNumber = cleaned.match(/^\s*(\d+)\s*$/);
+  if (bareNumber) {
+    const stageNumber = Number(bareNumber[1]);
+    return { stageNumber, stageOrder: stageNumber, stageLabel: `Stage ${stageNumber}` };
+  }
+
+  return parseStageSequence(cleaned);
+}
+
+// One entry per raced stage row: `{ stageNumber, stageLabel, entries }`, where each
+// entry is `{ key, label, jersey?, rider, countryCode? }`. A row counts as raced when
+// its winner cell says anything at all — a cancelled stage still carries its jerseys
+// forward by rowspan — or when any classification cell names a holder. Rows whose cells
+// are all blank are the stages still to come. The "Final" row is skipped because it
+// repeats the last stage.
+function extractClassificationLeadershipRows(rawText, teamNames = new Map()) {
+  const grid = parseWikiTableGrid(extractClassificationLeadershipTable(rawText));
+  const headerRowIndex = grid.findIndex(
+    (row) => row.some((cell) => cell?.header) && row.some((cell) => /general/i.test(cleanWikiText(cell?.content || ""))),
+  );
+  if (headerRowIndex < 0) {
     return [];
   }
 
-  return leadershipTable
-    .split("\n|-\n")
+  const columns = grid[headerRowIndex].map((cell) => (cell ? parseClassificationLeadershipColumn(cell) : null));
+  const winnerColumn = grid[headerRowIndex].findIndex((cell) => /winner/i.test(cleanWikiText(cell?.content || "")));
+
+  return grid
+    .slice(headerRowIndex + 1)
     .map((row) => {
-      const cells = [];
-      for (const line of row.split("\n")) {
-        if (line === "|}") {
-          continue;
-        }
-
-        if (line.startsWith("!")) {
-          cells.push(line.replace(/^!\s*(?:scope="[^"]+"\s*\|\s*)?(?:style="[^"]+"\s*\|\s*)?/, "").trim());
-        } else if (line.startsWith("|")) {
-          cells.push(line.replace(/^\|\s*(?:style="[^"]+"\s*\|\s*)?/, "").trim());
-        }
-      }
-
-      if (cells.length < 3) {
+      const stageInfo = parseClassificationLeadershipStage(row[0]);
+      if (!stageInfo) {
         return null;
       }
 
-      const stageInfo = parseStageSequence(cells[0]);
-      const leader = parseAthleteDetails(cells[2]);
-      if (!stageInfo || !leader.rider) {
+      const entries = columns
+        .map((column, index) => {
+          if (!column || index === 0) {
+            return null;
+          }
+
+          const holder = parseClassificationLeadershipHolder(row[index]?.content, teamNames);
+          return holder ? { ...column, ...holder } : null;
+        })
+        .filter(Boolean);
+      const winnerText = cleanWikiText(stripWikiFootnoteTemplates(String(row[winnerColumn]?.content || "")));
+      if (entries.length === 0 && !winnerText) {
         return null;
       }
 
-      return {
-        stageNumber: stageInfo.stageNumber,
-        standings: [buildStandingEntry(1, leader)].filter(Boolean),
-      };
+      return { ...stageInfo, entries };
+    })
+    .filter(Boolean);
+}
+
+// The jersey holders after the most recent raced stage, or null when the page has no
+// leadership table yet.
+function extractClassificationLeadership(rawText, teamNames = new Map()) {
+  const rows = extractClassificationLeadershipRows(rawText, teamNames);
+  const latest = rows[rows.length - 1] || null;
+  if (!latest || latest.entries.length === 0) {
+    return null;
+  }
+
+  return {
+    stageNumber: latest.stageNumber,
+    stageLabel: latest.stageLabel,
+    entries: latest.entries,
+  };
+}
+
+// The leadership table writes most riders as bare links, so their flags come from the
+// standings parsed elsewhere on the page — the same rider, named the same way.
+function fillClassificationLeaderCountryCodes(leaders, standingsLists) {
+  if (!leaders || !Array.isArray(leaders.entries)) {
+    return leaders;
+  }
+
+  const codesByRider = new Map();
+  standingsLists.forEach((standings) => {
+    (Array.isArray(standings) ? standings : []).forEach((entry) => {
+      const key = normalizeSearchText(entry?.rider);
+      if (key && entry?.countryCode && !codesByRider.has(key)) {
+        codesByRider.set(key, normalizeCountryCode(entry.countryCode));
+      }
+    });
+  });
+
+  return {
+    ...leaders,
+    entries: leaders.entries.map((entry) => {
+      if (entry.countryCode) {
+        return entry;
+      }
+      const countryCode = codesByRider.get(normalizeSearchText(entry.rider)) || "";
+      return countryCode ? { ...entry, countryCode } : entry;
+    }),
+  };
+}
+
+function extractStageLeadershipGcSnapshots(rawText) {
+  return extractClassificationLeadershipRows(rawText)
+    .map((row) => {
+      const leader = row.entries.find((entry) => entry.key === "general");
+      const standings = leader ? [buildStandingEntry(1, leader)].filter(Boolean) : [];
+      return standings.length > 0 ? { stageNumber: row.stageNumber, standings } : null;
     })
     .filter(Boolean);
 }
@@ -2120,8 +2430,11 @@ function collectTeamReferences(rawText, stageArticleTexts = []) {
     });
   });
 
+  // The team classification column of the leadership table is the third place a team
+  // code appears with no name beside it.
   const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
-  [...routeTable.matchAll(/\{\{\s*UCI team code[^}]*\}\}[^\n]*/gi)].forEach((match) => {
+  const leadershipTable = extractClassificationLeadershipTable(rawText);
+  [...`${routeTable}\n${leadershipTable}`.matchAll(/\{\{\s*UCI team code[^}]*\}\}[^\n]*/gi)].forEach((match) => {
     const reference = parseTeamReference(match[0]);
     if (reference) {
       references.push(reference);
@@ -2178,6 +2491,7 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
   const routeStageWinners = routeStages.filter((entry) => entry.winner);
   const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
+  const classificationLeaders = extractClassificationLeadership(rawText, teamNames);
   const stages = buildStageHistory(routeStageWinners, stageResults);
   // The most recent raced stage is simply the last history entry, so the card's
   // headline stage and its stage selector can never disagree about which stage is
@@ -2248,6 +2562,16 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
           }
         : null,
     overallResult: overallResult.length > 0 ? overallResult : finalStandings,
+    ...(classificationLeaders
+      ? {
+          classificationLeaders: fillClassificationLeaderCountryCodes(classificationLeaders, [
+            latestGc?.standings,
+            ...stages.map((stage) => stage.standings),
+            overallResult,
+            finalStandings,
+          ]),
+        }
+      : {}),
   };
 }
 
@@ -3309,6 +3633,25 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
     generalClassification = null;
   }
 
+  // Only Wikipedia describes the jersey holders, so this is usually a pass-through.
+  // Unlike the GC, a list one stage behind the official provider is kept and labelled
+  // with its own stage rather than dropped: it does not contradict anything above it.
+  let classificationLeaders = choosePreferredByQuality(
+    primary?.classificationLeaders,
+    secondary?.classificationLeaders,
+    (field) =>
+      field
+        ? [
+            Number(isPlausibleProgress(getStageRaceFieldProgress(field))),
+            getStageRaceFieldProgress(field),
+            Array.isArray(field.entries) ? field.entries.length : 0,
+          ]
+        : [-1, -1, -1],
+  );
+  if (classificationLeaders && !isPlausibleProgress(getStageRaceFieldProgress(classificationLeaders))) {
+    classificationLeaders = null;
+  }
+
   // Official providers report only the current stage, so the Wikipedia-derived
   // history is normally the only side carrying one. Prefer whichever side knows more
   // stages in depth rather than whichever snapshot won overall.
@@ -3343,6 +3686,13 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
       generalClassification = null;
     }
   }
+
+  // An official provider's standings carry flags Wikipedia's bare links do not.
+  classificationLeaders = fillClassificationLeaderCountryCodes(classificationLeaders, [
+    generalClassification?.standings,
+    latestStage?.standings,
+    ...(Array.isArray(stages) ? stages.map((stage) => stage?.standings) : []),
+  ]);
 
   const latestStageSourceId = getStageRaceFieldSourceId(
     latestStage,
@@ -3382,6 +3732,7 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
             }
           : null,
         overallResult: Array.isArray(overallResult) ? overallResult : [],
+        ...(classificationLeaders ? { classificationLeaders } : {}),
         provenance: {
           snapshot: preferredSnapshot?._sourceId || "",
           latestStage: latestStageSourceId,
@@ -7606,16 +7957,17 @@ function buildStageRaceCard(race, options = {}) {
         <div class="detail-label">Stage results</div>
         <p class="meta">No completed stage result is available yet.</p>
       </div>`;
+  const jerseyHolders = buildJerseyHoldersMarkup(race, { finalized: isFinalized });
   const gcContent = gcStandings.length > 0
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(classificationLabel)}</div>
-        ${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}
+        ${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}${jerseyHolders}
       </div>`
     : `
       <div class="card-subsection">
         <div class="detail-label">Overall classification</div>
-        <p class="meta">The general classification is not available yet.</p>
+        <p class="meta">The general classification is not available yet.</p>${jerseyHolders}
       </div>`;
   const orderedContent = isFinalized
     ? `${gcContent}${stageContent}`
@@ -7684,6 +8036,111 @@ function getCountryFlagEmoji(countryCode) {
 
 function getCountryFlagEmojiByName(countryName) {
   return alpha2ToFlagEmoji(COUNTRY_NAME_ALPHA2[String(countryName || "").trim().toLowerCase()]);
+}
+
+// Jersey colours as Wikipedia's {{cjersey}} template names them in the leadership
+// table header. A name outside this map draws an outlined, unfilled jersey, which is
+// meant to look generic rather than to guess.
+const JERSEY_FILL_COLOURS = new Map([
+  ["yellow", "#ffcc00"],
+  ["yellow number", "#ffcc00"],
+  ["paris–nice", "#ffcc00"],
+  ["paris-nice", "#ffcc00"],
+  ["gold", "#d4af37"],
+  ["white", "#ffffff"],
+  ["silver", "#c9ced6"],
+  ["grey", "#8a8f98"],
+  ["gray", "#8a8f98"],
+  ["black", "#232323"],
+  ["green", "#2f9e44"],
+  ["green number", "#2f9e44"],
+  ["dark green", "#0f7a3a"],
+  ["teal", "#1aa39a"],
+  ["red", "#e42a19"],
+  ["red number", "#e42a19"],
+  ["pink", "#f06aa9"],
+  ["cyclamen", "#c8408f"],
+  ["ciclamino", "#c8408f"],
+  ["magenta", "#c8408f"],
+  ["purple", "#7a3fb0"],
+  ["violet", "#7a3fb0"],
+  ["blue", "#0a63c9"],
+  ["azul", "#0a63c9"],
+  ["azure", "#3b8fe0"],
+  ["light blue", "#7dc3f0"],
+  ["lightblue", "#7dc3f0"],
+  ["orange", "#f28c1e"],
+]);
+
+const JERSEY_POLKADOT_COLOURS = new Map([
+  ["polkadot", "#e42a19"],
+  ["polka dot", "#e42a19"],
+  ["red polkadot", "#e42a19"],
+  ["blue polkadot", "#0a63c9"],
+  ["green polkadot", "#2f9e44"],
+  ["orange polkadot", "#f28c1e"],
+]);
+
+function buildJerseySwatchMarkup(jersey) {
+  const name = String(jersey || "").trim().toLowerCase();
+  const dots = JERSEY_POLKADOT_COLOURS.get(name) || "";
+  const fill = dots ? "#ffffff" : JERSEY_FILL_COLOURS.get(name) || "";
+  const outline = 'd="M8 2.5 C8.6 4.6 15.4 4.6 16 2.5 L21.4 5 L23.4 10.6 L19 12.1 L19 22 L5 22 L5 12.1 L0.6 10.6 L2.6 5 Z" stroke-linejoin="round"';
+  const body = fill
+    ? `<path ${outline} fill="${fill}" stroke="rgba(9, 33, 76, 0.5)" stroke-width="1"/>`
+    : `<path ${outline} fill="none" stroke="rgba(9, 33, 76, 0.45)" stroke-width="1" stroke-dasharray="2 1.5"/>`;
+  const dotMarkup = dots
+    ? [
+        [9, 9],
+        [15, 9],
+        [12, 14],
+        [8.5, 19],
+        [15.5, 19],
+      ]
+        .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="${dots}"/>`)
+        .join("")
+    : "";
+  const title = name ? `${name} jersey` : "jersey";
+
+  return `<svg class="jersey-swatch" viewBox="0 0 24 24" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(
+    title,
+  )}</title>${body}${dotMarkup}</svg>`;
+}
+
+// The jersey holders listed beneath the GC podium: one row per classification the
+// leadership table names, in the table's own column order. Labelled with its stage only
+// when that differs from the GC's, so the common case reads simply "Jersey holders".
+function buildJerseyHoldersMarkup(race, options = {}) {
+  const leaders = race?.stageRace?.classificationLeaders || null;
+  const entries = (Array.isArray(leaders?.entries) ? leaders.entries : []).filter((entry) => entry?.rider && entry?.label);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  const gcStageNumber = Number(race?.stageRace?.generalClassification?.stageNumber);
+  const stageLabel = leaders.stageLabel || (leaders.stageNumber === 0 ? "Prologue" : `Stage ${leaders.stageNumber}`);
+  const label = options.finalized
+    ? "Final jersey winners"
+    : Number.isFinite(gcStageNumber) && Number(leaders.stageNumber) !== gcStageNumber
+      ? `Jersey holders after ${stageLabel.toLowerCase()}`
+      : "Jersey holders";
+  const items = entries
+    .map(
+      (entry) => `
+          <li class="jersey-item">
+            ${buildJerseySwatchMarkup(entry.jersey)}
+            <span class="jersey-classification">${escapeHtml(entry.label)}</span>
+            ${buildRiderMarkup(entry, "jersey-holder")}
+          </li>`,
+    )
+    .join("");
+
+  return `
+        <div class="jersey-holders">
+          <div class="detail-label">${escapeHtml(label)}</div>
+          <ul class="jersey-list">${items}
+          </ul>
+        </div>`;
 }
 
 function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
@@ -9013,6 +9470,48 @@ function buildHtmlPage(data, view) {
         font-weight: 700;
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+      }
+
+      .jersey-holders {
+        margin-top: 1rem;
+        padding-top: 0.8rem;
+        border-top: 1px dashed var(--line);
+      }
+
+      .jersey-list {
+        list-style: none;
+        margin: 0.5rem 0 0;
+        padding: 0;
+        display: grid;
+        gap: 0.42rem;
+      }
+
+      .jersey-item {
+        display: grid;
+        grid-template-columns: 1.5rem 6.6rem minmax(0, 1fr);
+        align-items: center;
+        gap: 0.6rem;
+      }
+
+      .jersey-swatch {
+        display: block;
+        width: 1.5rem;
+        height: 1.5rem;
+      }
+
+      .jersey-classification {
+        color: var(--muted);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 1.15;
+        text-transform: uppercase;
+      }
+
+      .jersey-holder {
+        font-size: 0.98rem;
+        font-weight: 700;
       }
 
       .race-finish-link {

@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-03
+Updated: 2026-09-04
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -519,6 +519,40 @@ two sections keep reading differently on purpose. Helpers: `parseClockSeconds`,
 gap" in `test/parser-regressions.test.js`, plus the older "shows stage time separately
 from cumulative GC timing" test, which now asserts the derived gap sits in its own pill.
 
+**7. Jersey holders (added 2026-09-04).** Under the GC podium, a stage-race card lists
+who leads each classification — general, points, mountains, young rider, team, plus
+any race-specific column such as the Giro's intermediate-sprint or breakaway
+classifications — each with a small jersey swatch in the colour Wikipedia's
+`{{cjersey}}` template names in the table header. The source is the article's
+"Classification leadership" table (`extractClassificationLeadership`, via
+`parseWikiTableGrid`, which resolves the table's `rowspan` cells — see the parser traps
+below). It is the only place Wikipedia states the points, mountains and young-rider
+leaders, and every WorldTour stage race publishes one. The snapshot carries it as
+`stageRace.classificationLeaders = { stageNumber, stageLabel, entries }`, each entry
+`{ key, label, jersey?, rider, countryCode? }`; a team occupies the rider slot, resolved
+through the same `{{UCI team code}}` map as team time trials (`collectTeamReferences`
+now scans this table too), and an unresolved code is omitted rather than shown raw. The
+combativity award column is deliberately left out: it is a per-stage prize, not a jersey
+anyone holds. Flags come from the standings parsed elsewhere on the page or from the
+official provider's GC, matched by name, because the table writes most riders as bare
+links (`fillClassificationLeaderCountryCodes`, applied in the snapshot and again in
+`mergeStageRaceSnapshots`).
+
+The merge keeps whichever side has the field — only Wikipedia does — bounded by the
+same calendar rule as the GC (`isStageRaceProgressPlausible`). Unlike the GC, a list one
+stage *behind* the official provider is kept and labelled "Jersey holders after stage N"
+rather than dropped, because it contradicts nothing above it; when the stages match it
+reads simply "Jersey holders", and "Final jersey winners" on a finished race.
+`buildJerseyHoldersMarkup` renders it; `buildJerseySwatchMarkup` draws the jersey, with
+polka dots on white for the `polkadot` variants and an outlined, unfilled jersey for any
+colour name outside `JERSEY_FILL_COLOURS` — generic on purpose, not a guess. Tests:
+"extractClassificationLeadership resolves rowspan columns…" (real 2026 Vuelta fixture,
+stage 3 cancelled, every column spanned), "parseWikiTableGrid expands rowspan and
+colspan…", "mergeStageRaceSnapshots keeps the jersey holders…", "buildStageRaceCard lists
+the jersey holders…". Not yet read: the official providers' points/mountains tables
+(lavuelta.es and letour.fr publish them), which would update a few hours before Wikipedia
+on a live evening.
+
 ### Rendering contract worth preserving
 
 - The strip lists the **whole route**, with unraced stages disabled, so card height
@@ -654,10 +688,12 @@ They publish standings as plain wikitables captioned `General classification aft
 Stage N`. `extractClassificationTableGcSnapshots` reads these. Smaller races still use
 the template blocks, so both paths matter.
 
-**Do not read the classification-leadership table for GC.**
-It looks like an easy source and is a trap: its columns carry `rowspan`, so on any row
-after the first, cell index 2 is not the GC leader. It reported the wrong rider. Prefer
-the captioned wikitable, which also gives full standings rather than just a leader.
+**Read the classification-leadership table only through the grid.**
+Its columns carry `rowspan`, so on any row after the first, cell index 2 is not the GC
+leader — an index-based reader reported the wrong rider. `parseWikiTableGrid` expands
+the spans first and `extractClassificationLeadershipRows` reads the resolved columns;
+since 2026-09-04 that is what the card's jersey list and the leader-only GC fallback use.
+For the GC itself still prefer the captioned wikitable, which gives full standings.
 
 **Sub-minute time cells need padding before the shared normalizers.**
 `normalizeStandingGap`/`normalizeStandingTime` require a two-digit seconds field *and* a

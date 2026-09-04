@@ -1,0 +1,161 @@
+== Classification leadership ==
+{| class="wikitable" style="text-align:center; font-size:smaller; clear: both;"
+|+Classification leadership by stage
+|-
+! scope="col" style="width:2%;" | Stage
+! scope="col" style="width:13%;" | Winner
+! scope="col" style="width:13%;" | [[List of Vuelta a España general classification winners|General classification]]<br />{{cjersey|red|size=25px}}
+! scope="col" style="width:13%;" | [[Points classification in the Vuelta a España|Points classification]]<br />{{cjersey|dark green|size=25px}}
+! scope="col" style="width:13%;" | [[Mountains classification in the Vuelta a España|Mountains classification]]<br />{{cjersey|blue polkadot|size=25px}}
+! scope="col" style="width:13%;" | [[Young rider classification in the Vuelta a España|Young rider classification]]<br />{{cjersey|white|size=25px}}
+! scope="col" style="width:13%;" | [[Team classification in the Vuelta a España|Team classification]]<br />{{cjersey|red number|size=25px}}
+! scope="col" style="width:13%;" | [[Combativity award]]<br />{{cjersey|yellow number|size=25px}}
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 1|1]]
+| [[Tadej Pogačar]]
+| style="background:#FFE6E6;" rowspan="7"| [[Tadej Pogačar]]
+| style="background:#008000;" rowspan="6"| {{font colour|white|Tadej Pogačar|link=Tadej Pogačar}}{{efn|On stages 2–5, [[Ethan Hayter]] who was second in the points classification, wore the green jersey, because first placed [[Tadej Pogačar]] wore the red jersey as the leader of the general classification. On stage 6, [[Matthew Brennan (cyclist)|Matthew Brennan]] wore the green jersey for the same reason. On stage 7, [[Wout van Aert]] wore the green jersey for the same reason.}}
+| style="background:azure;" | [[Callum Thornley]]{{efn|Although there were no points awarded towards the mountains classification during the [[individual time trial]], the first polka dot jersey was awarded to the highest-placed rider who is not leading a classification.}}
+| style="background:white;" | [[Joshua Tarling]]
+| style="background:#E4B3AB;" rowspan="5"| {{UCI team code|UEX|2026}}
+| ''no award''
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 2|2]]
+| [[Matthew Brennan (cyclist)|Matthew Brennan]]
+| style="background:azure;" rowspan="2" | [[Koen Bouwman]]
+| style="background:white;" rowspan="2" | [[Matthew Brennan (cyclist)|Matthew Brennan]]
+| style="background:#FFCD5F;" | [[Ethan Hayter]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 3|3]]
+| Stage cancelled{{efn|name=stage 3|The stage was cancelled due to the weather conditions making it impossible to continue to Font-Romeu.}}
+| ''no award''
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 4|4]]
+| [[Tadej Pogačar]]
+| style="background:azure;" rowspan="4" | [[Tadej Pogačar]]{{efn|On stages 5 and 6 [[Lorenzo Fortunato]] who was second in the mountains classification, wore the polka dot jersey, because first placed [[Tadej Pogačar]] wore the red jersey as the leader of the general classification. On stage 7, [[Enric Mas]] wore the polka dot jersey for the same reason. On stage 8, [[Andreas Leknessund]] wore the polka dot jersey for the same reason.}}
+| rowspan="10" style="background:white;" | [[Oscar Onley]]
+| style="background:#FFCD5F;" | [[Tadej Pogačar]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 5|5]]
+| [[Matthew Brennan (cyclist)|Matthew Brennan]]
+| style="background:#FFCD5F;" | [[Ethan Hayter]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 6|6]]
+| [[Tadej Pogačar]]
+| rowspan="8" style="background:#E4B3AB;" | {{UCI team code|DCT|2026}}
+| style="background:#FFCD5F;" | [[Tadej Pogačar]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 7|7]]
+| [[Andreas Leknessund]]
+| rowspan="7" style="background:#008000;" | {{font colour|white|Wout van Aert|link=Wout van Aert}}
+| style="background:#FFCD5F;" | [[Wout van Aert]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 8|8]]
+| [[Bryan Coquard]]
+| rowspan="6" style="background:#FFE6E6;" | [[Enric Mas]]
+| style="background:azure;" | [[Andreas Leknessund]]
+| style="background:#FFCD5F;" | [[Sinuhé Fernández]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 9|9]]
+| [[Enric Mas]]
+| rowspan="5" style="background:azure;" | [[Santiago Buitrago]]
+| style="background:#FFCD5F;" | [[Pavel Sivakov]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 10|10]]
+| [[Bastien Tronchon]]
+| style="background:#FFCD5F;" | [[Michael Gogl]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 1 to Stage 11#Stage 11|11]]
+| [[Matthew Brennan (cyclist)|Matthew Brennan]]
+| style="background:#FFCD5F;" | [[Ethan Hayter]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 12|12]]
+| [[Jakob Omrzel]]
+| style="background:#FFCD5F;" | [[Wout van Aert|Wout Van Aert]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 13|13]]
+| [[Wout van Aert|Wout Van Aert]]
+| style="background:#FFCD5F;" | [[Andreas Kron]]
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 14|14]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 15|15]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 16|16]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 17|17]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 18|18]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 19|19]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 20|20]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! scope="row" | [[2026 Vuelta a España, Stage 12 to Stage 21#Stage 21|21]]
+| 
+| style="background:#FFE6E6;" | 
+| style="background:#008000;" | {{font colour|white| |link= }}
+| style="background:azure;" | 
+| style="background:white;" | 
+| style="background:#E4B3AB;" | 
+| style="background:#FFCD5F;" | 
+|-
+! colspan="2" | Final
+! style="background:red;" | {{font colour|white| |link= }}
+! style="background:#006400;" | {{font colour|white| |link= }}
+! style="background:#0094FF;" | {{font colour|white| |link= }}
+! style="background:#fff;" | 
+! style="background:#E42A19;" | {{font colour|white| |link= }}
+! style="background:#FFB927;" | 
+|}
+{{notelist|refs=
+}}

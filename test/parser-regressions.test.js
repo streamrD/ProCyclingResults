@@ -68,6 +68,10 @@ function loadParserExports() {
       fetchTourDeFranceFemmesOfficialSnapshot,
       fetchVueltaAEspanaOfficialSnapshot,
       extractClassificationTableGcSnapshots,
+      extractStageLeadershipGcSnapshots,
+      extractClassificationLeadership,
+      parseWikiTableGrid,
+      buildJerseyHoldersMarkup,
       parseAthleteDetails,
       cleanWikiText,
       buildRaceArticleQueries,
@@ -4520,4 +4524,192 @@ test("a stage podium shows each rider's finishing time and gap, deriving whichev
   assert.match(gc, /Enric Mas<\/span><span class="standing-gap">40:31:51<\/span>/);
   assert.match(gc, /Roglič<\/span><span class="standing-gap">\+01:45<\/span>/);
   assert.doesNotMatch(gc, /standing-delta/);
+});
+
+test("extractClassificationLeadership resolves rowspan columns to the jersey holders after the latest stage", () => {
+  const { extractClassificationLeadership, extractStageLeadershipGcSnapshots } = loadParserExports();
+  // The live 2026 Vuelta page as fetched on 2026-09-04: stages 1-13 raced, stage 3
+  // cancelled, and every classification column written with rowspan.
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-leadership-stage13.wikitext"), "utf8");
+  const teamNames = new Map([["DCT|2026", "Decathlon CMA CGM"]]);
+
+  const leaders = JSON.parse(JSON.stringify(extractClassificationLeadership(rawText, teamNames)));
+
+  assert.equal(leaders.stageNumber, 13);
+  assert.equal(leaders.stageLabel, "Stage 13");
+  assert.deepEqual(
+    leaders.entries.map((entry) => [entry.key, entry.label, entry.jersey, entry.rider]),
+    [
+      ["general", "General", "red", "Enric Mas"],
+      ["points", "Points", "dark green", "Wout van Aert"],
+      ["mountains", "Mountains", "blue polkadot", "Santiago Buitrago"],
+      ["young", "Young rider", "white", "Oscar Onley"],
+      ["team", "Team", "red number", "Decathlon CMA CGM"],
+    ],
+  );
+  // The combativity award is a per-stage prize, not a jersey.
+  assert.ok(!leaders.entries.some((entry) => /combativ/i.test(entry.label)));
+
+  // Every row resolves to the right column: on stage 2 the cell at index 2 is Koen
+  // Bouwman's mountains lead, while the GC is Pogačar's rowspan from stage 1.
+  const gcLeaders = JSON.parse(JSON.stringify(extractStageLeadershipGcSnapshots(rawText).map((entry) => [entry.stageNumber, entry.standings[0].rider])));
+  assert.deepEqual(gcLeaders.slice(0, 3), [
+    [1, "Tadej Pogačar"],
+    [2, "Tadej Pogačar"],
+    [3, "Tadej Pogačar"],
+  ]);
+  assert.deepEqual(gcLeaders[gcLeaders.length - 1], [13, "Enric Mas"]);
+  assert.equal(gcLeaders.length, 13);
+
+  // A team code the name map cannot resolve is left out rather than shown raw.
+  const unresolved = extractClassificationLeadership(rawText);
+  assert.ok(!unresolved.entries.some((entry) => entry.key === "team"));
+  assert.equal(unresolved.entries.length, 4);
+});
+
+test("extractStageRaceSnapshot carries the jersey holders with flags borrowed from the standings", () => {
+  const { extractStageRaceSnapshot } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "la-vuelta-femenina-stage1.wikitext"), "utf8");
+
+  const snapshot = JSON.parse(JSON.stringify(extractStageRaceSnapshot(rawText)));
+
+  assert.equal(snapshot.classificationLeaders.stageNumber, 1);
+  assert.deepEqual(snapshot.classificationLeaders.entries, [
+    { key: "general", label: "General", jersey: "red", rider: "Noemi Rüegg", countryCode: "SUI" },
+    { key: "points", label: "Points", jersey: "dark green", rider: "Noemi Rüegg", countryCode: "SUI" },
+    { key: "mountains", label: "Mountains", jersey: "blue polkadot", rider: "Maëva Squiban", countryCode: "FRA" },
+    { key: "young", label: "Young rider", jersey: "white", rider: "Eleonora Ciabocco" },
+  ]);
+});
+
+test("parseWikiTableGrid expands rowspan and colspan into a positional grid", () => {
+  const { parseWikiTableGrid } = loadParserExports();
+  const grid = parseWikiTableGrid(`{| class="wikitable"
+|-
+! A !! B !! C
+|-
+| rowspan="2" | a1
+| b1 || c1
+|-
+| b2
+| c2
+|-
+! colspan="2" | Final
+| c3
+|}`);
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(grid.map((row) => row.map((cell) => `${cell.content}${cell.spanned ? "*" : ""}`)))),
+    [
+      ["A", "B", "C"],
+      ["a1", "b1", "c1"],
+      ["a1*", "b2", "c2"],
+      ["Final", "Final", "c3"],
+    ],
+  );
+});
+
+test("mergeStageRaceSnapshots keeps the jersey holders and bounds them by the calendar", () => {
+  const { mergeStageRaceSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+  };
+  const official = {
+    totalStages: 21,
+    completedStages: 2,
+    latestStage: { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "Matthew Brennan", countryCode: "GBR" }] },
+    generalClassification: {
+      stageNumber: 2,
+      standings: [{ place: "1", rider: "Tadej Pogačar", countryCode: "SLO" }],
+    },
+    overallResult: [],
+  };
+  const parsed = {
+    totalStages: 21,
+    completedStages: 1,
+    stages: [{ number: 1, order: 1, label: "Stage 1", winner: "Tadej Pogačar", standings: [{ place: "1", rider: "Tadej Pogačar" }] }],
+    latestStage: { number: 1, label: "Stage 1", standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    generalClassification: { stageNumber: 1, standings: [{ place: "1", rider: "Tadej Pogačar" }] },
+    overallResult: [],
+    classificationLeaders: {
+      stageNumber: 1,
+      stageLabel: "Stage 1",
+      entries: [
+        { key: "general", label: "General", jersey: "red", rider: "Tadej Pogačar" },
+        { key: "young", label: "Young rider", jersey: "white", rider: "Joshua Tarling", countryCode: "GBR" },
+      ],
+    },
+  };
+
+  // Wikipedia one stage behind the provider: kept, labelled by its own stage, and the
+  // leader picks up the flag the provider's GC carries.
+  const merged = JSON.parse(JSON.stringify(mergeStageRaceSnapshots(official, parsed, race, new Date("2026-08-23T20:00:00.000Z"))));
+  assert.equal(merged.generalClassification.stageNumber, 2);
+  assert.equal(merged.classificationLeaders.stageNumber, 1);
+  assert.deepEqual(merged.classificationLeaders.entries[0], {
+    key: "general",
+    label: "General",
+    jersey: "red",
+    rider: "Tadej Pogačar",
+    countryCode: "SLO",
+  });
+
+  // A table claiming a stage the calendar has not reached is dropped outright.
+  const early = mergeStageRaceSnapshots(
+    official,
+    { ...parsed, classificationLeaders: { ...parsed.classificationLeaders, stageNumber: 5, stageLabel: "Stage 5" } },
+    race,
+    new Date("2026-08-23T20:00:00.000Z"),
+  );
+  assert.equal(early.classificationLeaders, undefined);
+});
+
+test("buildStageRaceCard lists the jersey holders under the general classification", () => {
+  const { buildStageRaceCard, buildJerseyHoldersMarkup } = loadParserExports();
+  const race = {
+    id: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    date: "22 August – 13 September 2026",
+    location: "Spain",
+    stageRace: {
+      totalStages: 21,
+      completedStages: 13,
+      stages: [{ number: 13, order: 13, label: "Stage 13", winner: "Wout van Aert", standings: [{ place: "1", rider: "Wout van Aert" }] }],
+      latestStage: { number: 13, label: "Stage 13", winner: "Wout van Aert", standings: [{ place: "1", rider: "Wout van Aert" }] },
+      generalClassification: { stageNumber: 13, standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP" }] },
+      overallResult: [],
+      classificationLeaders: {
+        stageNumber: 13,
+        stageLabel: "Stage 13",
+        entries: [
+          { key: "general", label: "General", jersey: "red", rider: "Enric Mas", countryCode: "ESP" },
+          { key: "points", label: "Points", jersey: "dark green", rider: "Wout van Aert", countryCode: "BEL" },
+          { key: "mountains", label: "Mountains", jersey: "blue polkadot", rider: "Santiago Buitrago" },
+          { key: "breakaway", label: "Breakaway", rider: "Diego Pablo Sevilla" },
+        ],
+      },
+    },
+  };
+
+  const html = buildStageRaceCard(race, { live: true });
+  const [, gcSection = ""] = html.split("Overall after stage 13");
+  assert.match(gcSection, /class="jersey-holders"/);
+  assert.match(gcSection, /Jersey holders</);
+  assert.equal((gcSection.match(/class="jersey-item"/g) || []).length, 4);
+  assert.match(gcSection, /<span class="jersey-classification">Points<\/span>\s*<span class="jersey-holder rider-name"><span class="country-flag" title="Belgium"/);
+  assert.match(gcSection, /aria-label="dark green jersey"/);
+  // Polka dots are drawn as dots on white; an unnamed jersey is an outlined blank.
+  assert.match(gcSection, /aria-label="blue polkadot jersey"[^]*?fill="#ffffff"[^]*?<circle[^>]*fill="#0a63c9"/);
+  assert.match(gcSection, /aria-label="jersey"[^]*?fill="none"[^>]*stroke-dasharray/);
+
+  // Labelled by stage only when it lags the GC, and as final once the race is over.
+  race.stageRace.classificationLeaders.stageNumber = 12;
+  race.stageRace.classificationLeaders.stageLabel = "Stage 12";
+  assert.match(buildJerseyHoldersMarkup(race), /Jersey holders after stage 12/);
+  assert.match(buildJerseyHoldersMarkup(race, { finalized: true }), /Final jersey winners/);
+  assert.equal(buildJerseyHoldersMarkup({ stageRace: { ...race.stageRace, classificationLeaders: null } }), "");
+  assert.ok(!buildStageRaceCard({ ...race, stageRace: { ...race.stageRace, classificationLeaders: null } }).includes("jersey-holders"));
 });
