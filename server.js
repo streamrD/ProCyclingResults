@@ -12846,27 +12846,46 @@ async function commitSiteContentToGitHub(pageId, markdown) {
     "user-agent": "ProCyclingResults site editor",
     "x-github-api-version": "2022-11-28",
   };
-  const current = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_CONTENT_BRANCH)}`, {
-    headers,
-    signal: AbortSignal.timeout(10000),
-  });
-  let sha = "";
-  if (current.ok) {
-    sha = (await current.json())?.sha || "";
-  } else if (current.status !== 404) {
-    return { committed: false, reason: `GitHub lookup failed (${current.status}).` };
+  const readSha = async () => {
+    const current = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_CONTENT_BRANCH)}`, {
+      headers: { ...headers, "cache-control": "no-cache" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (current.ok) {
+      return { sha: (await current.json())?.sha || "" };
+    }
+    if (current.status === 404) {
+      return { sha: "" };
+    }
+    return { error: `GitHub lookup failed (${current.status}).` };
+  };
+  const putContent = async (sha) =>
+    fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        message: `Update ${page.title} from the site editor`,
+        content: Buffer.from(markdown, "utf8").toString("base64"),
+        branch: GITHUB_CONTENT_BRANCH,
+        ...(sha ? { sha } : {}),
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+  // A 409 means the file's version moved between the read and the write — typically a
+  // save landing seconds after another one — so re-read the version and try once more.
+  let result;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const lookup = await readSha();
+    if (lookup.error) {
+      return { committed: false, reason: lookup.error };
+    }
+    result = await putContent(lookup.sha);
+    if (result.status !== 409) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  const result = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "content-type": "application/json" },
-    body: JSON.stringify({
-      message: `Update ${page.title} from the site editor`,
-      content: Buffer.from(markdown, "utf8").toString("base64"),
-      branch: GITHUB_CONTENT_BRANCH,
-      ...(sha ? { sha } : {}),
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
   if (!result.ok) {
     return { committed: false, reason: `GitHub commit failed (${result.status}).` };
   }
