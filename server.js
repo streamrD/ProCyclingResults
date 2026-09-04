@@ -9393,11 +9393,12 @@ function buildHtmlPage(data, view) {
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
   const seasonCalendarSection = buildSeasonCalendarSection(data.seasonCalendar, data);
   const heroSubheader = [
-    "TOP-FIVE RACE RESULTS",
-    "NATIONAL CHAMPIONS",
+    "RACE RESULTS",
     "SEASON CALENDAR",
-    "LATEST RACE NEWS",
-    "FEATURED STAGE RACES",
+    "WATCH THE FINISH",
+    "STAGE PROFILES",
+    "RACE NEWS",
+    "NATIONAL CHAMPIONSHIPS",
   ].join(" • ");
   const heroMenu = [
     ...competitionGroups,
