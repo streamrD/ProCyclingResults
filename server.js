@@ -9452,7 +9452,7 @@ function buildHtmlPage(data, view) {
     <meta name="twitter:title" content="Pro Cycling Results" />
     <meta name="twitter:description" content="Live race standings, recent results, national champions, and news coverage for the 2026 men's and women's UCI WorldTour." />
     <meta name="twitter:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
@@ -12550,7 +12550,7 @@ function buildWarmupPage() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
@@ -13110,7 +13110,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>${escapeHtml(page.title)} · Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>

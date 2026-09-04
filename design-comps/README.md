@@ -19,7 +19,8 @@ large and turned to mush small, so they were dropped rather than refined.
 
 | Mark | Character |
 | --- | --- |
-| `marks/mono.svg` | **Chosen.** No background plate; sits on the browser's own chrome |
+| `marks/cyclist.svg` | **Chosen on 2026-09-04.** The cyclist-emoji pose redrawn in the site palette: blue plate, red jersey, yellow helmet, white bike. Replaced `mono.svg`, which is kept below |
+| `marks/mono.svg` | Shipped 2026-08-06 to 2026-09-04. No background plate; sits on the browser's own chrome |
 | `marks/maillot-jaune.svg` | Navy on yellow. Highest contrast, sharpest at 16px |
 | `marks/rouge.svg` | White on UCI red. Loudest in a crowded tab bar |
 | `marks/squircle.svg` | App-icon shape, for a home-screen bookmark or PWA install |
@@ -27,7 +28,7 @@ large and turned to mush small, so they were dropped rather than refined.
 
 ## Swapping the favicon
 
-`marks/mono.svg` is a copy of what ships. To switch to a different mark, copy it over
+`marks/cyclist.svg` is a copy of what ships (the icon links carry `?v=2` for it). To switch to a different mark, copy it over
 `assets/favicon.svg` — the `<link rel="icon">` tags in `server.js` point at that fixed
 path and don't need touching.
 
