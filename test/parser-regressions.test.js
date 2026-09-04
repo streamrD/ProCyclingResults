@@ -104,6 +104,7 @@ function loadParserExports() {
       buildSeasonCalendar,
       buildSeasonCalendarSection,
       renderMarkdown,
+      cleanNationalChampionCell,
       isAuthorizedSiteEdit,
       buildSiteContentPage,
       buildSiteFooterLinks,
@@ -4969,4 +4970,13 @@ test("the release notes and about pages render from their committed markdown, wi
   assert.match(footer, /<a href="\/">Results<\/a>/);
   assert.match(footer, /<a href="\/release-notes">Release Notes<\/a>/);
   assert.match(footer, /<span aria-current="page">About<\/span>/);
+});
+
+test("cleanNationalChampionCell drops status words the index writes into undecided cells", () => {
+  const { cleanNationalChampionCell } = loadParserExports();
+  assert.equal(cleanNationalChampionCell("postponed"), "");
+  assert.equal(cleanNationalChampionCell("Cancelled"), "");
+  assert.equal(cleanNationalChampionCell("TBC"), "");
+  assert.equal(cleanNationalChampionCell("Filippo Ganna"), "Filippo Ganna");
+  assert.equal(cleanNationalChampionCell("Artem Schmidt"), "Artem Shmidt");
 });

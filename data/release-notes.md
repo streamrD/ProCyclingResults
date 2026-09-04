@@ -7,6 +7,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 - **National Championships rebuilt as an almanac.** Instead of nearly three hundred cards, the section now shows when the championships happen, whether the season is over, a handful of featured titles with full podiums, and one searchable row per federation grouped by continent. Type a country or a rider to find a champion.
 - **Jersey holders.** Each stage race's general classification now lists who holds every jersey, drawn from the race's classification leadership table.
 - **A new tag line** for the top of the page.
+- **Cleaner championship data.** A title the index marks as postponed or cancelled no longer shows those words where a champion's name belongs.
 
 ## 3 September 2026
 

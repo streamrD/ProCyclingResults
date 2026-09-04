@@ -1265,7 +1265,9 @@ function cleanNationalChampionCell(value) {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!cleaned || /^Row\s+\d+\s+-\s+Cell\b/i.test(cleaned)) {
+  // The index writes a status word into a cell when a title has not been decided —
+  // "postponed", "cancelled" — and those must not render as a champion's name.
+  if (!cleaned || /^Row\s+\d+\s+-\s+Cell\b/i.test(cleaned) || /^(postponed|cancell?ed|tbc|tbd|n\/a|not held|no race|none)$/i.test(cleaned)) {
     return "";
   }
 
