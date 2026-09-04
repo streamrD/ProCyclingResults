@@ -4922,6 +4922,8 @@ test("renderMarkdown handles the small subset the site pages use and escapes eve
     "---",
     "",
     "[bad](javascript:alert(1)) stays text",
+    "",
+    "> A lead line in larger type",
   ].join("\n"));
 
   assert.match(html, /<p>Intro line with <strong>bold<\/strong>, <em>italics<\/em>, <code>code<\/code> and a <a href="https:\/\/example.com\/a\?b=1&amp;c=2" target="_blank" rel="noreferrer">link<\/a>\.<\/p>/);
@@ -4930,6 +4932,7 @@ test("renderMarkdown handles the small subset the site pages use and escapes eve
   assert.match(html, /<hr \/>/);
   assert.match(html, /\[bad\]\(javascript:alert\(1\)\) stays text/);
   assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /<p class="site-lead">A lead line in larger type<\/p>/);
   assert.equal(renderMarkdown(""), "");
 });
 
@@ -4962,8 +4965,10 @@ test("the release notes and about pages render from their committed markdown, wi
   assert.match(notes, /<h3>4 September 2026<\/h3>/);
   assert.match(notes, /<h3>15–29 April 2026<\/h3>/);
   const about = buildSiteContentPage("about", fs.readFileSync(path.join(__dirname, "..", "data", "about.md"), "utf8"), { editable: false });
-  assert.match(about, /amateur cyclist purely for the love of the sport/);
-  assert.match(about, /Ambrose Bidon/);
+  assert.match(about, /<p class="site-lead">This site was developed and is being maintained by the Grupetto Committee purely for the love of the sport/);
+  for (const member of ["Ambrose Bidon", "Marguerite Lanterne", "Cornelius Sprocket", "Old Tom Chainwhip", "Isadora Échappée"]) {
+    assert.match(about, new RegExp(member));
+  }
   assert.equal(buildSiteContentPage("nope", "x"), "");
   // Footer links mark the current page and link the others.
   const footer = buildSiteFooterLinks("/about");

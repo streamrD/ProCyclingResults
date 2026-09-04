@@ -12786,6 +12786,13 @@ function renderMarkdown(markdown) {
       out.push("<hr />");
       continue;
     }
+    const lead = line.match(/^>\s+(.+)$/);
+    if (lead) {
+      flushParagraph();
+      flushList();
+      out.push(`<p class="site-lead">${renderMarkdownInline(lead[1])}</p>`);
+      continue;
+    }
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
     if (bullet) {
       flushParagraph();
@@ -12980,7 +12987,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       <div class="site-editor" data-site-editor data-site-page="${escapeHtml(pageId)}" hidden>
         <label class="site-editor-label" for="site-editor-text">Markdown for ${escapeHtml(page.title)}</label>
         <textarea id="site-editor-text" class="site-editor-text" spellcheck="true">${escapeHtml(markdown)}</textarea>
-        <p class="meta">Headings with #, bullets with -, **bold**, *italics* and [links](https://…) are supported. Saving publishes immediately.</p>
+        <p class="meta">Headings with #, bullets with -, a lead paragraph with &gt;, **bold**, *italics* and [links](https://…) are supported. Saving publishes immediately.</p>
         <div class="site-editor-actions">
           <button type="button" class="site-edit-button is-primary" data-site-save>Save</button>
           <button type="button" class="site-edit-button" data-site-cancel>Cancel</button>
@@ -13181,6 +13188,8 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .site-prose h3 { margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--uci-blue); font-size: 1.35rem; text-transform: uppercase; }
       .site-prose h4 { margin-top: 1.2rem; font-size: 1.1rem; }
       .site-prose p { margin: 0.8rem 0 0; }
+      .site-prose .site-lead { margin: 0; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; color: var(--uci-blue-deep); text-wrap: balance; }
+      .site-prose .site-lead + p { margin-top: 1.2rem; }
       .site-prose ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }
       .site-prose li { margin-top: 0.45rem; }
       .site-prose li::marker { color: var(--uci-blue-bright); }
