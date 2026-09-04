@@ -7957,17 +7957,27 @@ function buildStageRaceCard(race, options = {}) {
         <div class="detail-label">Stage results</div>
         <p class="meta">No completed stage result is available yet.</p>
       </div>`;
+  // With jersey holders, the podium and the jersey list share a two-column row on a
+  // card wide enough for both (a container query in .gc-columns), so the list adds no
+  // height; on a narrow card it stacks beneath the podium as a second block.
   const jerseyHolders = buildJerseyHoldersMarkup(race, { finalized: isFinalized });
+  const withJerseys = (mainMarkup) =>
+    jerseyHolders
+      ? `
+        <div class="gc-columns">
+          <div class="gc-podium">${mainMarkup}</div>${jerseyHolders}
+        </div>`
+      : mainMarkup;
   const gcContent = gcStandings.length > 0
     ? `
       <div class="card-subsection">
         <div class="detail-label">${escapeHtml(classificationLabel)}</div>
-        ${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}${jerseyHolders}
+        ${withJerseys(buildPodiumMarkup(gcStandings, { metricContext: "gc" }))}
       </div>`
     : `
       <div class="card-subsection">
         <div class="detail-label">Overall classification</div>
-        <p class="meta">The general classification is not available yet.</p>${jerseyHolders}
+        ${withJerseys(`<p class="meta">The general classification is not available yet.</p>`)}
       </div>`;
   const orderedContent = isFinalized
     ? `${gcContent}${stageContent}`
@@ -9472,10 +9482,81 @@ function buildHtmlPage(data, view) {
         white-space: nowrap;
       }
 
+      .stage-race-card {
+        container-type: inline-size;
+      }
+
+      .gc-columns {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+      }
+
       .jersey-holders {
         margin-top: 1rem;
         padding-top: 0.8rem;
         border-top: 1px dashed var(--line);
+      }
+
+      /* Beside the podium once the card can hold both: the swatch spans two lines,
+         the classification above the name, so the column stays under 10rem wide. The
+         query measures the card's content box, so 340px is a card about 390px wide;
+         the phone-width single column stays stacked. */
+      @container (min-width: 340px) {
+        .gc-columns {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 9.75rem);
+          column-gap: 0.8rem;
+        }
+
+        /* The podium's column is narrower here, so its riders flow inline too: the
+           flag stays with the name and the time follows on the same line or the next. */
+        .gc-columns .podium-rider {
+          display: inline;
+          line-height: 1.3;
+        }
+
+        .gc-columns .podium-rider .country-flag {
+          margin-right: 0.35rem;
+        }
+
+        .gc-columns .podium-rider .standing-gap {
+          margin-left: 0.4rem;
+        }
+
+        .gc-columns .jersey-holders {
+          align-self: stretch;
+          margin-top: 1rem;
+          padding: 0 0 0 0.9rem;
+          border-top: 0;
+          border-left: 1px dashed var(--line);
+        }
+
+        .gc-columns .jersey-list {
+          gap: 0.6rem;
+        }
+
+        .gc-columns .jersey-item {
+          grid-template-columns: 1.4rem minmax(0, 1fr);
+          grid-template-rows: auto auto;
+          column-gap: 0.5rem;
+          row-gap: 0.05rem;
+        }
+
+        .gc-columns .jersey-swatch {
+          grid-row: 1 / span 2;
+          width: 1.4rem;
+          height: 1.4rem;
+        }
+
+        .gc-columns .jersey-classification {
+          font-size: 0.66rem;
+          line-height: 1.1;
+        }
+
+        .gc-columns .jersey-holder {
+          font-size: 0.88rem;
+          line-height: 1.2;
+        }
       }
 
       .jersey-list {
@@ -9509,9 +9590,17 @@ function buildHtmlPage(data, view) {
         text-transform: uppercase;
       }
 
+      /* Inline flow rather than the flex row the podium uses: in a narrow column a flex
+         flag would sit alone on its line while the name wraps beneath it. */
       .jersey-holder {
+        display: inline;
         font-size: 0.98rem;
         font-weight: 700;
+        line-height: 1.25;
+      }
+
+      .jersey-holder .country-flag {
+        margin-right: 0.35rem;
       }
 
       .race-finish-link {
