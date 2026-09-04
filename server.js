@@ -9308,24 +9308,21 @@ function buildSeasonCalendarSection(calendar, data = {}) {
     .join("");
 
   return `
-    <section class="section season-section" id="season-calendar" data-season-calendar>
+    <section class="section season-section is-expanded" id="season-calendar" data-season-calendar hidden>
       <div class="season-head">
         <div>
           <div class="section-tag">Season at a glance</div>
           <h2>Where we are in ${escapeHtml(String(calendar.year))}</h2>
           <p class="meta season-summary">${escapeHtml(summary)}</p>
         </div>
-        <button type="button" class="season-toggle" data-season-toggle aria-expanded="false" aria-controls="season-calendar-full">
-          <span data-season-toggle-label>Open the full calendar</span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"></path></svg>
+        <button type="button" class="season-toggle" data-season-close aria-label="Close the season calendar">
+          <span>Close calendar</span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>
         </button>
       </div>
       <div class="season-body">
         <div class="season-main">
-          <div class="season-strip" data-season-compact>
-            ${buildSeasonCalendarSvg(calendar, { compact: true })}
-          </div>
-          <div class="season-full" id="season-calendar-full" data-season-full hidden>
+          <div class="season-full" data-season-full>
             <div class="season-series-row" role="group" aria-label="Series">${seriesChips}</div>
             ${fullViews}
             <div class="season-legend">${legend}</div>
@@ -9403,7 +9400,7 @@ function buildHtmlPage(data, view) {
   const heroMenu = [
     ...competitionGroups,
     { id: "national-championships", label: "National Championships" },
-    { id: "season-calendar", label: "Season Calendar" },
+    { id: "season-calendar", label: "Season Calendar", badge: "New", opensSeasonCalendar: true },
   ]
     .map(
       (group) => `
@@ -9417,7 +9414,7 @@ function buildHtmlPage(data, view) {
               >
                 ${escapeHtml(group.label)}
               </button>`
-            : `<a class="hero-menu-link" href="#${escapeHtml(group.id)}">${escapeHtml(group.label)}</a>`
+            : `<a class="hero-menu-link${group.badge ? " is-new" : ""}" href="#${escapeHtml(group.id)}"${group.opensSeasonCalendar ? " data-season-open" : ""}>${escapeHtml(group.label)}${group.badge ? `<span class="hero-menu-badge">${escapeHtml(group.badge)}</span>` : ""}</a>`
         }`,
     )
     .join("");
@@ -9703,6 +9700,22 @@ function buildHtmlPage(data, view) {
         text-transform: uppercase;
         transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
         cursor: pointer;
+      }
+
+      .hero-menu-link.is-new {
+        border-color: rgba(255, 204, 0, 0.7);
+        background: linear-gradient(180deg, rgba(255, 204, 0, 0.28), rgba(255, 204, 0, 0.12));
+      }
+
+      .hero-menu-badge {
+        margin-left: 0.5rem;
+        padding: 0.12rem 0.45rem;
+        border-radius: 999px;
+        background: var(--uci-yellow);
+        color: var(--uci-blue-deep);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        line-height: 1.2;
       }
 
       .hero-menu-link:hover {
@@ -10339,6 +10352,10 @@ function buildHtmlPage(data, view) {
         padding: 1.1rem 1.35rem;
       }
 
+      .season-section[hidden] {
+        display: none;
+      }
+
       .season-head {
         display: flex;
         justify-content: space-between;
@@ -10373,7 +10390,6 @@ function buildHtmlPage(data, view) {
         min-width: 0;
       }
 
-      .season-strip[hidden],
       .season-full[hidden],
       .season-full-view[hidden] {
         display: none;
@@ -10567,14 +10583,6 @@ function buildHtmlPage(data, view) {
 
       .season-month {
         margin-top: 0.9rem;
-      }
-
-      .season-month[data-season-past] {
-        display: none;
-      }
-
-      .season-section.is-expanded .season-month[data-season-past] {
-        display: block;
       }
 
       .season-month-head {
@@ -11810,7 +11818,6 @@ function buildHtmlPage(data, view) {
           flex-basis: 100%;
         }
 
-        .season-strip,
         .season-full {
           display: none;
         }
@@ -12033,43 +12040,48 @@ function buildHtmlPage(data, view) {
         applyFilters();
       }
 
-      // Season calendar: the compact strip swaps for the full calendar in place, bars
-      // carry their own tooltip, and a click on a race whose card is hidden behind
-      // "Load more races" reveals it before the browser jumps.
+      // Season calendar: hidden until the hero button or a #season-calendar link opens it,
+      // so the day's results stay first. It closes from its own header, bars carry their
+      // own tooltip, and a click on a race whose card is hidden behind "Load more races"
+      // reveals it before the browser jumps.
       function bindSeasonCalendar() {
         const section = document.querySelector("[data-season-calendar]");
         if (!section) {
           return;
         }
-        const toggle = section.querySelector("[data-season-toggle]");
-        const toggleLabel = section.querySelector("[data-season-toggle-label]");
-        const compact = section.querySelector("[data-season-compact]");
-        const full = section.querySelector("[data-season-full]");
         const tooltip = section.querySelector("[data-season-tooltip]");
 
-        const setExpanded = (expanded) => {
-          section.classList.toggle("is-expanded", expanded);
-          if (compact) {
-            compact.hidden = expanded;
+        const openCalendar = () => {
+          section.hidden = false;
+          section.classList.add("is-expanded");
+          if (window.location.hash !== "#season-calendar") {
+            window.history.replaceState(null, "", "#season-calendar");
           }
-          if (full) {
-            full.hidden = !expanded;
-          }
-          if (toggle) {
-            toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-          }
-          if (toggleLabel) {
-            toggleLabel.textContent = expanded ? "Close the full calendar" : "Open the full calendar";
+          section.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+        const closeCalendar = () => {
+          section.hidden = true;
+          if (window.location.hash === "#season-calendar") {
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
           }
         };
 
-        if (toggle) {
-          toggle.addEventListener("click", () => {
-            setExpanded(!section.classList.contains("is-expanded"));
+        Array.prototype.forEach.call(document.querySelectorAll("[data-season-open]"), (link) => {
+          link.addEventListener("click", (event) => {
+            event.preventDefault();
+            openCalendar();
           });
-        }
+        });
+        Array.prototype.forEach.call(section.querySelectorAll("[data-season-close]"), (button) => {
+          button.addEventListener("click", closeCalendar);
+        });
+        window.addEventListener("hashchange", () => {
+          if (window.location.hash === "#season-calendar") {
+            openCalendar();
+          }
+        });
         if (window.location.hash === "#season-calendar") {
-          setExpanded(true);
+          openCalendar();
         }
 
         Array.prototype.forEach.call(section.querySelectorAll("[data-season-series]"), (chip) => {

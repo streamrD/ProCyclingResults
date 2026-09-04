@@ -273,22 +273,27 @@ real 2026 data: https://claude.ai/code/artifact/b690e73e-e87a-4e6e-a7a2-e1883bb8
 ## Season Calendar
 
 Added 2026-09-04. A "Season at a glance" section sits between the hero and the men's
-WorldTour section so the daily results stay one scroll away.
+WorldTour section but is `hidden` until opened: the hero's "Season Calendar" button
+(with a "New" badge, `data-season-open`) or a `#season-calendar` link reveals it and
+scrolls to it, and a "Close calendar" button in its header hides it again. The product
+rule behind this is that the day's results always lead and nothing calendar-related
+occupies space until a reader asks for it.
 
 - Data: `buildSeasonCalendar(allRaces, todayUtc)` in `buildRaceData` turns
   `metadata.allRaces` (both WorldTours, already fetched from the season pages) into the
   `seasonCalendar` payload field — no new upstream request. Status is by date; tier is
   duration plus the hand-curated `SEASON_CALENDAR_GRAND_TOURS` and
   `SEASON_CALENDAR_MONUMENTS` sets. Nothing else is given a tier on purpose.
-- Rendering: `buildSeasonCalendarSection` draws a compact strip (both series, no labels)
-  and three full views (both / men / women) with `buildSeasonCalendarSvg`, plus a
-  month-grouped list for phones (`buildSeasonMonthListMarkup`, live races pinned once,
-  finished months folded until expanded) and an "Up next" column. Bars are packed into
+- Rendering: `buildSeasonCalendarSection` draws three full views (both / men / women)
+  with `buildSeasonCalendarSvg`, plus a month-grouped list for phones
+  (`buildSeasonMonthListMarkup`, live races pinned once, finished months folded to one
+  line) and an "Up next" column. The SVG builder's `compact` option is unused since the
+  under-hero strip was dropped the same day; it stays for a future teaser. Bars are packed into
   rows by `packSeasonCalendarRows`, which reserves label width so a Grand Tour label can
   push the next race down a row instead of overlapping it. The live bar fills to today.
 - Links: a bar is an SVG `<a>` to `#race-<slug>` when the race has a card on the page
   (`createRaceAnchorId`, stamped on every card), otherwise a focusable `<g>`. The inline
-  `bindSeasonCalendar` handles the expand toggle, series chips, the tooltip fed from
+  `bindSeasonCalendar` handles opening and closing, series chips, the tooltip fed from
   `data-tip-*` attributes, and revealing a hidden "Load more" slot before the jump.
 - Motion: bars draw in via `transform-box: fill-box` scaleX with a per-bar `--i` delay;
   the today marker pulses; both stop under `prefers-reduced-motion`.

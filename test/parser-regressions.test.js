@@ -4878,7 +4878,10 @@ test("buildSeasonCalendarSection links bars to cards on the page, pins live race
   assert.match(markup, /Nationals week · Europe &amp; N\. America/);
   // Three full views plus the compact strip.
   assert.equal((markup.match(/data-season-view="/g) || []).length, 3);
-  assert.match(markup, /data-season-compact/);
+  // Hidden until opened from the hero button, closable from its own header.
+  assert.match(markup, /data-season-calendar hidden>/);
+  assert.match(markup, /data-season-close/);
+  assert.doesNotMatch(markup, /data-season-compact/);
   // Phone list: live pinned once, August folded away as finished, October open.
   const monthList = markup.slice(markup.indexOf("data-season-months"), markup.indexOf("</section>"));
   assert.equal((monthList.match(/Vuelta a España/g) || []).length, 1);
