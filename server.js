@@ -11414,18 +11414,23 @@ function buildHtmlPage(data, view) {
       }
 
       /* The news line at the foot of a race card: label, newest headline, arrow.
-         Opens a short list in place; the group's coverage block stays the full
-         reader. The headline runs on one line on a wide card and two on a phone. */
+         Opens the race's stories in place. The track is minmax(0, 1fr) and the
+         button min-width 0 because a headline never breaks: without them a narrow
+         recent-results card widens to the headline and overflows its column. The
+         headline wraps to at most two lines instead. */
       .race-news {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.5rem;
+        min-width: 0;
       }
 
       .race-news-ticker {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 0.5rem;
         width: 100%;
+        min-width: 0;
         margin: 0;
         padding: 0.5rem 0.75rem;
         border: 1px solid var(--line-strong);
@@ -11452,6 +11457,7 @@ function buildHtmlPage(data, view) {
 
       .race-news-ticker-label {
         flex: none;
+        padding-top: 0.2rem;
         font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
         font-size: 0.72rem;
         font-weight: 800;
@@ -11462,9 +11468,11 @@ function buildHtmlPage(data, view) {
 
       .race-news-ticker-text {
         min-width: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
       }
 
       .race-news-ticker-text strong {
@@ -11472,6 +11480,8 @@ function buildHtmlPage(data, view) {
       }
 
       .race-news-ticker-arrow {
+        flex: none;
+        align-self: center;
         margin-left: auto;
         font-weight: 800;
         color: var(--uci-blue);
@@ -11482,6 +11492,7 @@ function buildHtmlPage(data, view) {
       }
 
       .race-news-drawer {
+        min-width: 0;
         margin: 0;
         padding: 0.6rem 0.75rem 0.7rem;
         border: 1px solid var(--line);
@@ -11531,24 +11542,9 @@ function buildHtmlPage(data, view) {
         font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.2;
+        overflow-wrap: anywhere;
       }
 
-      @media (max-width: 720px) {
-        .race-news-ticker {
-          align-items: flex-start;
-        }
-
-        .race-news-ticker-label {
-          padding-top: 0.2rem;
-        }
-
-        .race-news-ticker-text {
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          white-space: normal;
-        }
-      }
 
       .stage-panel-next .stage-panel-meta {
         margin-bottom: 0.55rem;

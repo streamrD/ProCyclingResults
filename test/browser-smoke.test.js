@@ -72,7 +72,7 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
   const switcher = buildStageSwitcherMarkup(race, { live: true });
   const news = buildRaceNewsMarkup(race, {
     articles: [
-      { title: "Van Aert wins Vuelta stage 13", publisher: "Reuters", url: "https://example.com/a", publishedAt: "Fri, 04 Sep 2026 08:38:00 GMT", score: 50 },
+      { title: "Van Aert wins Vuelta stage 13 as the breakaway holds off the peloton on a scorching day into Loja", publisher: "Reuters", url: "https://example.com/a", publishedAt: "Fri, 04 Sep 2026 08:38:00 GMT", score: 50 },
       { title: "Van Aert powers to victory", publisher: "BBC", url: "https://example.com/b", publishedAt: "Fri, 04 Sep 2026 10:00:00 GMT", score: 40 },
     ],
   });
@@ -94,6 +94,10 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
     newsToggle.click();
     out.newsOpen = !document.querySelector('.race-news-drawer').hidden && newsToggle.getAttribute('aria-expanded') === 'true';
     out.newsItems = document.querySelectorAll('.race-news-list li').length;
+    // A narrow recent-results card must not widen to the headline: nothing may
+    // overflow the card with the list open.
+    const narrow = document.getElementById('narrow');
+    out.newsOverflow = Math.max(narrow.scrollWidth - narrow.clientWidth, document.querySelector('.race-news').getBoundingClientRect().right - narrow.getBoundingClientRect().right);
     newsToggle.click();
     out.newsClosedAgain = document.querySelector('.race-news-drawer').hidden;
 
@@ -130,7 +134,7 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
   `;
   return `<!doctype html><meta charset="utf-8"><style>${style}</style>
 <body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));${setup}</script>
-<main>${switcher}${news}</main><pre id="smoke"></pre>
+<main>${switcher}<article class="card" id="narrow" style="width: 300px">${news}</article></main><pre id="smoke"></pre>
 <script>${script}</script>
 <script>${customProbe || probe}</script>`;
 }
@@ -175,6 +179,7 @@ test("the stage card's client script works in a real browser", (t) => {
   assert.equal(out.newsClosed, true);
   assert.equal(out.newsOpen, true);
   assert.equal(out.newsItems, 2);
+  assert.ok(out.newsOverflow <= 0, `the news line overflows a narrow card by ${out.newsOverflow}px`);
   assert.equal(out.newsClosedAgain, true);
   // Stage 12 and the stage 13 preview both carry a measured profile (the preview is
   // seeded from data/stage-profiles.json), and the preference applies to every one.
