@@ -26,6 +26,8 @@ Do not assume prior chat history is available or needed. Treat `README.md` as th
 - `README.md`: full technical handoff
 - `test/parser-regressions.test.js`: existing regression coverage
 - `data/static-stage-race-snapshots.json`: bounded fallback data for selected stage races
+- `data/about.md`, `data/release-notes.md`: the editable site pages (the maintainer edits them on the live site; pull before touching them)
+- `data/continent-map.json`: the championships world map, generated — never hand-edit; rerun `npm run refresh:continent-map`
 - `scripts/benchmark-load.js`: readiness and warmed-response benchmarking
 - `handoff.md`: cross-reference plus, for stage-race work, its "Stage Results Feature Map" and "Open Threads" sections
 
@@ -67,6 +69,10 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - Jersey holders under the GC come from the Wikipedia article's "Classification leadership" table, read through `parseWikiTableGrid` because its cells span rows. Never read that table's cells by index. The combativity column is excluded on purpose. See item 7 of "Stage Results Feature Map" in `handoff.md`.
 - Stage cards draw a real elevation profile only where an organiser publishes a trace (komoot embeds on ASO sites, currently the Vuelta). Anything else must look obviously generic — a pictogram plus a "no profile available" note — never a plausible silhouette. That is a product decision made on 2026-09-03; see "Stage Results Feature Map" in `handoff.md` before touching `buildStageProfileMarkup`.
 - `/release-notes` and `/about` render `data/release-notes.md` and `data/about.md`. When shipping a user-visible change, add a dated entry to the release notes in plain language. The maintainer can also edit both pages in place on the live site (`SITE_EDIT_TOKEN`, optional `GITHUB_CONTENT_TOKEN` to commit), so pull before editing those files by hand.
+- The homepage client script sits inside a server template literal and must not contain `${` — the smoke test fails the build if it does. Use string concatenation and data attributes. The VM test harness also lacks `__dirname` and `Buffer`; resolve data paths inside functions and avoid `Buffer` in code the tests reach.
+- Always `git pull --rebase origin main` before pushing: the site editor commits to `main` whenever the maintainer saves a page.
+- After pushing, verify on production: poll `/api/build-info` for your SHA, wait out the warm-up, then curl what you changed. See "Process Lessons From The 2026-09-04 Session" in `handoff.md`.
+- Share paths `/calendar` and `/championships` serve the results page with their own link preview; URL fragments never reach the server, so do not try to key previews off `#section` links.
 - A fix only reaches the product when it is pushed to `main`; Railway deploys from there. If the user reports the site is wrong, check what the deployed instance returns before re-debugging local code — they are usually looking at production, not your working tree.
 
 ## Validation

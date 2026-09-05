@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-04 (season calendar and championships almanac)
+Updated: 2026-09-04 (season calendar, championships almanac and map, editable pages, share previews)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -73,14 +73,21 @@ No `node_modules`, package lockfile, database, build output, or hidden frontend 
 │   ├── og-championships.jpg
 │   └── fonts/
 ├── data/
+│   ├── about.md
+│   ├── release-notes.md
+│   ├── continent-map.json
+│   ├── stage-profiles.json
 │   └── static-stage-race-snapshots.json
 ├── design-comps/
 │   ├── favicon-directions.html
 │   ├── marks/
 │   └── README.md
 ├── scripts/
-│   └── benchmark-load.js
+│   ├── benchmark-load.js
+│   ├── build-continent-map.js
+│   └── refresh-stage-profiles.js
 └── test/
+    ├── browser-smoke.test.js
     ├── parser-regressions.test.js
     └── fixtures/
 ```
@@ -90,12 +97,15 @@ Primary file responsibilities:
 - `server.js`: all runtime logic, data fetching, parsing, caching, rendering, routing, and server startup.
 - `test/parser-regressions.test.js`: Node test suite plus VM-based export harness for testing internal functions without starting the server.
 - `data/static-stage-race-snapshots.json`: bounded fallback snapshots for selected stage races when upstream live data is sparse.
+- `data/stage-profiles.json`: committed elevation traces (see "Stage profiles").
+- `data/continent-map.json`: the championships world map, built by `scripts/build-continent-map.js` (see "National Championships UX State").
+- `data/about.md`, `data/release-notes.md`: the two editable site pages. The maintainer edits these on the live site, and every save is a commit to `main` by the GitHub token — pull before touching them by hand (see "Editable Site Pages").
 - `archive/proseries-europe-tour-sections.js`: archived configs for retired ProSeries and Europe Tour sections.
 - `scripts/benchmark-load.js`: cold-readiness and warmed endpoint timing checks.
 - `assets/fonts/*`: local Manrope and Barlow Semi Condensed font files.
 - `assets/og-default.jpg`, `assets/og-calendar.jpg`, `assets/og-championships.jpg`: link-preview images (1200×630) for `/`, `/calendar` and `/championships`, rendered from the site's own visuals. `SHARE_VIEWS` in `server.js` maps paths to them.
-- `assets/favicon.svg`: site favicon, linked from both document heads. Carries its own `prefers-color-scheme` rule because it has no background plate.
-- `design-comps/`: design explorations kept with the code — the favicon comparison page and all five candidate marks. See its README before swapping the favicon; assets are served immutable for a year, so a replacement at the same path needs a version query.
+- `assets/favicon.svg`: site favicon (the cyclist-emoji pose in the site palette, on a blue plate, since 2026-09-04), linked from every document head with `?v=2`. A replacement at the same path needs a new version query because assets are cached for a year.
+- `design-comps/`: design explorations kept with the code — the favicon comparison page and all six marks (the shipping `cyclist.svg` plus five earlier candidates). See its README before swapping the favicon; assets are served immutable for a year, so a replacement at the same path needs a version query.
 - `README.md`: durable architecture and runbook.
 - `AGENTS.md`: fast-start operating guide for agents.
 - `handoff.md`: this cross-reference and audit snapshot.
@@ -716,6 +726,20 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   endpoint latency; not done because nobody asked.
 - **`BUILD_INFO` was not touched** by this work and remains manual.
 
+### Added 2026-09-04
+
+- **Championship dates.** Confirmed dates exist for two federations. Wikipedia's
+  "2026 national road cycling championships" page appears to list dates and venues per
+  federation; if its table checks out, a small parser there would fill the schedule
+  strip and let championships appear on the season calendar. Unverified.
+- **Championships map on phones.** Hidden under 720px; the grouped list stands alone.
+  A tap-friendly version was not attempted.
+- **Phone-width overflow** (see Known Sharp Edges) predates today's work.
+- **Season calendar teaser.** The compact strip was cut; `buildSeasonCalendarSvg`
+  keeps its `compact` option in case a small under-hero teaser ever earns its place.
+- **Link previews are cached** by Slack, iMessage and X. After changing an image,
+  expect old previews to linger unless the platform's debugger is used.
+
 ## Where Cold Start Actually Goes
 
 Profiled 2026-08-23. Read this before optimizing anything on the warm-up path — the
@@ -980,7 +1004,58 @@ stage that has not happened, so the two carry different titles.
 - Retired section support still exists as hooks and archived config, but there are no active deferred groups.
 - YouTube finish-video search and official providers (e.g. letour.fr) depend on third-party page structure; expect occasional parser drift there too.
 - There is no schema validation for upstream payloads.
+- The hero and page overflow a 390px viewport in headless Chrome, on production as well as locally. Noticed on 2026-09-04 while checking the season calendar's phone layout; not caused by it and not yet fixed.
+- Every save from the site editor is a commit to `main` and therefore a Railway redeploy (about 30s, then a short warm-up during which `/` serves the warm-up page and `/api/homepage-data` returns 202). Two saves within seconds can make the second one hit a GitHub 409; the server re-reads the file version and retries once.
+- When you push, another commit may already be on `origin/main` from the site editor. Always `git pull --rebase origin main` before `git push`; a hand edit to `data/release-notes.md` can conflict with an edit the maintainer made on the site.
 - CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
+
+## Process Lessons From The 2026-09-04 Session
+
+The day added the season calendar, the championships almanac and map, the editable
+site pages, share paths with link previews and a new favicon. What made it go well:
+
+- **Mock before building, with real data and the real stylesheet.** Every visual
+  feature started as an artboard on a design canvas rendered from the live payload
+  (https://claude.ai/code/artifact/b690e73e-e87a-4e6e-a7a2-e1883bb8698c). The
+  maintainer chose from comps and refined ("group by continent", "close it unless
+  clicked"), and implementation then had no open design questions. Low-fi sketches
+  would not have earned the same decisions; a fake-looking comp would have been
+  rejected outright (see the honest-graphics rule under "Stage profiles").
+- **Measure the problem before redesigning it.** The championships section was 98 rows
+  of cards, about 29 screens, and 290 of 293 cards carried one name and "TBD". Those
+  numbers, not taste, justified the almanac.
+- **Results first, always.** The calendar strip under the hero was cut the same day it
+  shipped because it pushed the day's results down. Anything new that is not a result
+  should be closed until asked for.
+- **Verify on production after every push.** `git push` → poll `/api/build-info` for
+  the SHA (about 30s) → poll `/` until it is past warm-up (about 10s more) → `curl` the
+  thing you changed. Railway deploys straight from `main`, so a green test run is not
+  the finish line.
+- **Fragments never reach the server.** `/#season-calendar` cannot get its own link
+  preview; that is why `/calendar` and `/championships` exist.
+
+Traps that cost time:
+
+- The VM test harness runs `server.js` without `__dirname` or `Buffer`. Resolve data
+  paths lazily inside functions (`getSiteContentDir`) and hash before
+  `crypto.timingSafeEqual` instead of comparing `Buffer`s; a top-level
+  `path.join(__dirname, …)` breaks every test at load.
+- The homepage client script lives inside a server template literal, and
+  `test/browser-smoke.test.js` fails the build if it contains any `${`. Write client
+  code with string concatenation and data attributes; put server values on elements,
+  never inline into the script.
+- The smoke test takes the *first* `<style>` block in `server.js` as the site stylesheet.
+  Any new page builder with its own `<style>` must sit after `buildHtmlPage`.
+- `SVGElement` has no `.click()` in Chrome. To exercise an SVG control from a headless
+  check, dispatch `new MouseEvent("click", { bubbles: true })`.
+- A cheap way to test a client behaviour without the browser extension: save the
+  rendered page, `sed` a `<script>` into `</head>` that performs the interaction and
+  writes the outcome into `document.title`, then `--dump-dom` and grep the title.
+- Natural Earth rings close on their first point, so a plain Douglas–Peucker pass
+  collapses every polygon to nothing; split each ring at the point farthest from its
+  start before simplifying.
+- The Cyclingnews index writes "postponed" / "cancelled" into a champion cell; the
+  parser now treats those as no result.
 
 ## Suggested First Checks For A New Agent
 

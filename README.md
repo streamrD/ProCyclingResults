@@ -74,16 +74,22 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 ├── archive/
 │   └── proseries-europe-tour-sections.js
 ├── data/
+│   ├── about.md
+│   ├── release-notes.md
+│   ├── continent-map.json
+│   ├── stage-profiles.json
 │   └── static-stage-race-snapshots.json
 ├── design-comps/
 │   ├── favicon-directions.html
-│   ├── marks/
+│   ├── marks/            (cyclist.svg ships; five earlier candidates kept)
 │   └── README.md
 ├── handoff.md
 ├── package.json
 ├── README.md
 ├── scripts/
-│   └── benchmark-load.js
+│   ├── benchmark-load.js
+│   ├── build-continent-map.js
+│   └── refresh-stage-profiles.js
 ├── server.js
 └── test/
     ├── parser-regressions.test.js
