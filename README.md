@@ -67,7 +67,9 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 .
 ├── assets/
 │   ├── favicon.svg
-│   ├── og-image.jpg
+│   ├── og-default.jpg
+│   ├── og-calendar.jpg
+│   ├── og-championships.jpg
 │   └── fonts/
 ├── archive/
 │   └── proseries-europe-tour-sections.js
@@ -134,6 +136,10 @@ There is currently:
   Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
 - `/api/race-stages?race=<race id>`
   Returns `{ raceId, html }` with a re-rendered stage switcher for one finished stage race, after reading its companion stage articles. The id must match a race already in the homepage payload (`findStageRaceById`), so it cannot be used to fetch an arbitrary Wikipedia page; anything else returns `404`.
+- `/calendar` and `/championships`
+
+  Share paths. Each serves the same results page as `/` (and the same warm-up page while data loads) with its own link-preview image and description from `SHARE_VIEWS`, then jumps to its section once the page loads and settles on the `/#section` URL. They exist because a URL fragment never reaches the server, so `/#season-calendar` cannot get a different preview from `/`. Previews: `/assets/og-default.jpg` (a Vuelta stage profile), `/assets/og-calendar.jpg` (the timeline) and `/assets/og-championships.jpg` (the map), all 1200×630, all rendered from the site's real visuals; `buildShareMetaTags()` writes the Open Graph and Twitter tags on every page.
+
 - `/release-notes` and `/about`
 
   Server-rendered pages built from `data/release-notes.md` and `data/about.md` through a small in-house Markdown renderer (`renderMarkdown`: headings, paragraphs, bullets, rules, bold, italics, inline code and http(s) or site-relative links; everything HTML-escaped first). When `SITE_EDIT_TOKEN` is set the page carries an "Edit this page" control.
@@ -574,7 +580,7 @@ There is still no frontend framework and no SPA state model. The browser only fe
 ## Static Assets
 
 Committed static assets are the font files under `assets/fonts`, the Open Graph image
-`assets/og-image.jpg`, and `assets/favicon.svg`.
+the three `assets/og-*.jpg` link-preview images, and `assets/favicon.svg`.
 
 The favicon is a single SVG (a rider and bike in UCI blue and red) linked from both
 document heads — the main page and `buildWarmupPage`, which is what a cold instance

@@ -104,6 +104,9 @@ function loadParserExports() {
       buildSeasonCalendar,
       buildSeasonCalendarSection,
       renderMarkdown,
+      getShareView,
+      buildShareMetaTags,
+      SHARE_VIEWS,
       buildNationalChampionshipMapMarkup,
       CONTINENT_MAP_DATA,
       cleanNationalChampionCell,
@@ -4957,6 +4960,8 @@ test("the release notes and about pages render from their committed markdown, wi
     const readOnly = buildSiteContentPage(pageId, markdown, { editable: false });
     assert.match(readOnly, new RegExp(`<title>${SITE_CONTENT_PAGES[pageId].title} · Pro Cycling Results</title>`));
     assert.match(readOnly, /data-site-prose/);
+    assert.match(readOnly, /property="og:image" content="https:\/\/procyclingresults\.up\.railway\.app\/assets\/og-default\.jpg"/);
+    assert.match(readOnly, /property="og:url" content="https:\/\/procyclingresults\.up\.railway\.app\/(about|release-notes)"/);
     assert.doesNotMatch(readOnly, /data-site-editor|\/api\/site-content/);
     const editable = buildSiteContentPage(pageId, markdown, { editable: true });
     assert.match(editable, /data-site-editor/);
@@ -5028,4 +5033,22 @@ test("buildNationalChampionshipMapMarkup shades countries by the almanac's own s
   assert.match(markup, /<circle class="national-map-dot is-champion" data-has-meitt="1" cx="[\d.]+" cy="[\d.]+" r="4"><title>Bermuda<\/title>/);
   assert.match(markup, /data-national-map-tooltip/);
   assert.equal(buildNationalChampionshipMapMarkup([], null), "");
+});
+
+test("share paths carry their own link preview and jump, and the tags describe a 1200×630 image that exists", () => {
+  const { getShareView, buildShareMetaTags, SHARE_VIEWS } = loadParserExports();
+  assert.equal(getShareView("/").image, "/assets/og-default.jpg");
+  assert.equal(getShareView("/calendar").jump, "season-calendar");
+  assert.equal(getShareView("/championships").jump, "national-championships");
+  assert.equal(getShareView("/nope"), null);
+  assert.equal(getShareView("/#season-calendar"), null, "fragments never reach the server");
+  for (const view of Object.values(SHARE_VIEWS)) {
+    assert.ok(fs.existsSync(path.join(__dirname, "..", "assets", path.basename(view.image))), `${view.image} should be committed`);
+    const tags = buildShareMetaTags(view);
+    assert.match(tags, new RegExp(`property="og:url" content="https://procyclingresults\\.up\\.railway\\.app${view.path.replace("/", "\\/")}"`));
+    assert.match(tags, new RegExp(`property="og:image" content="https://procyclingresults\\.up\\.railway\\.app${view.image.replace(/\//g, "\\/")}"`));
+    assert.match(tags, /og:image:width" content="1200"/);
+    assert.match(tags, /og:image:height" content="630"/);
+    assert.match(tags, /twitter:card" content="summary_large_image"/);
+  }
 });

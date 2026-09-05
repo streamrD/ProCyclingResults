@@ -68,7 +68,9 @@ No `node_modules`, package lockfile, database, build output, or hidden frontend 
 │   └── proseries-europe-tour-sections.js
 ├── assets/
 │   ├── favicon.svg
-│   ├── og-image.jpg
+│   ├── og-default.jpg
+│   ├── og-calendar.jpg
+│   ├── og-championships.jpg
 │   └── fonts/
 ├── data/
 │   └── static-stage-race-snapshots.json
@@ -91,7 +93,7 @@ Primary file responsibilities:
 - `archive/proseries-europe-tour-sections.js`: archived configs for retired ProSeries and Europe Tour sections.
 - `scripts/benchmark-load.js`: cold-readiness and warmed endpoint timing checks.
 - `assets/fonts/*`: local Manrope and Barlow Semi Condensed font files.
-- `assets/og-image.jpg`: Open Graph image.
+- `assets/og-default.jpg`, `assets/og-calendar.jpg`, `assets/og-championships.jpg`: link-preview images (1200×630) for `/`, `/calendar` and `/championships`, rendered from the site's own visuals. `SHARE_VIEWS` in `server.js` maps paths to them.
 - `assets/favicon.svg`: site favicon, linked from both document heads. Carries its own `prefers-color-scheme` rule because it has no background plate.
 - `design-comps/`: design explorations kept with the code — the favicon comparison page and all five candidate marks. See its README before swapping the favicon; assets are served immutable for a year, so a replacement at the same path needs a version query.
 - `README.md`: durable architecture and runbook.
@@ -141,6 +143,7 @@ npm run benchmark:load -- --runs=5 --include-coverage
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
 - `/api/competition-coverage?group=<id>`: lazy article coverage for active groups. Retired groups return `410`.
 - `/api/race-stages?race=<race id>`: reads a finished stage race's companion stage articles on request and returns `{ raceId, html }` with a re-rendered stage switcher. The id must resolve through `findStageRaceById` against the current homepage payload, so it cannot be pointed at an arbitrary Wikipedia page; anything else returns `404`.
+- `/calendar`, `/championships`: the results page with its own link preview and a jump to the section (`SHARE_VIEWS`, `getShareView`, `buildShareMetaTags`, `bindShareJump`). Fragments never reach the server, which is why these exist.
 - `/release-notes`, `/about`: editable site pages rendered from `data/*.md`; see "Editable Site Pages".
 - `POST /api/site-content`: saves one of those pages; bearer `SITE_EDIT_TOKEN`, optional GitHub commit.
 - `/assets/*`: static asset serving from `assets/`.

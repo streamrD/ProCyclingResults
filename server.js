@@ -9469,6 +9469,7 @@ function buildDeferredGroupClientPayload(groups) {
 }
 
 function buildHtmlPage(data, view) {
+  const shareView = getShareView(view?.sharePath || "/") || SHARE_VIEWS["/"];
   const competitionGroups = getCompetitionGroups(data);
   const eagerCompetitionGroups = competitionGroups.filter((group) => !group.deferred);
   const deferredCompetitionGroups = competitionGroups.filter((group) => group.deferred);
@@ -9525,19 +9526,8 @@ function buildHtmlPage(data, view) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Pro Cycling Results" />
-    <meta property="og:title" content="Pro Cycling Results" />
-    <meta property="og:description" content="Live race standings, recent results, national champions, and news coverage for the 2026 men's and women's UCI WorldTour." />
-    <meta property="og:url" content="https://procyclingresults.up.railway.app" />
-    <meta property="og:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="405" />
-    <meta property="og:image:alt" content="Pro Cycling Results — Live UCI Race Coverage" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Pro Cycling Results" />
-    <meta name="twitter:description" content="Live race standings, recent results, national champions, and news coverage for the 2026 men's and women's UCI WorldTour." />
-    <meta name="twitter:image" content="https://procyclingresults.up.railway.app/assets/og-image.jpg" />
+    ${buildShareMetaTags(shareView)}
+    <link rel="canonical" href="${escapeHtml(SITE_ORIGIN)}/" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
@@ -12110,7 +12100,7 @@ function buildHtmlPage(data, view) {
       }
     </style>
   </head>
-  <body>
+  <body${shareView.jump ? ` data-jump-to="${escapeHtml(shareView.jump)}"` : ""}>
     <main class="page">
       <section class="hero">
         <div class="hero-grid">
@@ -12422,6 +12412,22 @@ function buildHtmlPage(data, view) {
         markActive();
       }
 
+      // A share path such as /championships serves this same page with its own link
+      // preview; once loaded it jumps to the section and settles on the /#section URL.
+      // The calendar path is handled by bindSeasonCalendar, which opens the section.
+      function bindShareJump() {
+        const jump = document.body.dataset.jumpTo;
+        if (!jump || jump === "season-calendar") {
+          return;
+        }
+        const target = document.getElementById(jump);
+        if (!target) {
+          return;
+        }
+        window.history.replaceState(null, "", "/#" + jump);
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
       // Season calendar: hidden until the hero button or a #season-calendar link opens it,
       // so the day's results stay first. It closes from its own header, bars carry their
       // own tooltip, and a click on a race whose card is hidden behind "Load more races"
@@ -12436,15 +12442,15 @@ function buildHtmlPage(data, view) {
         const openCalendar = () => {
           section.hidden = false;
           section.classList.add("is-expanded");
-          if (window.location.hash !== "#season-calendar") {
-            window.history.replaceState(null, "", "#season-calendar");
+          if (window.location.hash !== "#season-calendar" || window.location.pathname !== "/") {
+            window.history.replaceState(null, "", "/#season-calendar");
           }
           section.scrollIntoView({ behavior: "smooth", block: "start" });
         };
         const closeCalendar = () => {
           section.hidden = true;
-          if (window.location.hash === "#season-calendar") {
-            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          if (window.location.hash === "#season-calendar" || window.location.pathname !== "/") {
+            window.history.replaceState(null, "", "/");
           }
         };
 
@@ -12462,7 +12468,7 @@ function buildHtmlPage(data, view) {
             openCalendar();
           }
         });
-        if (window.location.hash === "#season-calendar") {
+        if (window.location.hash === "#season-calendar" || document.body.dataset.jumpTo === "season-calendar") {
           openCalendar();
         }
 
@@ -12891,19 +12897,21 @@ function buildHtmlPage(data, view) {
       bindNationalChampionshipFilters();
       bindNationalChampionshipMap();
       bindSeasonCalendar();
+      bindShareJump();
     </script>
   </body>
 </html>`;
 }
 
-function buildWarmupPage() {
+function buildWarmupPage(shareView = SHARE_VIEWS["/"]) {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
-    <title>Pro Cycling Results</title>
+    <title>${escapeHtml(shareView.title)}</title>
+    ${buildShareMetaTags(shareView)}
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
       :root {
@@ -13078,9 +13086,60 @@ const SITE_CONTENT_PAGES = {
   },
 };
 const SITE_ORIGIN = "https://procyclingresults.up.railway.app";
-const OG_IMAGE_PATH = "/assets/og-image.jpg";
+// Link previews. A URL fragment never reaches the server, so /#season-calendar and /
+// look identical to a crawler; these share paths serve the same results page with a
+// different preview image and a jump to the section once the page loads.
+const SHARE_VIEWS = {
+  "/": {
+    path: "/",
+    title: "Pro Cycling Results",
+    description: "Race results, the season calendar, finish videos, stage profiles, race news and national champions for the 2026 men's and women's UCI WorldTour.",
+    image: "/assets/og-default.jpg",
+    alt: "Pro Cycling Results, with a Vuelta a España stage profile rising across the image",
+    jump: "",
+  },
+  "/calendar": {
+    path: "/calendar",
+    title: "Season Calendar · Pro Cycling Results",
+    description: "Every men's and women's WorldTour race of 2026 on one timeline, drawn to scale, with today's stage filling in.",
+    image: "/assets/og-calendar.jpg",
+    alt: "The 2026 WorldTour season drawn as a timeline",
+    jump: "season-calendar",
+  },
+  "/championships": {
+    path: "/championships",
+    title: "National Championships · Pro Cycling Results",
+    description: "Every elite road champion by federation, on a world map shaded by this season's results.",
+    image: "/assets/og-championships.jpg",
+    alt: "A world map of national championship federations shaded by this season's results",
+    jump: "national-championships",
+  },
+};
 const OG_IMAGE_WIDTH = 1200;
-const OG_IMAGE_HEIGHT = 405;
+const OG_IMAGE_HEIGHT = 630;
+
+function getShareView(pathname) {
+  return Object.prototype.hasOwnProperty.call(SHARE_VIEWS, pathname) ? SHARE_VIEWS[pathname] : null;
+}
+
+function buildShareMetaTags(view) {
+  const url = SITE_ORIGIN + view.path;
+  const image = SITE_ORIGIN + view.image;
+  return `<meta name="description" content="${escapeHtml(view.description)}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pro Cycling Results" />
+    <meta property="og:title" content="${escapeHtml(view.title)}" />
+    <meta property="og:description" content="${escapeHtml(view.description)}" />
+    <meta property="og:url" content="${escapeHtml(url)}" />
+    <meta property="og:image" content="${escapeHtml(image)}" />
+    <meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />
+    <meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />
+    <meta property="og:image:alt" content="${escapeHtml(view.alt || view.title)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(view.title)}" />
+    <meta name="twitter:description" content="${escapeHtml(view.description)}" />
+    <meta name="twitter:image" content="${escapeHtml(image)}" />`;
+}
 const SITE_CONTENT_MAX_BYTES = 256 * 1024;
 const SITE_EDIT_TOKEN = process.env.SITE_EDIT_TOKEN || "";
 const GITHUB_CONTENT_TOKEN = process.env.GITHUB_CONTENT_TOKEN || "";
@@ -13487,20 +13546,8 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>${escapeHtml(page.title)} · Pro Cycling Results</title>
-    <meta name="description" content="${escapeHtml(page.description)}" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Pro Cycling Results" />
-    <meta property="og:title" content="${escapeHtml(page.title)} · Pro Cycling Results" />
-    <meta property="og:description" content="${escapeHtml(page.description)}" />
-    <meta property="og:url" content="${escapeHtml(SITE_ORIGIN + page.path)}" />
-    <meta property="og:image" content="${escapeHtml(SITE_ORIGIN + OG_IMAGE_PATH)}" />
-    <meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />
-    <meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />
-    <meta property="og:image:alt" content="Pro Cycling Results" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="${escapeHtml(page.title)} · Pro Cycling Results" />
-    <meta name="twitter:description" content="${escapeHtml(page.description)}" />
-    <meta name="twitter:image" content="${escapeHtml(SITE_ORIGIN + OG_IMAGE_PATH)}" />
+    ${buildShareMetaTags({ path: page.path, title: `${page.title} · Pro Cycling Results`, description: page.description, image: SHARE_VIEWS["/"].image, alt: SHARE_VIEWS["/"].alt })}
+    <link rel="canonical" href="${escapeHtml(SITE_ORIGIN + page.path)}" />
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
       @font-face { font-family: "Manrope"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/fonts/manrope-500.ttf") format("truetype"); }
@@ -13717,13 +13764,13 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      if (url.pathname === "/") {
-        sendHtml(response, 200, buildWarmupPage());
+      if (getShareView(url.pathname)) {
+        sendHtml(response, 200, buildWarmupPage(getShareView(url.pathname)));
         return;
       }
     }
 
-    if (url.pathname !== "/") {
+    if (!getShareView(url.pathname)) {
       if (url.pathname === "/api/build-info") {
         sendJson(response, 200, BUILD_INFO);
         return;
@@ -13856,6 +13903,7 @@ const server = http.createServer(async (request, response) => {
       200,
       buildHtmlPage(data, {
         coverageByGroup,
+        sharePath: url.pathname,
       }),
     );
   } catch (error) {

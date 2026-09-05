@@ -2,7 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 4 September 2026
 
-- **Link previews for every page.** Sharing the About or Release Notes pages now shows a proper title, description and image, like the results page.
+- **New link previews, and one for each section.** Sharing the site now shows a fresh image built from its own visuals: a Vuelta stage profile for the results page, the season timeline when you share procyclingresults.up.railway.app/calendar, and the championships map when you share procyclingresults.up.railway.app/championships. Those two links open the results page at that section. The About and Release Notes pages carry previews too.
 - **Release notes and an About page.** This page and the About page added. The footer of the results page links to them. The About page introduces the Grupetto Committee, the five people who keep the site.
 - **A season calendar.** Timeline view of the men's and women's WorldTour race year. Grand Tours and Monuments labelled, finished races filled in, the live race filling up day by day, and a hover for each winner. On phones it becomes a month-by-month list.
 - **National Championships rebuilt as an almanac.** Instead of nearly three hundred cards, the section now shows when the championships happen, whether the season is over, a handful of featured titles with full podiums, and one searchable row per federation grouped by continent. Type a country or a rider to find a champion.
