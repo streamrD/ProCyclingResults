@@ -17,6 +17,9 @@ const BUILD_INFO = {
   deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || "",
   source: process.env.RAILWAY_GIT_COMMIT_SHA ? "railway-env" : "hardcoded-fallback",
   node: process.version,
+  // Whether a contact address rides on the outbound user agent (see DATA-SOURCES.md).
+  // A yes/no only: the address itself is never served.
+  sourceContact: String(process.env.SOURCE_CONTACT || "").trim() ? "configured" : "not set",
 };
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";

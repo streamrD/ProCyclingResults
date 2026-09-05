@@ -792,8 +792,10 @@ exposes no public data endpoint).
 
 `DATA-SOURCES.md` at the repo root is the public face of this: who runs the site, what
 it reads, how often, and how to reach us. It is the URL in `FETCH_USER_AGENT`;
-`SOURCE_CONTACT` (an email, set on Railway) is appended when present. Keep its table and
-review log current whenever fetch behaviour changes.
+`SOURCE_CONTACT` (an email, set on Railway) is appended when present; `/api/build-info`
+reports `sourceContact: "configured"` or `"not set"` so a deploy can be checked without
+exposing the address. Keep its table and review log current whenever fetch behaviour
+changes.
 
 The machinery behind it, all in `server.js`:
 
