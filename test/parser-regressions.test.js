@@ -96,6 +96,9 @@ function loadParserExports() {
       selectPreferredStageRaceSnapshot,
       hasFreshnessSensitiveRaceData,
       getRaceDataCacheTtlMs,
+      getLiveRaceRefreshDelayMs,
+      scheduleLiveRaceRefresh,
+      shouldServeHomepageWarmup,
       parseNationalChampionshipsIndex,
       getCountryFlagEmojiByName,
       buildNationalChampionshipEventCard,
@@ -2985,7 +2988,7 @@ test("selectPreferredStageRaceSnapshot preserves explicit total stage counts ove
   assert.equal(preferred.latestStage.number, 1);
 });
 
-test("selectPreferredStageRaceSnapshot drops stale GC when a newer stage is known", () => {
+test("selectPreferredStageRaceSnapshot keeps a GC one stage behind a newer stage, labelled by its own stage", () => {
   const { selectPreferredStageRaceSnapshot } = loadParserExports();
   const preferred = JSON.parse(
     JSON.stringify(
@@ -3031,7 +3034,10 @@ test("selectPreferredStageRaceSnapshot drops stale GC when a newer stage is know
 
   assert.equal(preferred.completedStages, 2);
   assert.equal(preferred.latestStage.number, 2);
-  assert.equal(preferred.generalClassification, null);
+  // Stage 2 is in but its GC is not yet: the stage-1 GC stays (the card labels it
+  // "Overall after stage 1") instead of the card saying nothing is available.
+  assert.equal(preferred.generalClassification.stageNumber, 1);
+  assert.equal(preferred.generalClassification.standings.length, 2);
 });
 
 test("selectPreferredStageRaceSnapshot prefers a rich current Giro snapshot over a sparse future placeholder", () => {
@@ -5119,4 +5125,55 @@ test("every results card ends with a news line that opens the race's stories in 
   // One-day results carry the same line; upcoming races do not.
   assert.match(buildRaceCard({ ...race, stageRace: null, winner: "A" }), /data-race-news="2026 Vuelta a España"/);
   assert.doesNotMatch(buildUpcomingCard(race), /data-race-news/);
+});
+
+test("a live race rebuilds itself on a timer and never sends visitors back to the warm-up page", () => {
+  const { getLiveRaceRefreshDelayMs, scheduleLiveRaceRefresh, shouldServeHomepageWarmup } = loadParserExports();
+
+  // One TTL after a build that carries a live or just-finished race; nothing otherwise.
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [{ id: "vuelta" }] }), 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: true }] }), 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: false }] }), 0);
+
+  // The scheduler arms a single timer for that delay and none off-season; the timer
+  // must not hold the process open.
+  const armed = scheduleLiveRaceRefresh({ liveStageRaces: [{ id: "vuelta" }] }, () => {});
+  assert.ok(armed, "a live payload arms the refresh timer");
+  assert.equal(typeof armed.unref, "function");
+  clearTimeout(armed);
+  assert.equal(scheduleLiveRaceRefresh({ liveStageRaces: [] }, () => {}), null);
+
+  // Warm-up is for an empty cache only: an expired live payload is served as it is.
+  assert.equal(shouldServeHomepageWarmup({ data: null, updatedAt: 0, promise: null }), true);
+  assert.equal(shouldServeHomepageWarmup({ data: { liveStageRaces: [{ id: "vuelta" }] }, updatedAt: 0, promise: Promise.resolve() }), false);
+});
+
+test("mergeStageRaceSnapshots keeps a general classification one stage behind the stage result", () => {
+  const { mergeStageRaceSnapshots } = loadParserExports();
+  const race = {
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+  };
+  const now = new Date("2026-09-05T16:00:00.000Z");
+  const gc = (stageNumber) => ({ stageNumber, standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP" }] });
+  const stages = [12, 13].map((number) => ({ number, order: number, label: `Stage ${number}`, winner: "A", standings: [{ place: "1", rider: "A" }] }));
+  // The official site has just published stage 14 and not yet its GC; Wikipedia still
+  // has the GC after stage 13. That GC stays, labelled by its own stage.
+  const official = {
+    totalStages: 21,
+    completedStages: 14,
+    latestStage: { number: 14, label: "Stage 14", standings: [{ place: "1", rider: "Marco Brenner", countryCode: "GER" }] },
+    generalClassification: null,
+    overallResult: [],
+  };
+  const parsed = { totalStages: 21, completedStages: 13, stages, latestStage: stages[1], generalClassification: gc(13), overallResult: [] };
+  const merged = mergeStageRaceSnapshots(official, parsed, race, now);
+  assert.equal(merged.completedStages, 14);
+  assert.equal(merged.latestStage.number, 14);
+  assert.equal(merged.generalClassification.stageNumber, 13);
+
+  // Two or more stages behind is stale and still dropped.
+  const staleParsed = { ...parsed, generalClassification: gc(12) };
+  assert.equal(mergeStageRaceSnapshots(official, staleParsed, race, now).generalClassification, null);
 });

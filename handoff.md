@@ -761,6 +761,33 @@ Live as of 2026-08-23. Verify against production before acting — these move.
 - **Link previews are cached** by Slack, iMessage and X. After changing an image,
   expect old previews to linger unless the platform's debugger is used.
 
+## Live-Race Freshness, Measured 2026-09-05
+
+Stage 14 of the Vuelta: the riders finished at about 15:48 UTC (13:33 real start plus
+the winner's 4:15:09). lavuelta.es published the stage classification between 15:50 and
+15:52; production showed it at 15:51:42 from the `vuelta-a-espana-rankings` provider;
+Wikipedia's main article was edited a few minutes after that. The pipeline was ~4
+minutes behind the finish line and ~1 minute behind the fastest source. Two things were
+changed on the back of that:
+
+- The payload used to be rebuilt only when a request found it expired, and during a
+  live race that request *waited* for the rebuild while everyone else got the warm-up
+  page (`shouldServeHomepageWarmup` treated "live and expired" as cold). Now
+  `scheduleLiveRaceRefresh` arms a timer one live TTL after every build that carries a
+  live or just-finished race, the expired payload is always served as it stands, and
+  the warm-up page is for an empty cache only. The timer re-arms itself from the payload
+  it just built, so it stops on its own when the race ends, and `unref()`s so tests and
+  shutdown are not held open.
+- `mergeStageRaceSnapshots` used to drop a general classification that trailed the stage
+  result by any amount, which left the card saying "not available yet" for the minutes
+  between an official provider's stage table and its GC table (and for the day
+  Wikipedia's tables lag its stage result). One stage behind is now kept, labelled
+  "Overall after stage N" by the card; two or more behind is still dropped.
+
+Not worth doing, checked: a TTL under 60s (lavuelta.es itself caches its rankings page
+for 60s), and a race-center live feed (racecenter.lavuelta.es is a JS app whose bundle
+exposes no public data endpoint).
+
 ## Where Cold Start Actually Goes
 
 Profiled 2026-08-23. Read this before optimizing anything on the warm-up path — the

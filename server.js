@@ -3825,9 +3825,13 @@ function mergeStageRaceSnapshots(primary, secondary, race, now = new Date()) {
       latestStage = null;
     }
 
+    // A GC one stage behind the stage result is kept: the card labels it "Overall after
+    // stage N" so it contradicts nothing, and it covers the minutes between an official
+    // provider publishing a stage and its GC, and the day Wikipedia's tables lag its
+    // stage result. Further behind than that it is dropped as stale.
     if (
       getStageRaceFieldProgress(generalClassification) > 0 &&
-      getStageRaceFieldProgress(generalClassification) < completedStages
+      getStageRaceFieldProgress(generalClassification) < completedStages - 1
     ) {
       generalClassification = null;
     }
@@ -6630,6 +6634,48 @@ async function loadRaceMetadata(options = {}) {
   return refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: true });
 }
 
+// While a race is live the payload is rebuilt on a timer, one TTL after the last
+// build, so it is never older than about a minute even when nobody is visiting and no
+// visit ever has to trigger (or wait for) a rebuild. Off-season the timer stays idle:
+// the next build is scheduled only when the payload just built has a live or
+// just-finished race in it, so it stops itself when the race ends.
+let liveRaceRefreshTimer = null;
+
+function getLiveRaceRefreshDelayMs(data) {
+  return hasFreshnessSensitiveRaceData(data) ? LIVE_RACE_CACHE_TTL_MS : 0;
+}
+
+function scheduleLiveRaceRefresh(data, refresh = refreshLiveRaceDataOnTimer) {
+  if (liveRaceRefreshTimer) {
+    clearTimeout(liveRaceRefreshTimer);
+    liveRaceRefreshTimer = null;
+  }
+
+  const delayMs = getLiveRaceRefreshDelayMs(data);
+  if (!delayMs) {
+    return null;
+  }
+
+  liveRaceRefreshTimer = setTimeout(() => {
+    liveRaceRefreshTimer = null;
+    refresh();
+  }, delayMs);
+  if (typeof liveRaceRefreshTimer.unref === "function") {
+    liveRaceRefreshTimer.unref();
+  }
+  return liveRaceRefreshTimer;
+}
+
+function refreshLiveRaceDataOnTimer() {
+  return loadRaceMetadata({ includeDeferred: false })
+    .then((metadata) => refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: false }))
+    .catch(() => {
+      // A failed tick keeps the last good payload; try again one TTL later rather
+      // than letting the live race go quiet.
+      scheduleLiveRaceRefresh(raceDataCache.data);
+    });
+}
+
 function refreshRaceDataInBackground(metadata, options = {}) {
   const includeDeferred = options.includeDeferred === true;
   const resetOnFailure = options.resetOnFailure === true;
@@ -6649,6 +6695,7 @@ function refreshRaceDataInBackground(metadata, options = {}) {
         deferredRaceDataCache = nextCache;
       } else {
         raceDataCache = nextCache;
+        scheduleLiveRaceRefresh(data);
       }
       return data;
     })
@@ -6688,15 +6735,15 @@ async function loadRaceData(options = {}) {
   const now = Date.now();
   if (targetCache.data) {
     const ttlMs = getRaceDataCacheTtlMs(targetCache.data);
-    const hasFreshData = hasFreshnessSensitiveRaceData(targetCache.data);
     if (now - targetCache.updatedAt < ttlMs) {
       return targetCache.data;
     }
 
-    if (hasFreshData) {
-      return refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false });
-    }
-
+    // Expired payloads are served as they are while a rebuild runs behind them. During
+    // a live race the timer in scheduleLiveRaceRefresh normally rebuilds before expiry,
+    // so this is the fallback for a missed tick; the request never waits on it (it did
+    // until 2026-09-05, which put every visitor arriving in the rebuild window on the
+    // warm-up screen once a minute).
     refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch(() => {});
     return targetCache.data;
   }
@@ -6787,17 +6834,11 @@ function warmRaceDataInBackground() {
     });
 }
 
-function shouldServeHomepageWarmup(now = Date.now()) {
-  if (!raceDataCache.data) {
-    return true;
-  }
-
-  const ttlMs = getRaceDataCacheTtlMs(raceDataCache.data);
-  const hasLiveRaces =
-    (raceDataCache.data.liveStageRaces?.length || raceDataCache.data.europeTourLiveStageRaces?.length || 0) > 0;
-  const isExpired = now - raceDataCache.updatedAt >= ttlMs;
-
-  return Boolean(raceDataCache.promise || (hasLiveRaces && isExpired));
+// The warm-up page covers a cold start only. An expired payload — live race or not —
+// is served as it stands while the rebuild runs behind it, so once the first build has
+// landed no visitor sees this page again until the process restarts.
+function shouldServeHomepageWarmup(cache = raceDataCache) {
+  return !cache.data;
 }
 
 function buildRaceDataDebugPayload(data) {

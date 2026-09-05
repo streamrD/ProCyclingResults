@@ -489,7 +489,7 @@ The active metadata builder parses the WorldTour pages and lets some location en
 - Store `updatedAt`, `data`, and `promise`
 
 The `promise` field prevents duplicate upstream fetch work when concurrent requests arrive during a refresh.
-Once any race payload has been built, expired payloads without active live races can still use stale-while-revalidate behavior. For active live-race payloads, the app now rebuilds immediately once the cache expires so today’s stage results are less likely to lag behind official publication.
+Once any race payload has been built it is always served as it stands, and an expired payload is rebuilt behind the response rather than in front of it. While a race is live (or finished today) the server also rebuilds on a timer, one live TTL after the previous build, so the payload is never much older than a minute even with no visitors and no visitor ever waits on a rebuild. The warm-up page on `/` appears only on a cold start, before the first payload exists.
 True cold starts are the expensive case. They can be noticeably slower because the app may need to rebuild race data from several live upstream sources while also respecting Wikipedia retry and throttling behavior.
 
 ### Article cache
