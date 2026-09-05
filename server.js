@@ -12383,6 +12383,13 @@ function buildHtmlPage(data, view) {
           if (!group) {
             return;
           }
+          // Picking a continent on the map means "show me this one": any other open
+          // group folds away so the chosen table sits directly under the map.
+          groups.forEach((other) => {
+            if (other !== group) {
+              other.open = false;
+            }
+          });
           group.open = true;
           group.classList.add("is-map-target");
           window.setTimeout(() => {

@@ -254,7 +254,8 @@ Rebuilt on 2026-09-04 as an almanac rather than a results feed. The old view ren
 - A world map above the groups (`buildNationalChampionshipMapMarkup`, `bindNationalChampionshipMap`)
   draws every country from `data/continent-map.json`, shaded by the group data: `is-champion`,
   `is-listed`, `is-none`, plus `national-map-dot` for the ten federations without a shape.
-  Hover shows a tooltip, click opens the group; a category chip re-shades via
+  Hover shows a tooltip, click opens the group and folds every other group closed (a
+  map pick means "show me this one"); a category chip re-shades via
   `data-has-<key>` attributes. Hidden under 720px. The file comes from
   `npm run refresh:continent-map` (Natural Earth 1:110m, Robinson, Douglas–Peucker at
   0.55px, ~87 KB); rerun it only when a federation appears that is not drawn — the test
