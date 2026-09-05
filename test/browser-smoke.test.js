@@ -31,11 +31,12 @@ function loadServer() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup };`,
+    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup };`,
     sandbox,
   );
   return {
     buildStageSwitcherMarkup: sandbox.__SMOKE__.buildStageSwitcherMarkup,
+    buildRaceNewsMarkup: sandbox.__SMOKE__.buildRaceNewsMarkup,
     style: serverSource.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@font-face\s*\{[^}]*\}/g, ""),
     // The homepage script is the block that defines the unit preference; the warm-up
     // page carries a later, unrelated block. Its one server-side expression is the
@@ -51,7 +52,7 @@ function loadServer() {
 }
 
 function buildPage({ probe: customProbe, setup = "" } = {}) {
-  const { buildStageSwitcherMarkup, style, script } = loadServer();
+  const { buildStageSwitcherMarkup, buildRaceNewsMarkup, style, script } = loadServer();
   const profile = { source: "komoot", distanceKm: 166.6, elevationGainM: 4527, points: [[0, 113], [80, 900], [120, 700], [166.6, 2137]] };
   const race = {
     id: "2026 Vuelta a España",
@@ -69,6 +70,12 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
     },
   };
   const switcher = buildStageSwitcherMarkup(race, { live: true });
+  const news = buildRaceNewsMarkup(race, {
+    articles: [
+      { title: "Van Aert wins Vuelta stage 13", publisher: "Reuters", url: "https://example.com/a", publishedAt: "Fri, 04 Sep 2026 08:38:00 GMT", score: 50 },
+      { title: "Van Aert powers to victory", publisher: "BBC", url: "https://example.com/b", publishedAt: "Fri, 04 Sep 2026 10:00:00 GMT", score: 40 },
+    ],
+  });
   const probe = `
     const out = { errors: window.__errors };
     const chip = document.querySelector('.stage-chip[data-stage-target]:not(.is-active):not(.is-next)');
@@ -81,6 +88,14 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
     out.units = document.documentElement.getAttribute('data-units');
     out.distance = document.querySelector('.stage-profile.is-measured .stage-profile-stat').textContent;
     out.storedUnits = localStorage.getItem('pcr-units');
+
+    const newsToggle = document.querySelector('[data-race-news-toggle]');
+    out.newsClosed = document.querySelector('.race-news-drawer').hidden;
+    newsToggle.click();
+    out.newsOpen = !document.querySelector('.race-news-drawer').hidden && newsToggle.getAttribute('aria-expanded') === 'true';
+    out.newsItems = document.querySelectorAll('.race-news-list li').length;
+    newsToggle.click();
+    out.newsClosedAgain = document.querySelector('.race-news-drawer').hidden;
 
     document.querySelector('[data-profile-toggle]').click();
     out.expanded = document.querySelectorAll('.stage-profile.is-expanded').length;
@@ -115,7 +130,7 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
   `;
   return `<!doctype html><meta charset="utf-8"><style>${style}</style>
 <body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));${setup}</script>
-<main>${switcher}</main><pre id="smoke"></pre>
+<main>${switcher}${news}</main><pre id="smoke"></pre>
 <script>${script}</script>
 <script>${customProbe || probe}</script>`;
 }
@@ -157,6 +172,10 @@ test("the stage card's client script works in a real browser", (t) => {
   assert.equal(out.units, "imperial");
   assert.equal(out.distance, "103.5 mi");
   assert.equal(out.storedUnits, "imperial");
+  assert.equal(out.newsClosed, true);
+  assert.equal(out.newsOpen, true);
+  assert.equal(out.newsItems, 2);
+  assert.equal(out.newsClosedAgain, true);
   // Stage 12 and the stage 13 preview both carry a measured profile (the preview is
   // seeded from data/stage-profiles.json), and the preference applies to every one.
   assert.equal(out.expanded, 2);

@@ -8218,6 +8218,11 @@ function buildStageRaceCard(race, options = {}) {
   const orderedContent = isFinalized
     ? `${gcContent}${stageContent}`
     : `${stageContent}${gcContent}`;
+  // The news line is the last thing on the card, under the GC on a live race. A live
+  // race warms its article pool so the next render carries the headline.
+  if (options.live) {
+    warmRaceArticlePool(race);
+  }
 
   return `
     <article class="card result-card stage-race-card" id="${escapeHtml(createRaceAnchorId(race))}">
@@ -8226,6 +8231,7 @@ function buildStageRaceCard(race, options = {}) {
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${statusNote}
       ${orderedContent}
+      ${buildRaceNewsMarkup(race)}
     </article>`;
 }
 
@@ -8250,6 +8256,7 @@ function buildRaceCard(race) {
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
       ${buildRaceFinishLink(race)}
+      ${buildRaceNewsMarkup(race)}
     </article>`;
 }
 
@@ -8421,6 +8428,100 @@ function formatTimestamp(timestamp) {
     timeStyle: "short",
     timeZone: EASTERN_TIMEZONE,
   }).format(new Date(timestamp));
+}
+
+// The two active competition groups; a race's news pill links to its group's
+// coverage block for the full reader.
+function getCompetitionGroupIdForRace(race) {
+  return /women/i.test(String(race?.series || "")) ? "womens-worldtour" : "mens-worldtour";
+}
+
+// Reads the article cache without triggering a fetch: the pill renders from a warm
+// pool and otherwise as a placeholder the client fills in.
+function peekRaceArticlePool(race) {
+  const cached = articleCache.get(getRaceId(race));
+  return Array.isArray(cached?.data) ? cached.data : null;
+}
+
+// Start filling the cache in the background so the next render carries the
+// headlines. Used only for live races: recent cards load when scrolled into view.
+function warmRaceArticlePool(race) {
+  if (!peekRaceArticlePool(race) && getRaceId(race)) {
+    loadRaceArticlePool(race).catch(() => {});
+  }
+}
+
+// "Sep 4, 4:38 AM" — the year is noise on a headline published this week.
+function formatNewsTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: EASTERN_TIMEZONE,
+  }).format(date);
+}
+
+const RACE_NEWS_DRAWER_LIMIT = 5;
+
+// One line at the foot of a race card: "Latest news" plus the newest headline, which
+// opens a short list in place. Rendered ready when the article pool is cached (or
+// passed in by /api/race-news), otherwise as a pending placeholder the client
+// fetches when the card scrolls into view or the line is tapped. The drawer links
+// to the group's coverage block, which stays the full reader.
+function buildRaceNewsMarkup(race, options = {}) {
+  const groupId = getCompetitionGroupIdForRace(race);
+  const raceId = String(race?.id || "");
+  const drawerId = `${createRaceAnchorId(race)}-news`;
+  const pool = Array.isArray(options.articles) ? options.articles : peekRaceArticlePool(race);
+  const articles = pool ? selectRaceArticles(pool, 0, race) : null;
+  const state = !articles ? "pending" : articles.length === 0 ? "empty" : "ready";
+  const lead = articles?.[0] || null;
+  const stamp = (article) => (article.publishedAt ? formatNewsTimestamp(article.publishedAt) : "");
+  const tickerText = !articles
+    ? "Loading the latest stories…"
+    : !lead
+      ? "No stories found yet."
+      : `<strong>${escapeHtml(lead.title)}</strong> · ${escapeHtml(lead.publisher)}${
+          stamp(lead) ? `, ${escapeHtml(stamp(lead))}` : ""
+        }`;
+  const items = (articles || [])
+    .slice(0, RACE_NEWS_DRAWER_LIMIT)
+    .map(
+      (article) => `
+            <li><a href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer"><span class="race-news-source">${escapeHtml(
+              article.publisher,
+            )}${stamp(article) ? ` · ${escapeHtml(stamp(article))}` : ""}</span><span class="race-news-title">${escapeHtml(
+              article.title,
+            )}</span></a></li>`,
+    )
+    .join("");
+  const drawer =
+    state === "ready"
+      ? `
+          <ol class="race-news-list">${items}
+          </ol>
+          <a class="race-news-more" href="#${escapeHtml(groupId)}-coverage" data-coverage-jump="${escapeHtml(
+            groupId,
+          )}" data-coverage-race="${escapeHtml(raceId)}">All ${escapeHtml(race.title)} coverage ▸</a>`
+      : "";
+
+  return `
+      <div class="card-subsection race-news" data-race-news="${escapeHtml(raceId)}" data-race-news-state="${state}">
+        <button type="button" class="race-news-ticker" data-race-news-toggle aria-expanded="false" aria-controls="${escapeHtml(
+          drawerId,
+        )}"${state === "empty" ? " disabled" : ""}>
+          <span class="race-news-ticker-label">Latest news</span>
+          <span class="race-news-ticker-text">${tickerText}</span>
+          ${state === "empty" ? "" : `<span class="race-news-ticker-arrow" aria-hidden="true">▾</span>`}
+        </button>
+        <div class="race-news-drawer" id="${escapeHtml(drawerId)}" hidden>${drawer}
+        </div>
+      </div>`;
 }
 
 function buildArticleCard(article) {
@@ -11444,6 +11545,159 @@ function buildHtmlPage(data, view) {
         font-weight: 800;
       }
 
+      /* The news line at the foot of a race card: label, newest headline, arrow.
+         Opens a short list in place; the group's coverage block stays the full
+         reader. The headline runs on one line on a wide card and two on a phone. */
+      .race-news {
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .race-news-ticker {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        margin: 0;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: rgba(0, 120, 199, 0.07);
+        color: var(--ink);
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .race-news-ticker:hover,
+      .race-news-ticker:focus-visible {
+        background: rgba(0, 120, 199, 0.14);
+        outline: none;
+      }
+
+      .race-news-ticker[disabled] {
+        cursor: default;
+        color: var(--muted);
+      }
+
+      .race-news-ticker-label {
+        flex: none;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--uci-blue-bright);
+      }
+
+      .race-news-ticker-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .race-news-ticker-text strong {
+        font-weight: 700;
+      }
+
+      .race-news-ticker-arrow {
+        margin-left: auto;
+        font-weight: 800;
+        color: var(--uci-blue);
+      }
+
+      .race-news-ticker[aria-expanded="true"] .race-news-ticker-arrow {
+        transform: rotate(180deg);
+      }
+
+      .race-news-drawer {
+        margin: 0;
+        padding: 0.6rem 0.75rem 0.7rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .race-news-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+      }
+
+      .race-news-list li {
+        padding: 0.5rem 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .race-news-list li:first-child {
+        padding-top: 0.1rem;
+        border-top: 0;
+      }
+
+      .race-news-list a {
+        display: grid;
+        gap: 0.15rem;
+        color: var(--ink);
+        text-decoration: none;
+      }
+
+      .race-news-list a:hover .race-news-title {
+        color: var(--uci-blue);
+      }
+
+      .race-news-source {
+        color: var(--uci-blue-bright);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .race-news-title {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .race-news-more {
+        display: inline-block;
+        margin-top: 0.55rem;
+        color: var(--uci-blue);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-decoration: none;
+      }
+
+      .race-news-more:hover {
+        color: var(--uci-blue-bright);
+      }
+
+      @media (max-width: 720px) {
+        .race-news-ticker {
+          align-items: flex-start;
+        }
+
+        .race-news-ticker-label {
+          padding-top: 0.2rem;
+        }
+
+        .race-news-ticker-text {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          white-space: normal;
+        }
+      }
+
       .stage-panel-next .stage-panel-meta {
         margin-bottom: 0.55rem;
       }
@@ -12627,6 +12881,114 @@ function buildHtmlPage(data, view) {
         syncCoverageRaceOptions(groupId);
       }
 
+      // The news line on each race card. A pill rendered pending (no cached stories)
+      // is filled from /api/race-news when it scrolls near the viewport or is tapped,
+      // so a page of recent races loads its coverage a card at a time. The drawer's
+      // "All coverage" link loads that race into the group's coverage block first.
+      function bindRaceNews() {
+        const loading = new Set();
+
+        function setRaceNewsOpen(block, open) {
+          const button = block.querySelector("[data-race-news-toggle]");
+          const drawer = block.querySelector(".race-news-drawer");
+          if (button) {
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+          }
+          if (drawer) {
+            drawer.hidden = !open;
+          }
+        }
+
+        async function loadRaceNews(block, open) {
+          const raceId = block.dataset.raceNews;
+          if (!raceId || loading.has(raceId)) {
+            return;
+          }
+          loading.add(raceId);
+          try {
+            const response = await fetch("/api/race-news?race=" + encodeURIComponent(raceId), { cache: "no-store" });
+            if (!response.ok) {
+              throw new Error("Unable to load race news");
+            }
+            const payload = await response.json();
+            const holder = document.createElement("div");
+            holder.innerHTML = payload.html || "";
+            const fresh = holder.firstElementChild;
+            if (!fresh || !fresh.matches("[data-race-news]")) {
+              throw new Error("Unexpected race news markup");
+            }
+            const button = block.querySelector("[data-race-news-toggle]");
+            setRaceNewsOpen(fresh, open || Boolean(button && button.getAttribute("aria-expanded") === "true"));
+            block.replaceWith(fresh);
+          } catch (error) {
+            block.dataset.raceNewsState = "error";
+            const text = block.querySelector(".race-news-ticker-text");
+            if (text) {
+              text.textContent = "Coverage is unavailable right now. Tap to try again.";
+            }
+          } finally {
+            loading.delete(raceId);
+          }
+        }
+
+        document.addEventListener("click", (event) => {
+          const toggle = event.target.closest("[data-race-news-toggle]");
+          if (toggle) {
+            const block = toggle.closest("[data-race-news]");
+            if (!block) {
+              return;
+            }
+            const open = toggle.getAttribute("aria-expanded") !== "true";
+            setRaceNewsOpen(block, open);
+            const state = block.dataset.raceNewsState;
+            if (state === "pending" || state === "error") {
+              loadRaceNews(block, open);
+            }
+            return;
+          }
+
+          const jump = event.target.closest("[data-coverage-jump]");
+          if (jump) {
+            const groupId = jump.dataset.coverageJump;
+            const select = document.getElementById(groupId + "-race-select");
+            if (document.getElementById(groupId + "-coverage") && (!select || select.value !== jump.dataset.coverageRace)) {
+              loadCoverage(groupId, { selectedRaceId: jump.dataset.coverageRace, refreshToken: 0 });
+            }
+          }
+        });
+
+        if (!("IntersectionObserver" in window)) {
+          return;
+        }
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) {
+                return;
+              }
+              observer.unobserve(entry.target);
+              if (entry.target.dataset.raceNewsState === "pending") {
+                loadRaceNews(entry.target, false);
+              }
+            });
+          },
+          { rootMargin: "240px 0px" },
+        );
+        const watch = (root) => {
+          root.querySelectorAll('[data-race-news][data-race-news-state="pending"]').forEach((block) => observer.observe(block));
+        };
+        watch(document);
+        new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            Array.from(mutation.addedNodes).forEach((node) => {
+              if (node.nodeType === 1) {
+                watch(node);
+              }
+            });
+          });
+        }).observe(document.body, { childList: true, subtree: true });
+      }
+
       function bindLoadMoreRaces(root = document) {
         root.querySelectorAll("[data-load-more-races]").forEach((button) => {
           if (button.dataset.bound === "true") {
@@ -12912,6 +13274,7 @@ function buildHtmlPage(data, view) {
 
       bindArticleControls();
       bindLoadMoreRaces();
+      bindRaceNews();
       bindNationalChampionshipFilters();
       bindNationalChampionshipMap();
       bindSeasonCalendar();
@@ -13865,6 +14228,32 @@ const server = http.createServer(async (request, response) => {
         sendJson(response, 200, {
           groupId,
           html: buildCoverageBlock(group, coverageView),
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/race-news") {
+        const raceId = url.searchParams.get("race") || "";
+        const data = await loadRaceData({ includeDeferred: false });
+        const race = [...(data.liveStageRaces || []), ...(data.recentResults || []), ...(data.finalizedStageRaces || [])].find(
+          (entry) => entry.id === raceId,
+        );
+        if (!race) {
+          sendJson(response, 404, { error: "Unknown race." });
+          return;
+        }
+
+        let articles;
+        try {
+          articles = await loadRaceArticlePool(race);
+        } catch (error) {
+          sendJson(response, 502, { error: "Race coverage is unavailable right now." });
+          return;
+        }
+
+        sendJson(response, 200, {
+          raceId,
+          html: buildRaceNewsMarkup(race, { articles }),
         });
         return;
       }

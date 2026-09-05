@@ -87,6 +87,7 @@ function loadParserExports() {
       buildRaceCard,
       buildUpcomingCard,
       buildStageRaceCard,
+      buildRaceNewsMarkup,
       getRaceFinishVideoUrl,
       isMultiDayRace,
       isRaceWithinScheduledLiveWindow,
@@ -5051,4 +5052,71 @@ test("share paths carry their own link preview and jump, and the tags describe a
     assert.match(tags, /og:image:height" content="630"/);
     assert.match(tags, /twitter:card" content="summary_large_image"/);
   }
+});
+
+test("every results card ends with a news line that opens the race's newest stories in place", () => {
+  const { buildRaceNewsMarkup, buildStageRaceCard, buildRaceCard, buildUpcomingCard } = loadParserExports();
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    date: "22 August – 13 September 2026",
+    location: "Spain",
+    stageRace: {
+      totalStages: 21,
+      completedStages: 13,
+      stages: [{ number: 13, order: 13, label: "Stage 13", winner: "Wout van Aert", standings: [{ place: "1", rider: "Wout van Aert" }] }],
+      latestStage: { number: 13, label: "Stage 13", winner: "Wout van Aert", standings: [{ place: "1", rider: "Wout van Aert" }] },
+      generalClassification: { stageNumber: 13, standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP" }] },
+      overallResult: [],
+    },
+  };
+
+  // Nothing cached: a pending line the client fills in, under the GC on a live card.
+  const live = buildStageRaceCard(race, { live: true });
+  const [, afterGc = ""] = live.split("Overall after stage 13");
+  assert.match(afterGc, /data-race-news="2026 Vuelta a España" data-race-news-state="pending"/);
+  assert.match(afterGc, /Loading the latest stories/);
+  assert.match(afterGc, /aria-controls="race-2026-vuelta-a-espana-news"/);
+  assert.doesNotMatch(afterGc, /race-news-more/);
+
+  // With stories, the newest one is the line and the drawer lists up to five with a
+  // link that loads the race into its group's coverage block.
+  // Same ordering as the coverage block: newest day first, best-scored story leading
+  // within the day, so the line carries the day's strongest report.
+  const story = (hours, title, publisher = "Reuters", score = 50) => ({
+    title,
+    publisher,
+    url: `https://example.com/${hours}`,
+    publishedAt: `Fri, 04 Sep 2026 ${String(hours).padStart(2, "0")}:38:00 GMT`,
+    description: "",
+    score,
+  });
+  const articles = [
+    story(8, "Van Aert wins Vuelta stage 13, Mas retains red jersey"),
+    story(9, "Van Aert powers to victory on stage 13 of Vuelta", "BBC", 70),
+    story(7, "Vuelta a España: Wout van Aert finally takes a victory on stage 13", "Cyclingnews"),
+    story(6, "Where to watch Vuelta a España 2026", "Sporting News"),
+    story(5, "Results Vuelta a España 2026 stage 12", "CyclingUpToDate"),
+    story(4, "Cycling-Van Aert wins Vuelta stage 13, Mas retains red"),
+    story(3, "Older story"),
+  ];
+  const ready = buildRaceNewsMarkup(race, { articles });
+  assert.match(ready, /data-race-news-state="ready"/);
+  assert.match(ready, /<span class="race-news-ticker-text"><strong>Van Aert powers to victory on stage 13 of Vuelta<\/strong> · BBC, Sep 4, 5:38 AM<\/span>/);
+  assert.equal((ready.match(/<li>/g) || []).length, 5);
+  assert.doesNotMatch(ready, /Older story/);
+  assert.match(ready, /href="#mens-worldtour-coverage" data-coverage-jump="mens-worldtour" data-coverage-race="2026 Vuelta a España">All Vuelta a España coverage/);
+  assert.match(ready, /<div class="race-news-drawer" id="race-2026-vuelta-a-espana-news" hidden>/);
+
+  // Women's races point at their own coverage block; no stories is said plainly.
+  const womens = buildRaceNewsMarkup({ ...race, series: "Women's WorldTour" }, { articles: [] });
+  assert.match(womens, /data-race-news-state="empty"/);
+  assert.match(womens, /No stories found yet/);
+  assert.match(womens, / disabled>/);
+
+  // One-day results carry the same line; upcoming races do not.
+  assert.match(buildRaceCard({ ...race, stageRace: null, winner: "A" }), /data-race-news="2026 Vuelta a España"/);
+  assert.doesNotMatch(buildUpcomingCard(race), /data-race-news/);
 });

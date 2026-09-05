@@ -432,6 +432,10 @@ For a requested competition group:
 4. It picks up to 8 articles for display.
 5. A refresh token rotates to a different batch of articles from the ranked pool.
 
+### The news line on every card
+
+Each results card also ends with a one-line "Latest news" pill built by `buildRaceNewsMarkup`: the race's leading story, opening a five-story list in place, with a link that loads the race into the coverage block. It is rendered from the article cache when that is warm and otherwise as a placeholder; the client fills placeholders from `/api/race-news?race=<race id>` as cards scroll into view or when tapped. Live races warm their pool in the background at render time. The endpoint reuses `loadRaceArticlePool` and `selectRaceArticles`, so the pill and the coverage block always agree on ordering.
+
 ### Race article query generation
 
 The app generates multiple search variants from race titles and page titles. It normalizes punctuation, removes year prefixes where appropriate, and handles women-specific naming variants such as `Women` and `Femmes`.

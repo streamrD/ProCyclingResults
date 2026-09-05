@@ -538,6 +538,21 @@ km/mi toggle. Two data paths feed it.
   and cached for a week in `stageProfileCache` because a published profile never
   changes. Late arrivals write onto the cached race, so the next render has them.
 
+Every results card — live, finalized stage race, one-day — ends with a "Latest news"
+line (`buildRaceNewsMarkup`, decided 2026-09-05 from four comps; the user picked the
+one-line-that-opens-in-place shape and asked for it under the GC and on every card
+where news is offered). The line carries the race's leading story (same ordering as
+the coverage block: newest day, best score first) and opens a five-story drawer in
+place with an "All … coverage" link that loads that race into the group's coverage
+block, which stays the full reader. It renders ready only when `articleCache` already
+holds the race (`peekRaceArticlePool`); otherwise it is a pending placeholder that the
+client fills from `/api/race-news?race=<id>` when the card scrolls within 240px of the
+viewport or the line is tapped, so a page of recent races fetches coverage one card at
+a time instead of 12 × 32 RSS queries at build. Live cards call `warmRaceArticlePool`
+so the second render carries the headline in the HTML. Measured before the change: on
+desktop the Vuelta card ended ~1,800px above the coverage block (plus a click), on a
+phone ~2,900px.
+
 `buildStageProfileMarkup` prefers the measured trace, scaled to its own altitude range
 but never less than 1,000 m of it so a flat stage stays low, and labels it "Elevation
 data: komoot". It renders compact by default — a thumbnail of the trace beside the
