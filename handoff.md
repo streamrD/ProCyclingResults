@@ -140,7 +140,7 @@ Useful scripts:
 npm test
 npm run benchmark:homepage-ready
 npm run benchmark:ready
-npm run benchmark:load -- --runs=5 --include-coverage
+npm run benchmark:load -- --runs=5
 ```
 
 ## Endpoint Cross-Reference
@@ -151,7 +151,7 @@ npm run benchmark:load -- --runs=5 --include-coverage
 - `/api/races`: active race JSON payload. Use `?debug=1` for additional timing/debug payload.
 - `/api/build-info`: manual `BUILD_INFO` payload from `server.js`. It is not automatically tied to the current commit.
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
-- `/api/competition-coverage?group=<id>`: lazy article coverage for active groups. Retired groups return `410`.
+- `/api/race-news?race=<race id>`: one race's "Latest news" line, rendered from its article pool. Unknown race `404`, upstream failure `502`. The old `/api/competition-coverage` was retired on 2026-09-05 with the coverage block (`archive/race-coverage-block.js`).
 - `/api/race-stages?race=<race id>`: reads a finished stage race's companion stage articles on request and returns `{ raceId, html }` with a re-rendered stage switcher. The id must resolve through `findStageRaceById` against the current homepage payload, so it cannot be pointed at an arbitrary Wikipedia page; anything else returns `404`.
 - `/calendar`, `/championships`: the results page with its own link preview and a jump to the section (`SHARE_VIEWS`, `getShareView`, `buildShareMetaTags`, `bindShareJump`). Fragments never reach the server, which is why these exist.
 - `/release-notes`, `/about`: editable site pages rendered from `data/*.md`; see "Editable Site Pages".
@@ -185,7 +185,7 @@ Major areas (anchored to symbols rather than line numbers, which drift on every 
 - API/debug payload builders: `buildRaceDataDebugPayload`, `buildHomepageDataPayload`
 - Race cards, standings, and rendering: `buildRaceCard`, `buildStageRaceCard`
 - Finish-video resolution and YouTube search: `getRaceFinishVideoUrl`, `getStageFinishVideoUrl`, `enrichFinishVideos`, `enrichStageFinishVideos`, `buildStageFinishVideoSubject`, `parseYouTubeSearchVideos`, `selectFinishVideo`
-- Recent-results row reveal: `buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces`/`syncCoverageRaceOptions` in the inline script — shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (12) and then removes itself once all rows are shown; revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync. Finished stage races are enriched even when not in the most-recent few and are never dropped for lacking a snapshot, so Grand Tours like the Giro stay in the grid. Note: both `.recent-race-slot` and `.load-more-races` set `display` in CSS, so each needs an explicit `[hidden]` rule for the JS `hidden` toggle to take effect
+- Recent-results row reveal: `buildRecentResultsBlock`, `.recent-race-slot`, `revealMoreRecentRaces` in the inline script — shows 3 by default, "Load more races" reveals up to `WORLDTOUR_RECENT_RESULTS` (12) and then removes itself once all rows are shown; revealed races feed the coverage dropdown via the `<group>-shown` query param and client-side option sync. Finished stage races are enriched even when not in the most-recent few and are never dropped for lacking a snapshot, so Grand Tours like the Giro stay in the grid. Note: both `.recent-race-slot` and `.load-more-races` set `display` in CSS, so each needs an explicit `[hidden]` rule for the JS `hidden` toggle to take effect
 - National Championships rendering and header flags: `buildNationalChampionshipsSection`, `getCountryFlagEmojiByName`
 - Season calendar: `buildSeasonCalendar`, `packSeasonCalendarRows`, `buildSeasonCalendarSvg`, `buildSeasonCalendarSection`, `createRaceAnchorId`, and `bindSeasonCalendar` in the inline script
 - Competition group definitions: `getCompetitionGroups`
@@ -541,10 +541,11 @@ km/mi toggle. Two data paths feed it.
 Every results card — live, finalized stage race, one-day — ends with a "Latest news"
 line (`buildRaceNewsMarkup`, decided 2026-09-05 from four comps; the user picked the
 one-line-that-opens-in-place shape and asked for it under the GC and on every card
-where news is offered). The line carries the race's leading story (same ordering as
-the coverage block: newest day, best score first) and opens a five-story drawer in
-place with an "All … coverage" link that loads that race into the group's coverage
-block, which stays the full reader. It renders ready only when `articleCache` already
+where news is offered). The line carries the race's leading story (newest day, best
+score first — `selectRaceArticles` with refresh token 0) and opens all eight stories
+in place. The "Race Coverage" block that used to close each section was retired the
+same day as redundant (archived in `archive/race-coverage-block.js`; its Refresh paging
+and story summaries were the only things not carried over). It renders ready only when `articleCache` already
 holds the race (`peekRaceArticlePool`); otherwise it is a pending placeholder that the
 client fills from `/api/race-news?race=<id>` when the card scrolls within 240px of the
 viewport or the line is tapped, so a page of recent races fetches coverage one card at

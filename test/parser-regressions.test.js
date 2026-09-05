@@ -5054,7 +5054,7 @@ test("share paths carry their own link preview and jump, and the tags describe a
   }
 });
 
-test("every results card ends with a news line that opens the race's newest stories in place", () => {
+test("every results card ends with a news line that opens the race's stories in place", () => {
   const { buildRaceNewsMarkup, buildStageRaceCard, buildRaceCard, buildUpcomingCard } = loadParserExports();
   const race = {
     id: "2026 Vuelta a España",
@@ -5079,12 +5079,10 @@ test("every results card ends with a news line that opens the race's newest stor
   assert.match(afterGc, /data-race-news="2026 Vuelta a España" data-race-news-state="pending"/);
   assert.match(afterGc, /Loading the latest stories/);
   assert.match(afterGc, /aria-controls="race-2026-vuelta-a-espana-news"/);
-  assert.doesNotMatch(afterGc, /race-news-more/);
 
-  // With stories, the newest one is the line and the drawer lists up to five with a
-  // link that loads the race into its group's coverage block.
-  // Same ordering as the coverage block: newest day first, best-scored story leading
-  // within the day, so the line carries the day's strongest report.
+  // With stories, the leading one is the line and the drawer lists up to eight — the
+  // same set and order the retired coverage block showed: newest day first,
+  // best-scored story leading within the day.
   const story = (hours, title, publisher = "Reuters", score = 50) => ({
     title,
     publisher,
@@ -5101,20 +5099,22 @@ test("every results card ends with a news line that opens the race's newest stor
     story(5, "Results Vuelta a España 2026 stage 12", "CyclingUpToDate"),
     story(4, "Cycling-Van Aert wins Vuelta stage 13, Mas retains red"),
     story(3, "Older story"),
+    story(2, "Eighth story"),
+    story(1, "Ninth story"),
   ];
   const ready = buildRaceNewsMarkup(race, { articles });
   assert.match(ready, /data-race-news-state="ready"/);
   assert.match(ready, /<span class="race-news-ticker-text"><strong>Van Aert powers to victory on stage 13 of Vuelta<\/strong> · BBC, Sep 4, 5:38 AM<\/span>/);
-  assert.equal((ready.match(/<li>/g) || []).length, 5);
-  assert.doesNotMatch(ready, /Older story/);
-  assert.match(ready, /href="#mens-worldtour-coverage" data-coverage-jump="mens-worldtour" data-coverage-race="2026 Vuelta a España">All Vuelta a España coverage/);
+  assert.equal((ready.match(/<li>/g) || []).length, 8);
+  assert.match(ready, /Eighth story/);
+  assert.doesNotMatch(ready, /Ninth story/);
   assert.match(ready, /<div class="race-news-drawer" id="race-2026-vuelta-a-espana-news" hidden>/);
 
-  // Women's races point at their own coverage block; no stories is said plainly.
-  const womens = buildRaceNewsMarkup({ ...race, series: "Women's WorldTour" }, { articles: [] });
-  assert.match(womens, /data-race-news-state="empty"/);
-  assert.match(womens, /No stories found yet/);
-  assert.match(womens, / disabled>/);
+  // No stories is said plainly, and the line cannot open.
+  const empty = buildRaceNewsMarkup(race, { articles: [] });
+  assert.match(empty, /data-race-news-state="empty"/);
+  assert.match(empty, /No stories found yet/);
+  assert.match(empty, / disabled>/);
 
   // One-day results carry the same line; upcoming races do not.
   assert.match(buildRaceCard({ ...race, stageRace: null, winner: "A" }), /data-race-news="2026 Vuelta a España"/);

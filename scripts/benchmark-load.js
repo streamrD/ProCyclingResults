@@ -7,7 +7,6 @@ function parseArgs(argv) {
     baseUrl: process.env.BASE_URL || "http://localhost:3000",
     runs: Number.parseInt(process.env.RUNS || "5", 10) || 5,
     includeDeferred: false,
-    includeCoverage: false,
     waitReady: false,
     waitHomepageReady: false,
     readyTimeoutMs: Number.parseInt(process.env.READY_TIMEOUT_MS || "60000", 10) || 60000,
@@ -21,8 +20,6 @@ function parseArgs(argv) {
       options.runs = Math.max(1, Number.parseInt(arg.slice("--runs=".length), 10) || options.runs);
     } else if (arg === "--include-deferred") {
       options.includeDeferred = true;
-    } else if (arg === "--include-coverage") {
-      options.includeCoverage = true;
     } else if (arg === "--wait-ready") {
       options.waitReady = true;
     } else if (arg === "--wait-homepage-ready") {
@@ -124,13 +121,6 @@ function buildEndpoints(options) {
     endpoints.push(
       { name: "Deferred ProSeries section", path: "/api/competition-section?group=proseries" },
       { name: "Deferred Europe Tour section", path: "/api/competition-section?group=europe-tour" },
-    );
-  }
-
-  if (options.includeCoverage) {
-    endpoints.push(
-      { name: "Men's WorldTour coverage", path: "/api/competition-coverage?group=mens-worldtour" },
-      { name: "Women's WorldTour coverage", path: "/api/competition-coverage?group=womens-worldtour" },
     );
   }
 

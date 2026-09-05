@@ -2,7 +2,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 5 September 2026
 
-- **Latest news on every race card.** Each race card now ends with a "Latest news" line carrying the top story about that race. Tap it and the five newest stories open right there, with a link to the full coverage for that race. During the Vuelta that means the news is directly under the overall classification instead of several screens down behind a button. Stories load as the cards come into view.
+- **Latest news on every race card.** Each race card now ends with a "Latest news" line carrying the top story about that race. Tap it and the eight newest stories open right there. During the Vuelta that means the news is directly under the overall classification instead of several screens down behind a button. Stories load as the cards come into view.
+- **The Race Coverage block is gone.** With the news on every card, the "Load Race Coverage" block at the foot of each section, with its race dropdown and Refresh button, no longer earned its place and has been removed.
 - **No profile expansion on phones.** The "Expand profile" button on measured stage profiles is gone on narrow screens. The tall chart was too squeezed there to be readable, and the start and finish town labels ran into other text. Phones now always show the compact profile. On wider screens nothing changes.
 
 ## 4 September 2026

@@ -50,7 +50,7 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 
 - Server-rendered HTML assembled as template strings in `server.js`
 - Inline CSS in the HTML response
-- Small inline browser script for coverage selector and refresh interactions
+- Small inline browser script for stage chips, unit and profile preferences, and the news line on each race card
 - Local font assets served from `assets/fonts`
 
 ### Deployment
@@ -138,8 +138,8 @@ There is currently:
   Returns the deployment marker from `BUILD_INFO` in `server.js`. On Railway it reflects the deployed commit, branch and message from `RAILWAY_GIT_*` environment variables; elsewhere it falls back to hardcoded values. The `source` field says which — `railway-env` or `hardcoded-fallback` — so a fallback marker is never mistaken for the live commit.
 - `/api/competition-section?group=<id>`
   Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
-- `/api/competition-coverage?group=<id>`
-  Returns article coverage for a specific competition group. Coverage is loaded on demand rather than during the initial page render.
+- `/api/race-news?race=<race id>`
+  Returns the "Latest news" line for one live or recent race, rendered from its article pool. The page fills placeholder lines from it as cards scroll into view.
 - `/api/race-stages?race=<race id>`
   Returns `{ raceId, html }` with a re-rendered stage switcher for one finished stage race, after reading its companion stage articles. The id must match a race already in the homepage payload (`findStageRaceById`), so it cannot be used to fetch an arbitrary Wikipedia page; anything else returns `404`.
 - `/calendar` and `/championships`
@@ -167,8 +167,8 @@ The app follows a single-process request/response model:
 2. If the request is for `/assets/*`, the file is served directly.
 3. `/api/homepage-data` and `/api/races` load or reuse the active WorldTour plus national championship payload.
 4. `/api/competition-section` is retained for future deferred sections, but there are no active deferred sections currently.
-5. `/api/competition-coverage` loads article coverage on demand for the requested active WorldTour section.
-6. `/` renders the shell plus inline client JS that warms the homepage payload and lazy-loads article coverage.
+5. `/api/race-news` renders one race's news line on demand; the page asks for it as each card scrolls into view.
+6. `/` renders the shell plus inline client JS that warms the homepage payload and fills the news lines.
 
 There is no persistence layer. All state is in memory and rebuilt from live upstream sources when caches expire.
 
@@ -422,19 +422,14 @@ If the extracted string looks implausible, it falls back to the season-table-der
 
 ## Article Coverage Workflow
 
-Article coverage is race-specific and separate from the main race-data cache. It is also lazy-loaded now: the initial homepage render does not fetch article pools for the visible competitions until a user clicks `Load Race Coverage`.
+Article coverage is race-specific and separate from the main race-data cache, and it is never fetched during the initial page render for recent races: each results card carries a "Latest news" line that is filled on demand. The "Race Coverage" block that used to sit at the foot of each competition section (Load button, race dropdown, Refresh paging, eight article cards) was retired on 2026-09-05 and is archived in `archive/race-coverage-block.js`.
 
-For a requested competition group:
+For one race:
 
-1. The server builds a list of article-eligible races from live races plus recent results.
-2. A selected race is chosen from query params or defaults to the first race in the group.
-3. The app loads or reuses an article pool for that race.
-4. It picks up to 8 articles for display.
-5. A refresh token rotates to a different batch of articles from the ranked pool.
-
-### The news line on every card
-
-Each results card also ends with a one-line "Latest news" pill built by `buildRaceNewsMarkup`: the race's leading story, opening a five-story list in place, with a link that loads the race into the coverage block. It is rendered from the article cache when that is warm and otherwise as a placeholder; the client fills placeholders from `/api/race-news?race=<race id>` as cards scroll into view or when tapped. Live races warm their pool in the background at render time. The endpoint reuses `loadRaceArticlePool` and `selectRaceArticles`, so the pill and the coverage block always agree on ordering.
+1. The card renders its news line from the article cache if that race's pool is already warm, otherwise as a placeholder. Live races start warming their pool at render.
+2. The client requests `/api/race-news?race=<id>` when a placeholder scrolls within 240px of the viewport or is tapped.
+3. The server loads or reuses the article pool for that race and picks up to 8 articles.
+4. The line shows the leading story; opening it lists all eight.
 
 ### Race article query generation
 
@@ -527,7 +522,7 @@ Useful commands:
   Measures cold-start readiness for `/api/homepage-data`, which is the key metric for the main page experience.
 - `npm run benchmark:ready`
   Measures cold-start readiness for `/api/races`.
-- `npm run benchmark:load -- --runs=5 --include-deferred --include-coverage`
+- `npm run benchmark:load -- --runs=5 --include-deferred`
   Measures warmed response times for the homepage, full API, optional deferred section endpoints, and coverage endpoints. With no active deferred groups, deferred section measurements are mostly useful when restoring archived sections.
 
 The script can also target another environment via `--base-url=<url>`.
@@ -540,7 +535,7 @@ Major rendering helpers include:
 
 - `buildHtmlPage()`
 - `buildCompetitionSection()`
-- `buildCoverageBlock()`
+- `buildRaceNewsMarkup()`
 - `buildRaceCard()`
 - `buildStageRaceCard()`
 - `buildNationalChampionshipsSection()` (schedule strip, season status, featured cards and the continent-grouped champions table)
@@ -581,9 +576,7 @@ Client-side JS is still intentionally small, but it now does more than simple fo
 - Reveals recent results a row at a time: each WorldTour section shows the first `WORLDTOUR_RECENT_RESULTS_STEP` (3) races, and a "Load more races" button reveals the next row up to `WORLDTOUR_RECENT_RESULTS` (12), after which the button removes itself. Revealing more races also adds them to that section's coverage race selector.
 - Loads the full stage podiums for a finished stage race on demand, replacing the switcher with the deeper markup returned by `/api/race-stages`. The control appears only when the card's history is winner-only, and never on a live card, whose companion articles were already read at build time.
 - Swaps the stage shown on a stage-race card. Each card with two or more raced stages renders a numbered strip covering the whole route — stages not yet raced are disabled — plus one hidden panel per raced stage. A delegated `click` listener on anything carrying `data-stage-target` — the chips and, on a live race, the "Up next" row — toggles `is-active` and panel `hidden` by target, so the strip works inside deferred sections without rebinding, and a 21-stage card stays the height of a 5-stage one. The GC section below always shows the race's current overall regardless of the selected stage. Each panel links its own stage's finish video where one is known. Each panel also opens with a stage profile block — a measured altitude trace where the organiser publishes one (labelled with its source, compact by default and expandable to a tall chart with axes and start/finish markers; the choice is kept in `localStorage` under `pcr-profile-view`), otherwise a schematic stage-type pictogram with a "no elevation profile is available" note — with distance and climbing in metric or imperial. The km/mi toggle is delegated at `document`, stores the choice in `localStorage` (`pcr-units`), and a `MutationObserver` re-applies it to stage markup that arrives later.
-- Loads race coverage on demand for each active competition group
-- Changing a race selector submits the coverage request
-- Clicking refresh increments a hidden refresh token and reloads the coverage block
+- Fills each race card's "Latest news" line from `/api/race-news` as the card scrolls into view, and opens the list in place
 
 There is still no frontend framework and no SPA state model. The browser only fetches server-rendered fragments and JSON payloads for these targeted interactions.
 

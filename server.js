@@ -8430,12 +8430,6 @@ function formatTimestamp(timestamp) {
   }).format(new Date(timestamp));
 }
 
-// The two active competition groups; a race's news pill links to its group's
-// coverage block for the full reader.
-function getCompetitionGroupIdForRace(race) {
-  return /women/i.test(String(race?.series || "")) ? "womens-worldtour" : "mens-worldtour";
-}
-
 // Reads the article cache without triggering a fetch: the pill renders from a warm
 // pool and otherwise as a placeholder the client fills in.
 function peekRaceArticlePool(race) {
@@ -8466,15 +8460,12 @@ function formatNewsTimestamp(timestamp) {
   }).format(date);
 }
 
-const RACE_NEWS_DRAWER_LIMIT = 5;
-
 // One line at the foot of a race card: "Latest news" plus the newest headline, which
-// opens a short list in place. Rendered ready when the article pool is cached (or
+// opens the race's stories in place — the same eight the retired coverage block
+// showed, in the same order. Rendered ready when the article pool is cached (or
 // passed in by /api/race-news), otherwise as a pending placeholder the client
-// fetches when the card scrolls into view or the line is tapped. The drawer links
-// to the group's coverage block, which stays the full reader.
+// fetches when the card scrolls into view or the line is tapped.
 function buildRaceNewsMarkup(race, options = {}) {
-  const groupId = getCompetitionGroupIdForRace(race);
   const raceId = String(race?.id || "");
   const drawerId = `${createRaceAnchorId(race)}-news`;
   const pool = Array.isArray(options.articles) ? options.articles : peekRaceArticlePool(race);
@@ -8490,7 +8481,7 @@ function buildRaceNewsMarkup(race, options = {}) {
           stamp(lead) ? `, ${escapeHtml(stamp(lead))}` : ""
         }`;
   const items = (articles || [])
-    .slice(0, RACE_NEWS_DRAWER_LIMIT)
+    .slice(0, MAX_RACE_ARTICLES)
     .map(
       (article) => `
             <li><a href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer"><span class="race-news-source">${escapeHtml(
@@ -8504,10 +8495,7 @@ function buildRaceNewsMarkup(race, options = {}) {
     state === "ready"
       ? `
           <ol class="race-news-list">${items}
-          </ol>
-          <a class="race-news-more" href="#${escapeHtml(groupId)}-coverage" data-coverage-jump="${escapeHtml(
-            groupId,
-          )}" data-coverage-race="${escapeHtml(raceId)}">All ${escapeHtml(race.title)} coverage ▸</a>`
+          </ol>`
       : "";
 
   return `
@@ -8522,46 +8510,6 @@ function buildRaceNewsMarkup(race, options = {}) {
         <div class="race-news-drawer" id="${escapeHtml(drawerId)}" hidden>${drawer}
         </div>
       </div>`;
-}
-
-function buildArticleCard(article) {
-  const publishedLabel = article.publishedAt
-    ? formatTimestamp(article.publishedAt)
-    : "Recent coverage";
-
-  return `
-    <article class="article-card">
-      <div class="article-kicker">${escapeHtml(article.publisher)}</div>
-      <h3><a href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer">${escapeHtml(article.title)}</a></h3>
-      <p class="meta">${escapeHtml(publishedLabel)}</p>
-      <p class="article-description">${escapeHtml(article.description || `Coverage related to ${article.raceTitle}.`)}</p>
-    </article>`;
-}
-
-function buildRaceArticleControls(groupId, articleRaces, selectedRaceId, refreshToken) {
-  const options = articleRaces
-    .map((race) => {
-      const selected = race.id === selectedRaceId ? " selected" : "";
-      return `<option value="${escapeHtml(race.id)}"${selected}>${escapeHtml(race.title)} • ${escapeHtml(race.date)}</option>`;
-    })
-    .join("");
-
-  return `
-    <form class="article-controls" method="get" action="/#${escapeHtml(groupId)}-coverage">
-      <div class="article-controls-left">
-        <label class="article-label" for="${escapeHtml(groupId)}-race-select">Select Race</label>
-        <select id="${escapeHtml(groupId)}-race-select" name="${escapeHtml(groupId)}-race" class="article-select" data-group-id="${escapeHtml(groupId)}">${options}</select>
-      </div>
-      <input type="hidden" name="${escapeHtml(groupId)}-refresh" id="${escapeHtml(groupId)}-refresh-token" value="${escapeHtml(String(refreshToken))}" />
-      <button type="button" class="refresh-button" data-group-id="${escapeHtml(groupId)}">Refresh</button>
-    </form>`;
-}
-
-function buildLoadCoverageButton(groupId) {
-  return `
-    <button type="button" class="load-coverage-button" data-coverage-group-id="${escapeHtml(groupId)}">
-      Load Race Coverage
-    </button>`;
 }
 
 function getCompetitionGroups(data) {
@@ -8604,33 +8552,6 @@ function getCompetitionGroups(data) {
   }));
 }
 
-async function buildCoverageViewForGroup(group, url) {
-  // The recent-results grid reveals races in rows; the coverage dropdown only
-  // lists races the user has actually revealed (defaults to the first row).
-  const requestedShown = Number.parseInt(url.searchParams.get(`${group.id}-shown`) || "", 10);
-  const shownRecent = Math.min(
-    group.recentResults.length,
-    Number.isFinite(requestedShown) && requestedShown > 0 ? requestedShown : WORLDTOUR_RECENT_RESULTS_STEP,
-  );
-  const articleRaces = [...group.liveStageRaces, ...group.recentResults.slice(0, shownRecent)];
-  const selectedRaceId = url.searchParams.get(`${group.id}-race`) || articleRaces[0]?.id || "";
-  const refreshToken = Math.max(
-    0,
-    Number.parseInt(url.searchParams.get(`${group.id}-refresh`) || "0", 10) || 0,
-  );
-  const selectedRace =
-    articleRaces.find((race) => race.id === selectedRaceId) || articleRaces[0] || null;
-  const articlePool = selectedRace ? await loadRaceArticlePool(selectedRace) : [];
-
-  return {
-    articleRaces,
-    selectedRaceId: selectedRace?.id || "",
-    selectedRaceTitle: selectedRace?.title || "the selected race",
-    refreshToken,
-    raceArticles: selectRaceArticles(articlePool, refreshToken, selectedRace),
-  };
-}
-
 function buildCompetitionBlock(title, description, markup, options = {}) {
   if (!markup) {
     return "";
@@ -8645,47 +8566,6 @@ function buildCompetitionBlock(title, description, markup, options = {}) {
         <p>${escapeHtml(description)}</p>
       </div>
       <div class="${gridClass}">${markup}</div>
-    </div>`;
-}
-
-function buildCoverageBlock(group, coverageView) {
-  if (!coverageView) {
-    return `
-      <div class="competition-block competition-coverage" id="${escapeHtml(group.id)}-coverage">
-        <div class="competition-block-head">
-          <h3>Race Coverage</h3>
-          <p>Load article coverage to explore the latest stories for the above races.</p>
-        </div>
-        ${buildLoadCoverageButton(group.id)}
-        <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content"></div>
-      </div>`;
-  }
-
-  if (coverageView.articleRaces.length === 0) {
-    return "";
-  }
-
-  const controls = buildRaceArticleControls(
-    group.id,
-    coverageView.articleRaces,
-    coverageView.selectedRaceId,
-    coverageView.refreshToken,
-  );
-  const articleCards =
-    coverageView.raceArticles.length > 0
-      ? coverageView.raceArticles.map(buildArticleCard).join("")
-      : `<p class="meta">No top-tier race coverage was available for ${escapeHtml(coverageView.selectedRaceTitle)} at the moment.</p>`;
-
-  return `
-    <div class="competition-block competition-coverage" id="${escapeHtml(group.id)}-coverage">
-      <div class="competition-block-head">
-        <h3>Race Coverage</h3>
-        <p>Choose one live or recent race from this competition to view article coverage.</p>
-      </div>
-      ${controls}
-      <div class="coverage-content" id="${escapeHtml(group.id)}-coverage-content">
-        <div class="article-grid">${articleCards}</div>
-      </div>
     </div>`;
 }
 
@@ -8726,14 +8606,13 @@ function buildRecentResultsBlock(group) {
     </div>`;
 }
 
-function buildCompetitionSection(group, coverageView) {
+function buildCompetitionSection(group) {
   const liveMarkup = group.liveStageRaces.map(buildLiveStageRaceCard).join("");
   const upcomingMarkup = group.upcomingRaces.map(buildUpcomingCard).join("");
   const blocks = [
     buildCompetitionBlock("Live Multi-Stage", "Current stage races and overall standings.", liveMarkup),
     buildRecentResultsBlock(group),
     buildCompetitionBlock("Upcoming", "Next races on the calendar.", upcomingMarkup),
-    buildCoverageBlock(group, coverageView),
   ]
     .filter(Boolean)
     .join("");
@@ -9575,7 +9454,7 @@ function buildHtmlPage(data, view) {
   const eagerCompetitionGroups = competitionGroups.filter((group) => !group.deferred);
   const deferredCompetitionGroups = competitionGroups.filter((group) => group.deferred);
   const competitionSections = eagerCompetitionGroups
-    .map((group) => buildCompetitionSection(group, view.coverageByGroup[group.id]))
+    .map((group) => buildCompetitionSection(group))
     .filter(Boolean)
     .join("");
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
@@ -9797,8 +9676,6 @@ function buildHtmlPage(data, view) {
       .section-tag,
       .card-kicker,
       .detail-label,
-      .article-kicker,
-      .article-label,
       .metric-label,
       .updated {
         display: inline-flex;
@@ -10071,14 +9948,9 @@ function buildHtmlPage(data, view) {
         display: none;
       }
 
-      .competition-coverage .article-grid {
-        margin-top: 1rem;
-      }
-
       .national-section::before {
         background: var(--rainbow);
       }
-
 
       .national-error {
         padding: 0.85rem 1rem;
@@ -10097,7 +9969,6 @@ function buildHtmlPage(data, view) {
         text-decoration: underline;
       }
 
-
       .national-event-meta span,
       .national-event-empty span {
         color: var(--muted);
@@ -10107,7 +9978,6 @@ function buildHtmlPage(data, view) {
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
-
 
       .national-event-card[hidden] {
         display: none;
@@ -11007,8 +10877,7 @@ function buildHtmlPage(data, view) {
         }
       }
 
-      .card,
-      .article-card {
+      .card {
         position: relative;
         overflow: hidden;
         border-radius: 24px;
@@ -11017,8 +10886,7 @@ function buildHtmlPage(data, view) {
         box-shadow: 0 14px 40px rgba(0, 31, 98, 0.08);
       }
 
-      .card::before,
-      .article-card::before {
+      .card::before {
         content: "";
         position: absolute;
         left: 1rem;
@@ -11665,22 +11533,6 @@ function buildHtmlPage(data, view) {
         line-height: 1.2;
       }
 
-      .race-news-more {
-        display: inline-block;
-        margin-top: 0.55rem;
-        color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
-        font-size: 0.8rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        text-decoration: none;
-      }
-
-      .race-news-more:hover {
-        color: var(--uci-blue-bright);
-      }
-
       @media (max-width: 720px) {
         .race-news-ticker {
           align-items: flex-start;
@@ -12099,62 +11951,6 @@ function buildHtmlPage(data, view) {
         font-size: 0.86rem;
       }
 
-      .article-grid {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      }
-
-      .article-controls {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 1rem;
-        width: 100%;
-        padding: 1rem;
-        border-radius: 22px;
-        border: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(0, 51, 160, 0.04), rgba(0, 120, 199, 0.02));
-      }
-
-      .article-controls-left {
-        display: flex;
-        flex-direction: column;
-        gap: 0.45rem;
-        min-width: min(100%, 28rem);
-      }
-
-      .article-label {
-        color: var(--uci-blue-bright);
-        font-size: 0.74rem;
-      }
-
-      .article-select,
-      .refresh-button {
-        min-height: 3.2rem;
-        border-radius: 16px;
-        border: 1px solid var(--line-strong);
-        font-family: "Manrope", "Segoe UI", sans-serif;
-        font-size: 0.98rem;
-        font-weight: 700;
-      }
-
-      .article-select {
-        width: 100%;
-        padding: 0.9rem 1rem;
-        background: rgba(255, 255, 255, 0.98);
-        color: var(--ink);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-      }
-
-      .refresh-button {
-        padding: 0.9rem 1.25rem;
-        background: linear-gradient(180deg, var(--uci-blue-bright) 0%, var(--uci-blue) 100%);
-        color: white;
-        cursor: pointer;
-        box-shadow: 0 16px 30px rgba(0, 74, 184, 0.24);
-      }
-
       .load-coverage-button {
         min-height: 3.2rem;
         padding: 0.9rem 1.25rem;
@@ -12177,42 +11973,6 @@ function buildHtmlPage(data, view) {
       .load-coverage-button.is-loading {
         opacity: 0.78;
         pointer-events: none;
-      }
-
-      .coverage-content {
-        margin-top: 1rem;
-      }
-
-      .article-card {
-        padding: 1rem 1rem 1.1rem;
-      }
-
-      .article-kicker {
-        color: var(--uci-blue-bright);
-        font-size: 0.72rem;
-      }
-
-      .article-card h3 {
-        margin-top: 0.6rem;
-        font-size: 1.26rem;
-        line-height: 1.05;
-        text-transform: uppercase;
-      }
-
-      .article-card h3 a {
-        color: var(--ink);
-        text-decoration: none;
-      }
-
-      .article-card h3 a:hover {
-        color: var(--uci-blue);
-      }
-
-      .article-description {
-        margin: 0.85rem 0 0;
-        color: var(--muted);
-        font-size: 0.95rem;
-        line-height: 1.45;
       }
 
       .footer-note {
@@ -12297,15 +12057,6 @@ function buildHtmlPage(data, view) {
         .section-head {
           align-items: start;
           flex-direction: column;
-        }
-
-        .article-controls {
-          align-items: stretch;
-          flex-direction: column;
-        }
-
-        .article-controls-left {
-          min-width: 100%;
         }
 
       }
@@ -12441,49 +12192,6 @@ function buildHtmlPage(data, view) {
 
           mount.insertAdjacentHTML("beforeend", buildDeferredContinuationMarkup(remainingGroups));
         });
-      }
-
-      async function loadCoverage(groupId, options = {}) {
-        const coverageBlock = document.getElementById(groupId + "-coverage");
-        const coverageContent = document.getElementById(groupId + "-coverage-content");
-        if (!coverageBlock || !coverageContent) {
-          return;
-        }
-
-        const trigger = coverageBlock.querySelector('[data-coverage-group-id="' + groupId + '"]');
-        if (trigger) {
-          trigger.classList.add("is-loading");
-        }
-
-        try {
-          const params = new URLSearchParams({ group: groupId });
-          if (options.selectedRaceId) {
-            params.set(groupId + "-race", options.selectedRaceId);
-          }
-          if (Number.isFinite(options.refreshToken)) {
-            params.set(groupId + "-refresh", String(options.refreshToken));
-          }
-          const shownRecent = countShownRecentRaces(groupId);
-          if (shownRecent > 0) {
-            params.set(groupId + "-shown", String(shownRecent));
-          }
-
-          const response = await fetch("/api/competition-coverage?" + params.toString(), { cache: "no-store" });
-          if (!response.ok) {
-            throw new Error("Unable to load coverage");
-          }
-
-          const payload = await response.json();
-          coverageBlock.outerHTML = payload.html || "";
-          bindArticleControls(document);
-          syncCoverageRaceOptions(groupId);
-        } catch (error) {
-          coverageContent.innerHTML = '<p class="meta">Unable to load race coverage right now. Please try again in a moment.</p>';
-        } finally {
-          if (trigger) {
-            trigger.classList.remove("is-loading");
-          }
-        }
       }
 
       function bindNationalChampionshipFilters() {
@@ -12831,35 +12539,6 @@ function buildHtmlPage(data, view) {
         return block ? Array.prototype.slice.call(block.querySelectorAll("[data-recent-slot]")) : [];
       }
 
-      function countShownRecentRaces(groupId) {
-        return getRecentSlots(groupId).filter((slot) => !slot.hidden).length;
-      }
-
-      // Keep the coverage dropdown in sync with the races the user has revealed,
-      // appending newly shown races without disturbing the current selection.
-      function syncCoverageRaceOptions(groupId) {
-        const select = document.getElementById(groupId + "-race-select");
-        if (!select) {
-          return;
-        }
-
-        const existingValues = new Set(Array.prototype.map.call(select.options, (option) => option.value));
-        getRecentSlots(groupId).forEach((slot) => {
-          if (slot.hidden) {
-            return;
-          }
-          const raceId = slot.dataset.recentRaceId;
-          if (!raceId || existingValues.has(raceId)) {
-            return;
-          }
-          const option = document.createElement("option");
-          option.value = raceId;
-          option.textContent = slot.dataset.recentRaceTitle + " • " + slot.dataset.recentRaceDate;
-          select.appendChild(option);
-          existingValues.add(raceId);
-        });
-      }
-
       function revealMoreRecentRaces(groupId) {
         const block = getRecentBlock(groupId);
         if (!block) {
@@ -12878,13 +12557,11 @@ function buildHtmlPage(data, view) {
           button.hidden = true;
         }
 
-        syncCoverageRaceOptions(groupId);
       }
 
       // The news line on each race card. A pill rendered pending (no cached stories)
       // is filled from /api/race-news when it scrolls near the viewport or is tapped,
-      // so a page of recent races loads its coverage a card at a time. The drawer's
-      // "All coverage" link loads that race into the group's coverage block first.
+      // so a page of recent races loads its coverage a card at a time.
       function bindRaceNews() {
         const loading = new Set();
 
@@ -12944,16 +12621,6 @@ function buildHtmlPage(data, view) {
             if (state === "pending" || state === "error") {
               loadRaceNews(block, open);
             }
-            return;
-          }
-
-          const jump = event.target.closest("[data-coverage-jump]");
-          if (jump) {
-            const groupId = jump.dataset.coverageJump;
-            const select = document.getElementById(groupId + "-race-select");
-            if (document.getElementById(groupId + "-coverage") && (!select || select.value !== jump.dataset.coverageRace)) {
-              loadCoverage(groupId, { selectedRaceId: jump.dataset.coverageRace, refreshToken: 0 });
-            }
           }
         });
 
@@ -13001,60 +12668,6 @@ function buildHtmlPage(data, view) {
         });
       }
 
-      function bindArticleControls(root = document) {
-        root.querySelectorAll(".article-select").forEach((raceSelect) => {
-          if (raceSelect.dataset.bound === "true") {
-            return;
-          }
-
-          raceSelect.dataset.bound = "true";
-          raceSelect.addEventListener("change", () => {
-            const groupId = raceSelect.dataset.groupId;
-            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-            if (refreshTokenInput) {
-              refreshTokenInput.value = "0";
-            }
-            loadCoverage(groupId, {
-              selectedRaceId: raceSelect.value,
-              refreshToken: 0,
-            });
-          });
-        });
-
-        root.querySelectorAll(".refresh-button").forEach((refreshButton) => {
-          if (refreshButton.dataset.bound === "true") {
-            return;
-          }
-
-          refreshButton.dataset.bound = "true";
-          refreshButton.addEventListener("click", () => {
-            const groupId = refreshButton.dataset.groupId;
-            const refreshTokenInput = document.getElementById(groupId + "-refresh-token");
-            const currentValue = Number.parseInt(refreshTokenInput?.value || "0", 10) || 0;
-            const nextValue = currentValue + 1;
-            if (refreshTokenInput) {
-              refreshTokenInput.value = String(nextValue);
-            }
-            const raceSelect = document.getElementById(groupId + "-race-select");
-            loadCoverage(groupId, {
-              selectedRaceId: raceSelect?.value || "",
-              refreshToken: nextValue,
-            });
-          });
-        });
-
-        root.querySelectorAll(".load-coverage-button").forEach((coverageButton) => {
-          if (coverageButton.dataset.bound === "true") {
-            return;
-          }
-
-          coverageButton.dataset.bound = "true";
-          coverageButton.addEventListener("click", () => {
-            loadCoverage(coverageButton.dataset.coverageGroupId, { refreshToken: 0 });
-          });
-        });
-      }
-
       async function loadDeferredSection(groupId, options = {}) {
         const mount = document.getElementById(groupId + "-mount");
         if (!mount) {
@@ -13092,7 +12705,6 @@ function buildHtmlPage(data, view) {
           mount.innerHTML = payload.html || "";
           mount.hidden = false;
           deferredSectionState.set(groupId, true);
-          bindArticleControls(mount);
           updateDeferredContinuationSections();
 
           if (options.scrollOnLoad && options.scrollAfterLoad !== false) {
@@ -13272,7 +12884,6 @@ function buildHtmlPage(data, view) {
       applyProfileView(readProfileView());
       narrowViewport.addEventListener("change", () => applyProfileView(readProfileView()));
 
-      bindArticleControls();
       bindLoadMoreRaces();
       bindRaceNews();
       bindNationalChampionshipFilters();
@@ -14199,35 +13810,7 @@ const server = http.createServer(async (request, response) => {
 
         sendJson(response, 200, {
           groupId,
-          html: buildCompetitionSection(group, null),
-        });
-        return;
-      }
-
-      if (url.pathname === "/api/competition-coverage") {
-        const groupId = url.searchParams.get("group") || "";
-        if (RETIRED_COMPETITION_GROUP_IDS.has(groupId)) {
-          sendJson(response, 410, {
-            error: "This competition group is retired.",
-            message:
-              "UCI ProSeries and Europe Tour article coverage is archived with the retired section code and is not currently loaded.",
-          });
-          return;
-        }
-
-        const data = DEFERRED_COMPETITION_GROUP_IDS.has(groupId)
-          ? await loadCompetitionGroupData(groupId)
-          : await loadRaceData({ includeDeferred: false });
-        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
-        if (!group) {
-          sendJson(response, 404, { error: "Unknown competition group." });
-          return;
-        }
-
-        const coverageView = await buildCoverageViewForGroup(group, url);
-        sendJson(response, 200, {
-          groupId,
-          html: buildCoverageBlock(group, coverageView),
+          html: buildCompetitionSection(group),
         });
         return;
       }
@@ -14302,14 +13885,10 @@ const server = http.createServer(async (request, response) => {
 
     const data = await loadRaceData({ includeDeferred: false });
 
-    const competitionGroups = getCompetitionGroups(data);
-    const coverageByGroup = Object.fromEntries(competitionGroups.map((group) => [group.id, null]));
-
     sendHtml(
       response,
       200,
       buildHtmlPage(data, {
-        coverageByGroup,
         sharePath: url.pathname,
       }),
     );

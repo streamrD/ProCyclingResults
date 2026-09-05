@@ -16,7 +16,7 @@ Do not assume prior chat history is available or needed. Treat `README.md` as th
 
 - Minimal Node.js app with no third-party dependencies
 - Main runtime entrypoint: `server.js`
-- Server-rendered HTML plus `/api/homepage-data`, `/api/races`, national championships, and coverage endpoints
+- Server-rendered HTML plus `/api/homepage-data`, `/api/races`, national championships, and `/api/race-news` endpoints
 - Parser-heavy logic with live upstream dependencies
 - Tests live under `test/`
 
@@ -60,7 +60,7 @@ For narrow UI copy tweaks or tightly scoped fixes, you can often skip the full R
 - National Championships should prioritize completed event records in the UI. Use `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` only for narrow, source-backed date/location/podium/video overrides.
 - The National Championships section is an almanac: featured cards only for titles with a real podium, report or video, everything else one table row per federation inside collapsed continent groups. The hatched "typical window" bands on both calendar strips are schematic by design — never restyle them to look like confirmed dates. See "National Championships UX State" and "Season Calendar" in `handoff.md`.
 - The season calendar (`seasonCalendar` in the payload) is derived from `metadata.allRaces`; do not add a fetch for it. Every race card carries `id="race-<slug>"` because the calendar links to it.
-- Every results card ends with a "Latest news" line (`buildRaceNewsMarkup`) that opens the race's stories in place; it must never fetch article pools at build time for recent cards — placeholders are filled by `/api/race-news` as cards scroll into view. See "Stage Results Feature Map" in `handoff.md`.
+- Every results card ends with a "Latest news" line (`buildRaceNewsMarkup`) that opens the race's eight stories in place; it must never fetch article pools at build time for recent cards — placeholders are filled by `/api/race-news` as cards scroll into view. The old "Race Coverage" block and `/api/competition-coverage` were retired on 2026-09-05 (`archive/race-coverage-block.js`); do not bring them back unless asked. See "Stage Results Feature Map" in `handoff.md`.
 - Stage profiles live in `data/stage-profiles.json`. When a new ASO route is published, run `npm run refresh:stage-profiles -- --race "<Wikipedia page title>" --stages <n>` and commit the file; the server seeds its cache from it and never re-fetches those stages.
 - `npm test` includes a headless-Chrome smoke test of the client script; it skips when no Chrome is installed, so a green run on a machine without Chrome has not exercised the browser code.
 - `/api/homepage-data` is the main KPI for initial page readiness; `/api/races` currently uses the same active scope.
@@ -88,7 +88,7 @@ When performance behavior changes, also consider:
 
 1. `npm run benchmark:homepage-ready`
 2. `npm run benchmark:ready`
-3. `npm run benchmark:load -- --runs=5 --include-coverage`
+3. `npm run benchmark:load -- --runs=5`
 
 Two techniques worth reusing:
 
