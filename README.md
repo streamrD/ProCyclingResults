@@ -205,6 +205,10 @@ The index carries no dates. The schedule strip therefore draws two hatched "typi
 
 Some championship event records have small local metadata overrides for known date, location, podium, source report, or finish-video information. Keep these narrow and source-backed; the broad winner list should continue to come from the Cyclingnews index.
 
+### How we treat our sources
+
+`DATA-SOURCES.md` is the public statement of what the site reads, how often, and how to reach us. It is the URL in the server's user agent (`FETCH_USER_AGENT`); set `SOURCE_CONTACT` in the deployment environment to an email address and it is appended so a site operator can reach a person. Keep that document's table current whenever fetch frequency or caching changes, and add a dated line to its review log.
+
 ### Secondary source: Bing News RSS
 
 Race coverage articles are pulled from Bing News RSS search feeds, using several search queries per race name variant. The app then filters, deduplicates, and scores those results.

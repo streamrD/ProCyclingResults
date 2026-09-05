@@ -99,6 +99,11 @@ function loadParserExports() {
       getLiveRaceRefreshDelayMs,
       scheduleLiveRaceRefresh,
       shouldServeHomepageWarmup,
+      isRaceWithinRacingHours,
+      hasRaceEndedDaysAgo,
+      getArticleCacheTtlMs,
+      indexWikiRevisions,
+      FETCH_USER_AGENT,
       parseNationalChampionshipsIndex,
       getCountryFlagEmojiByName,
       buildNationalChampionshipEventCard,
@@ -3307,7 +3312,10 @@ test("getRaceFinishVideoUrl returns Tour de Suisse video only for the final comp
 });
 
 test("getRaceDataCacheTtlMs shortens cache TTL while live or just-finished races are active", () => {
-  const { hasFreshnessSensitiveRaceData, getRaceDataCacheTtlMs } = loadParserExports();
+  const { hasFreshnessSensitiveRaceData, getRaceDataCacheTtlMs: getTtlAt } = loadParserExports();
+  // Racing hours in the host country: 15:00 in Paris for races without a country.
+  const afternoon = new Date("2026-05-10T13:00:00.000Z");
+  const getRaceDataCacheTtlMs = (data) => getTtlAt(data, afternoon);
 
   assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [], europeTourLiveStageRaces: [] }), 15 * 60 * 1000);
   assert.equal(getRaceDataCacheTtlMs({ liveStageRaces: [{ id: "giro" }], europeTourLiveStageRaces: [] }), 60 * 1000);
@@ -5176,4 +5184,67 @@ test("mergeStageRaceSnapshots keeps a general classification one stage behind th
   // Two or more stages behind is stale and still dropped.
   const staleParsed = { ...parsed, generalClassification: gc(12) };
   assert.equal(mergeStageRaceSnapshots(official, staleParsed, race, now).generalClassification, null);
+});
+
+test("live polling follows the host country's racing hours and settles down for finished races", () => {
+  const { isRaceWithinRacingHours, getRaceDataCacheTtlMs, getLiveRaceRefreshDelayMs, hasRaceEndedDaysAgo, getArticleCacheTtlMs, buildRaceArticleQueries, FETCH_USER_AGENT } = loadParserExports();
+
+  // 05:00 UTC is 13:00 in Guangxi and 07:00 in Paris.
+  const early = new Date("2026-10-15T05:00:00.000Z");
+  assert.equal(isRaceWithinRacingHours({ countryCode: "CHN" }, early), true);
+  assert.equal(isRaceWithinRacingHours({ countryCode: "FRA" }, early), false);
+  assert.equal(isRaceWithinRacingHours({}, early), false);
+  // 20:30 UTC is 22:30 in Madrid, 16:30 in Montréal.
+  const evening = new Date("2026-09-05T20:30:00.000Z");
+  assert.equal(isRaceWithinRacingHours({ countryCode: "ESP" }, evening), false);
+  assert.equal(isRaceWithinRacingHours({ countryCode: "CAN" }, evening), true);
+
+  // The live TTL and the refresh timer apply only inside those hours.
+  const vuelta = { liveStageRaces: [{ id: "vuelta", countryCode: "ESP" }] };
+  assert.equal(getRaceDataCacheTtlMs(vuelta, new Date("2026-09-05T15:00:00.000Z")), 60 * 1000);
+  assert.equal(getRaceDataCacheTtlMs(vuelta, new Date("2026-09-05T02:00:00.000Z")), 15 * 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs(vuelta, new Date("2026-09-05T15:00:00.000Z")), 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs(vuelta, new Date("2026-09-05T02:00:00.000Z")), 15 * 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [] }, new Date("2026-09-05T15:00:00.000Z")), 0);
+
+  // A race that ended yesterday has settled; one ending today has not.
+  const today = new Date("2026-09-05T16:00:00.000Z");
+  assert.equal(hasRaceEndedDaysAgo({ endDate: new Date("2026-09-04T00:00:00.000Z") }, 1, today), true);
+  assert.equal(hasRaceEndedDaysAgo({ endDate: new Date("2026-09-05T00:00:00.000Z") }, 1, today), false);
+  assert.equal(hasRaceEndedDaysAgo({ endDate: new Date("2026-09-04T00:00:00.000Z") }, 2, today), false);
+  assert.equal(hasRaceEndedDaysAgo({}, 1, today), false);
+
+  // News about a race two days gone: at most a dozen searches, kept six hours. (A
+  // typical race builds nine to eleven queries, so the cap mostly guards the odd race
+  // with many name variants.)
+  const settled = { id: "2026 Tour de Pologne", pageTitle: "2026 Tour de Pologne", title: "Tour de Pologne", winner: "A", endDate: new Date("2026-08-10T00:00:00.000Z"), stageRace: { latestStage: { number: 7, winner: "B" }, completedStages: 7, totalStages: 7 } };
+  assert.ok(buildRaceArticleQueries(settled).length <= 12);
+  assert.equal(getArticleCacheTtlMs(settled, today), 6 * 60 * 60 * 1000);
+  const fresh = { ...settled, endDate: new Date("2026-09-13T00:00:00.000Z") };
+  assert.equal(getArticleCacheTtlMs(fresh, today), 15 * 60 * 1000);
+
+  // We say who we are and where to read about it, not "contact Wikipedia".
+  assert.match(FETCH_USER_AGENT, /ProCyclingResults\/1\.0; \+https:\/\/github\.com\/streamrD\/ProCyclingResults\/blob\/main\/DATA-SOURCES\.md/);
+  assert.doesNotMatch(FETCH_USER_AGENT, /\+https:\/\/wikipedia\.org/);
+});
+
+test("indexWikiRevisions maps requested titles through normalization, redirects and missing pages", () => {
+  const { indexWikiRevisions } = loadParserExports();
+  const payload = {
+    query: {
+      normalized: [{ from: "2026_Vuelta_a_España", to: "2026 Vuelta a España" }],
+      redirects: [{ from: "2026 Vuelta", to: "2026 Vuelta a España" }],
+      pages: [
+        { title: "2026 Vuelta a España", revisions: [{ revid: 1234 }] },
+        { title: "2026 Tour de France", revisions: [{ revid: 99 }] },
+        { title: "No Such Race", missing: true },
+      ],
+    },
+  };
+  const revids = indexWikiRevisions(payload, ["2026_Vuelta_a_España", "2026 Vuelta", "2026 Tour de France", "No Such Race", "Unasked"]);
+  assert.equal(revids.get("2026_Vuelta_a_España"), 1234);
+  assert.equal(revids.get("2026 Vuelta"), 1234);
+  assert.equal(revids.get("2026 Tour de France"), 99);
+  assert.equal(revids.get("No Such Race"), 0);
+  assert.equal(revids.has("Unasked"), false);
 });

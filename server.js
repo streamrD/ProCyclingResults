@@ -53,6 +53,57 @@ const DEFERRED_COMPETITION_GROUP_IDS = new Set();
 const RETIRED_COMPETITION_GROUP_IDS = new Set(["proseries", "europe-tour"]);
 const RACE_METADATA_CACHE_TTL_MS = 60 * 60 * 1000;
 const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
+// How the site introduces itself to every source. DATA-SOURCES.md explains who runs it,
+// what it reads and how often; SOURCE_CONTACT (an email address, set in the deployment
+// environment) is appended so an operator can reach a person, as Wikipedia's
+// user-agent policy asks.
+const SOURCE_POLICY_URL = "https://github.com/streamrD/ProCyclingResults/blob/main/DATA-SOURCES.md";
+const SOURCE_CONTACT = String(process.env.SOURCE_CONTACT || "").trim();
+const FETCH_USER_AGENT = `Mozilla/5.0 (compatible; ProCyclingResults/1.0; +${SOURCE_POLICY_URL}${
+  SOURCE_CONTACT ? `; ${SOURCE_CONTACT}` : ""
+})`;
+// Live polling is worth its cost only while a stage can actually finish. Inside racing
+// hours in the host country a live payload expires after LIVE_RACE_CACHE_TTL_MS;
+// overnight and on rest days it falls back to the ordinary TTL.
+const RACING_HOURS_START = 10;
+const RACING_HOURS_END = 21;
+const DEFAULT_RACE_TIME_ZONE = "Europe/Paris";
+const RACE_HOST_TIME_ZONES = {
+  GBR: "Europe/London",
+  IRL: "Europe/Dublin",
+  POR: "Europe/Lisbon",
+  AUS: "Australia/Adelaide",
+  NZL: "Pacific/Auckland",
+  CAN: "America/Toronto",
+  USA: "America/New_York",
+  COL: "America/Bogota",
+  ARG: "America/Argentina/Buenos_Aires",
+  BRA: "America/Sao_Paulo",
+  CHN: "Asia/Shanghai",
+  JPN: "Asia/Tokyo",
+  MAS: "Asia/Kuala_Lumpur",
+  UAE: "Asia/Dubai",
+  OMA: "Asia/Muscat",
+  QAT: "Asia/Qatar",
+  KSA: "Asia/Riyadh",
+  TUR: "Europe/Istanbul",
+  RSA: "Africa/Johannesburg",
+  RWA: "Africa/Kigali",
+};
+// A race that ended before today has an official result that no longer changes by
+// the minute; its provider is asked again after this long rather than every rebuild.
+const OFFICIAL_SNAPSHOT_SETTLED_TTL_MS = 6 * 60 * 60 * 1000;
+// News about a race that finished two or more days ago moves slowly: fewer searches,
+// kept for longer.
+const ARTICLE_SETTLED_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_RACE_ARTICLE_QUERIES = 32;
+const MAX_SETTLED_RACE_ARTICLE_QUERIES = 12;
+const NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS = 60 * 60 * 1000;
+// Wikipedia is asked once per rebuild which tracked pages changed (one revisions query
+// per 50 titles); only those are fetched again.
+const WIKI_REVISION_INDEX_TTL_MS = 45 * 1000;
+const WIKI_REVISION_QUERY_BATCH = 50;
+const WIKI_RAW_CACHE_IDLE_MS = 24 * 60 * 60 * 1000;
 const WIKI_FETCH_CONCURRENCY = 3;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
 // Per-attempt request timeout. A hung upstream would otherwise stall a synchronous
@@ -1220,7 +1271,7 @@ async function fetchText(url) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://wikipedia.org)",
+          "user-agent": FETCH_USER_AGENT,
         },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -1245,12 +1296,104 @@ async function fetchText(url) {
   }
 }
 
-async function fetchWikiRaw(title) {
-  const url = `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(title)}&action=raw`;
-  const text = await withWikiFetchSlot(() => fetchText(url));
-  if (text.startsWith("<!DOCTYPE html>")) {
-    return "";
+// Raw wikitext by title, with the current revision id it was fetched under. Pages are
+// refetched only when Wikipedia reports a new revision, which it is asked for at most
+// once per WIKI_REVISION_INDEX_TTL_MS for every tracked title in batched queries.
+const wikiRawCache = new Map();
+const wikiRevisionIndex = { checkedAt: 0, promise: null, revids: new Map() };
+
+// Maps each requested title to the revision id of the page it resolves to (0 when the
+// page is missing), following the query's normalization and redirect records.
+function indexWikiRevisions(payload, titles) {
+  const query = payload?.query || {};
+  const normalized = new Map((query.normalized || []).map((entry) => [entry.from, entry.to]));
+  const redirected = new Map((query.redirects || []).map((entry) => [entry.from, entry.to]));
+  const revisionByTitle = new Map(
+    (query.pages || []).map((page) => [page.title, page.missing ? 0 : Number(page.revisions?.[0]?.revid || 0)]),
+  );
+  const revids = new Map();
+  titles.forEach((title) => {
+    let resolved = normalized.get(title) || title;
+    resolved = redirected.get(resolved) || resolved;
+    if (revisionByTitle.has(resolved)) {
+      revids.set(title, revisionByTitle.get(resolved));
+    }
+  });
+  return revids;
+}
+
+async function fetchWikiRevisionIndex(titles) {
+  const revids = new Map();
+  for (let start = 0; start < titles.length; start += WIKI_REVISION_QUERY_BATCH) {
+    const batch = titles.slice(start, start + WIKI_REVISION_QUERY_BATCH);
+    const params = new URLSearchParams({
+      action: "query",
+      prop: "revisions",
+      rvprop: "ids",
+      redirects: "1",
+      format: "json",
+      formatversion: "2",
+      maxlag: "5",
+      titles: batch.join("|"),
+    });
+    const payload = await withWikiFetchSlot(() => fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`));
+    if (payload?.error) {
+      throw new Error(`Wikipedia revisions query failed: ${payload.error.code || "unknown"}`);
+    }
+    indexWikiRevisions(payload, batch).forEach((revid, title) => revids.set(title, revid));
   }
+  return revids;
+}
+
+// The latest known revision id for a tracked title, refreshing the whole index when it
+// is stale. Rejects when Wikipedia cannot answer, in which case the caller fetches.
+async function getWikiRevision(title) {
+  const now = Date.now();
+  if (!wikiRevisionIndex.promise && now - wikiRevisionIndex.checkedAt >= WIKI_REVISION_INDEX_TTL_MS) {
+    const tracked = [...wikiRawCache.keys()];
+    wikiRevisionIndex.promise = fetchWikiRevisionIndex(tracked)
+      .then((revids) => {
+        wikiRevisionIndex.revids = revids;
+        wikiRevisionIndex.checkedAt = Date.now();
+        // Pages nobody has asked for in a day are dropped from the index and the cache.
+        wikiRawCache.forEach((entry, key) => {
+          if (Date.now() - entry.lastUsed > WIKI_RAW_CACHE_IDLE_MS) {
+            wikiRawCache.delete(key);
+          }
+        });
+      })
+      .finally(() => {
+        wikiRevisionIndex.promise = null;
+      });
+  }
+  if (wikiRevisionIndex.promise) {
+    await wikiRevisionIndex.promise;
+  }
+  return wikiRevisionIndex.revids.get(title);
+}
+
+async function fetchWikiRaw(title) {
+  const key = String(title || "").trim();
+  const cached = wikiRawCache.get(key);
+  let revid;
+  if (cached) {
+    try {
+      revid = await getWikiRevision(key);
+    } catch {
+      revid = undefined;
+    }
+    if (revid !== undefined && cached.revid !== null && cached.revid === revid) {
+      cached.lastUsed = Date.now();
+      return cached.text;
+    }
+  }
+
+  const url = `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(key)}&action=raw`;
+  const fetched = await withWikiFetchSlot(() => fetchText(url));
+  const text = fetched.startsWith("<!DOCTYPE html>") ? "" : fetched;
+  // A page first seen without a known revision is stored as such and refetched once
+  // the index supplies one, so text fetched just before an edit is never pinned.
+  wikiRawCache.set(key, { revid: revid === undefined ? null : revid, text, lastUsed: Date.now() });
   return text;
 }
 
@@ -1569,10 +1712,20 @@ function parseNationalChampionshipsIndex(html) {
   };
 }
 
+// The championships index changes a few times a week; one fetch an hour is plenty.
+// Served as a copy because the build annotates what it is given.
+let nationalChampionshipsCache = { updatedAt: 0, data: null };
+
 async function loadNationalChampionships() {
+  if (nationalChampionshipsCache.data && Date.now() - nationalChampionshipsCache.updatedAt < NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS) {
+    return JSON.parse(JSON.stringify(nationalChampionshipsCache.data));
+  }
+
   try {
     const html = await fetchText(NATIONAL_CHAMPIONSHIPS_SOURCE_URL);
-    return parseNationalChampionshipsIndex(html);
+    const data = parseNationalChampionshipsIndex(html);
+    nationalChampionshipsCache = { updatedAt: Date.now(), data };
+    return JSON.parse(JSON.stringify(data));
   } catch (error) {
     return buildEmptyNationalChampionships(error);
   }
@@ -2862,8 +3015,34 @@ function hasFreshnessSensitiveRaceData(data) {
   ].some((race) => race?.finishedToday);
 }
 
-function getRaceDataCacheTtlMs(data) {
-  return hasFreshnessSensitiveRaceData(data)
+function getRaceLocalHour(race, now = new Date()) {
+  const timeZone = RACE_HOST_TIME_ZONES[normalizeCountryCode(race?.countryCode)] || DEFAULT_RACE_TIME_ZONE;
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now));
+}
+
+// Whether a stage of this race could be finishing or its result still settling: from
+// mid-morning to evening in the host country.
+function isRaceWithinRacingHours(race, now = new Date()) {
+  const hour = getRaceLocalHour(race, now);
+  return hour >= RACING_HOURS_START && hour < RACING_HOURS_END;
+}
+
+function getFreshnessSensitiveRaces(data) {
+  return [
+    ...(data?.liveStageRaces || []),
+    ...(data?.europeTourLiveStageRaces || []),
+    ...[...(data?.recentResults || []), ...(data?.finalizedStageRaces || []), ...(data?.europeTourRecentResults || [])].filter(
+      (race) => race?.finishedToday,
+    ),
+  ];
+}
+
+// The live TTL applies only while one of the races that make the payload
+// freshness-sensitive is inside its racing hours; overnight and on rest days the
+// ordinary TTL is enough, and the refresh timer follows the same clock.
+function getRaceDataCacheTtlMs(data, now = new Date()) {
+  const races = getFreshnessSensitiveRaces(data);
+  return races.length > 0 && races.some((race) => isRaceWithinRacingHours(race, now))
     ? LIVE_RACE_CACHE_TTL_MS
     : CACHE_TTL_MS;
 }
@@ -5052,6 +5231,38 @@ function findOfficialRaceProvider(providers, race) {
   return providers.find((provider) => provider.matches(race)) || null;
 }
 
+// True when the race ended at least `days` days before today (UTC): its official
+// result and its news have settled and need not be asked for every minute.
+function hasRaceEndedDaysAgo(race, days = 1, now = new Date()) {
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const todayUtc = toUtcDateOnly(now);
+  if (!endUtc || !todayUtc) {
+    return false;
+  }
+  return endUtc.getTime() <= todayUtc.getTime() - days * 24 * 60 * 60 * 1000;
+}
+
+// Official lookups for settled races, keyed by provider and race, kept for
+// OFFICIAL_SNAPSHOT_SETTLED_TTL_MS. Live and just-finished races are never cached here:
+// their result is exactly what the rebuild is for. Copies are handed out because the
+// merge annotates what it receives.
+const officialSnapshotCache = new Map();
+
+async function loadOfficialSnapshotThroughCache(cacheKey, race, load) {
+  const settled = hasRaceEndedDaysAgo(race, 1);
+  const cached = settled ? officialSnapshotCache.get(cacheKey) : null;
+  if (cached && Date.now() - cached.updatedAt < OFFICIAL_SNAPSHOT_SETTLED_TTL_MS) {
+    return JSON.parse(JSON.stringify(cached.value));
+  }
+
+  const value = await load();
+  if (settled) {
+    officialSnapshotCache.set(cacheKey, { updatedAt: Date.now(), value });
+    return JSON.parse(JSON.stringify(value));
+  }
+  return value;
+}
+
 async function loadOfficialStageRaceSnapshot(race) {
   const staticSnapshot = getStaticStageRaceSnapshot(race);
   if (staticSnapshot) {
@@ -5063,8 +5274,9 @@ async function loadOfficialStageRaceSnapshot(race) {
     return null;
   }
 
-  const snapshot = await provider.load(race);
-  return annotateStageRaceSnapshotSource(snapshot, provider.id);
+  return loadOfficialSnapshotThroughCache(`stage|${provider.id}|${getRaceId(race)}`, race, async () =>
+    annotateStageRaceSnapshotSource(await provider.load(race), provider.id),
+  );
 }
 
 function parseEschbornFrankfurtOfficialStandings(html) {
@@ -5092,7 +5304,10 @@ async function fetchEschbornFrankfurtOfficialStandings() {
 
 async function loadOfficialOneDayResultStandings(race) {
   const provider = findOfficialRaceProvider(OFFICIAL_ONE_DAY_RESULT_PROVIDERS, race);
-  return provider ? provider.load(race) : [];
+  if (!provider) {
+    return [];
+  }
+  return loadOfficialSnapshotThroughCache(`one-day|${provider.id}|${getRaceId(race)}`, race, () => provider.load(race));
 }
 
 function extractLeadLocation(rawText) {
@@ -5502,7 +5717,8 @@ function buildRaceArticleQueries(race) {
   const overallWinner = cleanWikiText(race?.winner || "");
   const primaryVariant = variants[0] || "";
 
-  // Result-oriented queries placed first so they survive the 32-query cap. A bare
+  // Result-oriented queries placed first so they survive the query cap (32 while a
+  // race is live or fresh, 12 once it has been over for two days). A bare
   // "<race> <year> cycling" query tends to surface previews/guides; naming the
   // winner and asking for the report is what surfaces the actual result coverage
   // (e.g. "Wout Van Aert beats Tadej Pogacar" for Paris-Roubaix).
@@ -5549,7 +5765,8 @@ function buildRaceArticleQueries(race) {
     return variantQueries;
   });
 
-  return [...new Set([...priorityQueries, ...queries])].slice(0, 32);
+  const limit = hasRaceEndedDaysAgo(race, 2) ? MAX_SETTLED_RACE_ARTICLE_QUERIES : MAX_RACE_ARTICLE_QUERIES;
+  return [...new Set([...priorityQueries, ...queries])].slice(0, limit);
 }
 
 function getPublisherScore(publisher) {
@@ -5900,6 +6117,10 @@ async function fetchRaceArticles(race) {
   return [...topTierArticles, ...otherArticles].slice(0, 32);
 }
 
+function getArticleCacheTtlMs(race, now = new Date()) {
+  return hasRaceEndedDaysAgo(race, 2, now) ? ARTICLE_SETTLED_CACHE_TTL_MS : CACHE_TTL_MS;
+}
+
 async function loadRaceArticlePool(race) {
   const raceId = getRaceId(race);
   const cached = articleCache.get(raceId);
@@ -5921,7 +6142,7 @@ async function loadRaceArticlePool(race) {
       });
 
   if (cached?.data) {
-    if (now - cached.updatedAt < CACHE_TTL_MS) {
+    if (now - cached.updatedAt < getArticleCacheTtlMs(race)) {
       return cached.data;
     }
 
@@ -6641,8 +6862,8 @@ async function loadRaceMetadata(options = {}) {
 // just-finished race in it, so it stops itself when the race ends.
 let liveRaceRefreshTimer = null;
 
-function getLiveRaceRefreshDelayMs(data) {
-  return hasFreshnessSensitiveRaceData(data) ? LIVE_RACE_CACHE_TTL_MS : 0;
+function getLiveRaceRefreshDelayMs(data, now = new Date()) {
+  return hasFreshnessSensitiveRaceData(data) ? getRaceDataCacheTtlMs(data, now) : 0;
 }
 
 function scheduleLiveRaceRefresh(data, refresh = refreshLiveRaceDataOnTimer) {
@@ -7521,7 +7742,8 @@ function attachCachedStageProfiles(race) {
 // Bounded like the official-provider lookups: whatever lands inside the budget renders
 // on first paint, and whatever lands later is written onto the cached race and the
 // profile cache, so the next render has it without another fetch. Profiles never
-// change once published, so hits live for a week; a miss is retried after an hour.
+// change once published, so hits live for a week; a miss is retried after an hour
+// while the race is on, and kept for the week once it is over.
 async function enrichStageProfiles(races, now = new Date(), options = {}) {
   const budgetMs = options.budgetMs ?? STAGE_PROFILE_BLOCKING_BUDGET_MS;
   const loadProfile = options.loadProfile || fetchStageProfile;
@@ -7540,7 +7762,10 @@ async function enrichStageProfiles(races, now = new Date(), options = {}) {
 
       const cacheKey = getStageProfileCacheKey(race, stage);
       const cached = stageProfileCache.get(cacheKey);
-      const ttl = cached?.profile ? STAGE_PROFILE_CACHE_TTL_MS : STAGE_PROFILE_MISS_TTL_MS;
+      // A miss on a race that is over is not going to turn into a hit: the organiser
+      // publishes traces before the race, so it is kept as long as a hit rather than
+      // asked again every hour.
+      const ttl = cached?.profile || hasRaceEndedDaysAgo(race, 1, now) ? STAGE_PROFILE_CACHE_TTL_MS : STAGE_PROFILE_MISS_TTL_MS;
       if (cached && (cached.persistent || now.getTime() - cached.fetchedAt < ttl)) {
         if (cached.profile) {
           stage.profile = cached.profile;

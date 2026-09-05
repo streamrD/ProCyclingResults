@@ -788,6 +788,42 @@ Not worth doing, checked: a TTL under 60s (lavuelta.es itself caches its ranking
 for 60s), and a race-center live feed (racecenter.lavuelta.es is a JS app whose bundle
 exposes no public data endpoint).
 
+## Being A Considerate Consumer Of Our Sources (2026-09-05)
+
+`DATA-SOURCES.md` at the repo root is the public face of this: who runs the site, what
+it reads, how often, and how to reach us. It is the URL in `FETCH_USER_AGENT`;
+`SOURCE_CONTACT` (an email, set on Railway) is appended when present. Keep its table and
+review log current whenever fetch behaviour changes.
+
+The machinery behind it, all in `server.js`:
+
+- `FETCH_USER_AGENT` replaces the old string whose "contact" was `+https://wikipedia.org`.
+- `loadOfficialSnapshotThroughCache` caches official stage-race and one-day lookups for
+  six hours once a race ended before today (`hasRaceEndedDaysAgo(race, 1)`); live and
+  just-finished races are never cached there.
+- `fetchWikiRaw` keeps every page it has fetched with the revision id it was fetched
+  under; `getWikiRevision` refreshes a revisions index (`prop=revisions&rvprop=ids`,
+  50 titles a query, `maxlag=5`) at most every 45s and only changed pages are fetched
+  again. A page first seen without a known revision is refetched once when the index
+  supplies one, so text fetched just before an edit is never pinned. The index refresh
+  also drops pages unused for a day.
+- `getRaceDataCacheTtlMs(data, now)` gives the 60s live TTL only while a freshness-
+  sensitive race is inside racing hours (10:00–21:00 in the host country, from
+  `RACE_HOST_TIME_ZONES` by `countryCode`, default Europe/Paris); otherwise 15 minutes.
+  The refresh timer follows the same clock.
+- `loadNationalChampionships` caches the Cyclingnews index for an hour.
+- `buildRaceArticleQueries` caps at 12 searches instead of 32 (a typical race builds
+  9–11, so this rarely binds), and `getArticleCacheTtlMs` keeps the pool six hours,
+  once a race has been over for two days.
+- Stage-profile misses are kept for the week once the race is over.
+
+Measured with the counting harness (`scratchpad/count3.js` pattern: run the build in a
+VM with a `fetch` that logs hosts): steady-state rebuild inside racing hours went from
+58 requests (27 Wikipedia, 12 letour.fr, …) to 5 (1 Wikipedia revisions query, 4
+lavuelta.es) once the one-time sweep of stage-profile lookups (8 per rebuild, each
+stage asked once per process) has run. The cold build is unchanged at ~117 because
+nothing is cached yet.
+
 ## Where Cold Start Actually Goes
 
 Profiled 2026-08-23. Read this before optimizing anything on the warm-up path — the
