@@ -149,7 +149,7 @@ npm run benchmark:load -- --runs=5
 - `/api/homepage-data`: active homepage JSON payload. During cold warmup it can return `202`.
   Carries `seasonCalendar` alongside the race buckets and `nationalChampionships`.
 - `/api/races`: active race JSON payload. Use `?debug=1` for additional timing/debug payload.
-- `/api/build-info`: manual `BUILD_INFO` payload from `server.js`. It is not automatically tied to the current commit.
+- `/api/build-info`: `BUILD_INFO` from `server.js`, filled from Railway's env on deploy (commit, branch, deployment id) with a hardcoded fallback locally. Since 2026-09-05 it also reports `sourceContact: "configured" | "not set"` — whether `SOURCE_CONTACT` rides on the outbound user agent — as a yes/no only.
 - `/api/competition-section?group=<id>`: retained hook for deferred sections. Retired `proseries` and `europe-tour` return `410`; unknown groups return `404`.
 - `/api/race-news?race=<race id>`: one race's "Latest news" line, rendered from its article pool. Unknown race `404`, upstream failure `502`. The old `/api/competition-coverage` was retired on 2026-09-05 with the coverage block (`archive/race-coverage-block.js`).
 - `/api/race-stages?race=<race id>`: reads a finished stage race's companion stage articles on request and returns `{ raceId, html }` with a re-rendered stage switcher. The id must resolve through `findStageRaceById` against the current homepage payload, so it cannot be pointed at an arbitrary Wikipedia page; anything else returns `404`.
@@ -735,10 +735,11 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   Femmes outage, so if the page is still bare well into the race, check whether an
   official provider exists for it before touching shared parsers.
 
-- **One provider still needs ~11s, it just no longer blocks.** The Giro d'Italia Women
-  lookup trips the blocking budget on every build and is applied late. A per-race cache
-  for settled races' official snapshots would stop re-fetching it every refresh; not
-  done, because it does not help the cold start that motivated the work.
+- **One provider still needs ~11s on a cold start.** The Giro d'Italia Women lookup
+  trips the blocking budget on the first build and is applied late. *Resolved for warm
+  rebuilds on 2026-09-05:* `loadOfficialSnapshotThroughCache` keeps settled races'
+  official snapshots for six hours, so it is asked once per process rather than every
+  refresh. The cold start still pays it once.
 - **Per-stage video backlog fills 4 per refresh.** Invisible during a race, since one
   stage arrives per day. Only noticeable if the process restarts late in a Grand Tour
   with a cold `finishVideoCache`.
@@ -760,6 +761,34 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   keeps its `compact` option in case a small under-hero teaser ever earns its place.
 - **Link previews are cached** by Slack, iMessage and X. After changing an image,
   expect old previews to linger unless the platform's debugger is used.
+
+### Added 2026-09-05
+
+- **Racing-hours time zones are a short table.** `RACE_HOST_TIME_ZONES` covers the
+  WorldTour host countries seen this season; anything else falls back to Europe/Paris.
+  A race in an unlisted far-away country (a hypothetical Tour of Colombia is listed;
+  a Tour of Taiwan is not) would poll on Paris hours. Add the code when a race appears.
+- **`liveRaceDataTtlMs` in `/api/races?debug=1` is the constant, not the clock-aware
+  TTL.** `raceDataCacheAgeMs` advancing at ~65s inside racing hours and ~15min outside
+  is the real signal.
+- **The refresh timer serves the active (non-deferred) cache only.** The deferred
+  caches are legacy restoration hooks with no live groups, so nothing is lost, but if a
+  deferred group ever comes back it will not self-refresh.
+- **`wikiRawCache` is unbounded within a day.** It prunes titles unused for 24h at each
+  index refresh; a season's worth of tracked pages is a few MB of wikitext, which is
+  fine on Railway's memory, but it is worth remembering if page tracking ever widens.
+- **News-line prefetch on a page of 26 cards** issues one `/api/race-news` request per
+  card as it scrolls within 240px; each is one Bing sweep per race per cache window.
+  Fine at current traffic; a busy day with a cold article cache would fan out to Bing.
+- **`SOURCE_CONTACT` is set on Railway** (confirmed `configured` on 2026-09-05). It is
+  deliberately not printed in `DATA-SOURCES.md`; the maintainer can add it there if a
+  public address is wanted.
+- **The "Race Coverage" block is archived**, not deleted: `archive/race-coverage-block.js`
+  holds the builders, endpoint and client code with a header explaining what was lost
+  (Refresh paging, summaries). Do not restore it unless asked.
+- **The news-line comps** live on a design canvas
+  (https://claude.ai/code/artifact/5b2f654d-0e7d-43a2-a31e-bb4d203ca07a): page 1 the
+  chosen line under the GC, page 2 the four directions A–D at desktop and phone width.
 
 ## Live-Race Freshness, Measured 2026-09-05
 
@@ -1143,9 +1172,73 @@ Traps that cost time:
 - The Cyclingnews index writes "postponed" / "cancelled" into a champion cell; the
   parser now treats those as no result.
 
+## Process Lessons From The 2026-09-05 Session
+
+The day shipped, in order: stage profiles no longer expand on phones; a "Latest news"
+line at the foot of every race card (chosen from four comps, then the coverage block
+retired as redundant); the news line fixed for narrow columns; live-race data rebuilt on
+a timer with the trailing GC kept; and a full review of how much we ask of our sources,
+with `DATA-SOURCES.md` as the public statement and the user agent pointing at it. Nine
+pushes, each verified on production. What made it go well:
+
+- **Comps again, and the maintainer picked something none of the four proposed.**
+  The four directions (in the card, own block, rail beside the card, one line at the
+  top that opens in place) were built from the live Vuelta card, the real stylesheet
+  and the eight real stories. The pick was "D, but under the overall classification,
+  and the same treatment everywhere news is offered". Genuinely different options
+  produced a decision the mock-ups themselves did not contain; five shades of one idea
+  would not have.
+- **"Is it redundant?" was answered by listing what would be lost.** Before retiring
+  the coverage block the drawer was widened to the same eight stories in the same
+  order, and the two things not carried over (Refresh paging, summaries) were named in
+  the archive header and the reply. Retiring with a stated cost is easy to reverse and
+  easy to defend; retiring quietly is neither.
+- **Measure the source, not the symptom.** "Stage 13 results are in but we are not
+  picking them up" was investigated by polling every source and production every two
+  minutes and logging the first moment each carried the stage. The riders were still
+  racing when the message arrived (expected 17:19, actual ~17:48), the official site
+  published at ~17:51 and production had it at 17:51:42. That timeline turned "make it
+  faster" into two precise changes (timer, trailing GC) and two things explicitly not
+  worth doing (sub-60s TTL, race-center scraping).
+- **Count requests per host before answering "could our sources object".** A VM
+  harness with a counting `fetch` (see "Being A Considerate Consumer Of Our Sources")
+  showed 58 requests a minute, twelve of them to letour.fr for a race that ended in
+  July, and a user agent that named Wikipedia as our contact. The answer to the
+  question was honest because the numbers came first; the fixes were obvious once the
+  table existed.
+- **Verify the client path in a real browser, not only the markup.** The news line's
+  scroll-into-view loading was proven with a 5000px-tall headless window against the
+  local server (five pills filled themselves), and the narrow-card overflow was caught
+  by rendering the line inside a 300px card in the smoke test and asserting no
+  overflow — a guard that was shown to fail on the previous stylesheet before it was
+  trusted.
+- **A yes/no flag beats a secret in a response.** `SOURCE_CONTACT` needed confirming
+  after the maintainer set it; `/api/build-info` now says "configured" or "not set"
+  rather than echoing anything.
+
+Traps that cost time:
+
+- `sed -n 'N,+Mp' | grep -v '^$'` strips blank lines, so a patch anchored on that
+  output will not match the file. Print the exact region (`cat -vet` if in doubt)
+  before writing a multi-line replacement.
+- Node's test reporter prints `ℹ pass 164`, not `# pass 164`; a `grep -E "^# pass"`
+  in a `&&` chain silently fails the whole chain. Grep for `ℹ (pass|fail)`.
+- The Vuelta's official rankings page shows *some* table inline before the stage
+  classification is published — on stage 14 it was the mountain points (`rankingTable::IME`).
+  `parseLetourOfficialStandings` filters by type for exactly this reason; do not relax it.
+- `getRaceDataCacheTtlMs` now takes `now`; the old TTL test had to be given a clock
+  inside racing hours or it becomes time-of-day dependent. Any new test around the
+  live TTL or the refresh delay must pass a fixed `Date`.
+- A `.dc.html` artboard fed from server markup needs every bare attribute quoted
+  (`hidden="hidden"`, `data-x=""`) and hidden stage panels stripped by balanced-div
+  scanning, not regex; the generator in the session scratchpad did both.
+- Headless Chrome's default window is 800×600, so a phone-width smoke check needs
+  `--window-size=390,844`, and an anchor to a `hidden` element does not scroll.
+
 ## Suggested First Checks For A New Agent
 
-Run these before making changes:
+Run these before making changes (and read `DATA-SOURCES.md` before changing anything
+that fetches — its table and review log must stay true):
 
 ```bash
 git status --short
