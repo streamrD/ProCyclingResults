@@ -2,6 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 5 September 2026
 
+- **Finish videos are back.** The "Watch race finish" link vanished from every Vuelta stage this afternoon, after a morning change to how the site introduces itself to the sources it reads. YouTube answered the new introduction with a page the site could not read. The video search now introduces itself the old way, and today's stage 14 finish links to its highlights again, with the earlier stages filling back in over the next few refreshes.
 - **Latest news on every race card.** Each race card now ends with a "Latest news" line carrying the top story about that race. Tap it and the eight newest stories open there. Stories load as the cards come into view.
 - **Faster, steadier live results.** During a live race the site now refreshes its data itself every minute. Today's Vuelta stage appeared about four minutes after the finish line.
 - **The overall classification no longer disappears.** For a few minutes after each stage the official site publishes the stage result before the new overall standings. The card used to say the classification was not available; it now keeps showing the standings after the previous stage.

@@ -62,9 +62,16 @@ const LIVE_RACE_CACHE_TTL_MS = 60 * 1000;
 // user-agent policy asks.
 const SOURCE_POLICY_URL = "https://github.com/streamrD/ProCyclingResults/blob/main/DATA-SOURCES.md";
 const SOURCE_CONTACT = String(process.env.SOURCE_CONTACT || "").trim();
-const FETCH_USER_AGENT = `Mozilla/5.0 (compatible; ProCyclingResults/1.0; +${SOURCE_POLICY_URL}${
-  SOURCE_CONTACT ? `; ${SOURCE_CONTACT}` : ""
-})`;
+const FETCH_USER_AGENT_WITHOUT_CONTACT = `Mozilla/5.0 (compatible; ProCyclingResults/1.0; +${SOURCE_POLICY_URL})`;
+const FETCH_USER_AGENT = SOURCE_CONTACT
+  ? `Mozilla/5.0 (compatible; ProCyclingResults/1.0; +${SOURCE_POLICY_URL}; ${SOURCE_CONTACT})`
+  : FETCH_USER_AGENT_WITHOUT_CONTACT;
+// YouTube answers any agent string carrying a token after the policy URL, an email or
+// not, with its mobile site, whose page holds none of the videoRenderer entries the
+// finish-video parser reads (measured 2026-09-05, the day the contact was added: every
+// Vuelta stage lost its video). The search therefore introduces itself without the
+// contact; the policy URL still says who we are.
+const YOUTUBE_FETCH_USER_AGENT = FETCH_USER_AGENT_WITHOUT_CONTACT;
 // Live polling is worth its cost only while a stage can actually finish. Inside racing
 // hours in the host country a live payload expires after LIVE_RACE_CACHE_TTL_MS;
 // overnight and on rest days it falls back to the ordinary TTL.
@@ -1269,12 +1276,12 @@ function parseSeasonRows(rawText, season, year) {
     .filter((race) => seasonIncludesRace(season, race));
 }
 
-async function fetchText(url) {
+async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": FETCH_USER_AGENT,
+          "user-agent": userAgent,
         },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -7440,7 +7447,9 @@ async function fetchYouTubeFinishVideoUrl(race) {
     return "";
   }
 
-  const html = await fetchText(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
+  const html = await fetchText(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+    userAgent: YOUTUBE_FETCH_USER_AGENT,
+  });
   const best = selectFinishVideo(parseYouTubeSearchVideos(html), race);
   return best ? `https://www.youtube.com/watch?v=${best.id}` : "";
 }

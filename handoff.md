@@ -394,6 +394,14 @@ attaches the best match. Key pieces:
 This is gated behind the curated map and official providers, so it never overrides a
 hand-picked or official link, and it degrades silently to no link on failure.
 
+The search sends `YOUTUBE_FETCH_USER_AGENT`, the site's agent string without the
+`SOURCE_CONTACT` suffix, through `fetchText(url, { userAgent })`. YouTube serves its
+mobile site (`m.youtube.com`, no `videoRenderer` entries, so the parser returns nothing
+and the miss is cached for 20 minutes) to any agent string carrying a token after the
+policy URL, email or otherwise. Found 2026-09-05, the day the contact went on the
+agent: every Vuelta stage lost its video and the silent-degrade path hid the cause.
+A regression test pins the YouTube agent to end at the policy URL.
+
 ### Per-stage finish videos
 
 Each stage of a live stage race can carry its own video on `stage.finishVideoUrl`, so

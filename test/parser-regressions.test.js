@@ -104,6 +104,7 @@ function loadParserExports() {
       getArticleCacheTtlMs,
       indexWikiRevisions,
       FETCH_USER_AGENT,
+      YOUTUBE_FETCH_USER_AGENT,
       parseNationalChampionshipsIndex,
       getCountryFlagEmojiByName,
       buildNationalChampionshipEventCard,
@@ -5187,7 +5188,7 @@ test("mergeStageRaceSnapshots keeps a general classification one stage behind th
 });
 
 test("live polling follows the host country's racing hours and settles down for finished races", () => {
-  const { isRaceWithinRacingHours, getRaceDataCacheTtlMs, getLiveRaceRefreshDelayMs, hasRaceEndedDaysAgo, getArticleCacheTtlMs, buildRaceArticleQueries, FETCH_USER_AGENT } = loadParserExports();
+  const { isRaceWithinRacingHours, getRaceDataCacheTtlMs, getLiveRaceRefreshDelayMs, hasRaceEndedDaysAgo, getArticleCacheTtlMs, buildRaceArticleQueries, FETCH_USER_AGENT, YOUTUBE_FETCH_USER_AGENT } = loadParserExports();
 
   // 05:00 UTC is 13:00 in Guangxi and 07:00 in Paris.
   const early = new Date("2026-10-15T05:00:00.000Z");
@@ -5226,6 +5227,12 @@ test("live polling follows the host country's racing hours and settles down for 
   // We say who we are and where to read about it, not "contact Wikipedia".
   assert.match(FETCH_USER_AGENT, /ProCyclingResults\/1\.0; \+https:\/\/github\.com\/streamrD\/ProCyclingResults\/blob\/main\/DATA-SOURCES\.md/);
   assert.doesNotMatch(FETCH_USER_AGENT, /\+https:\/\/wikipedia\.org/);
+  // YouTube serves its mobile page, with no videoRenderer entries, to any agent string
+  // that carries a token after the policy URL; the finish-video search must end there.
+  assert.match(
+    YOUTUBE_FETCH_USER_AGENT,
+    /^Mozilla\/5\.0 \(compatible; ProCyclingResults\/1\.0; \+https:\/\/github\.com\/streamrD\/ProCyclingResults\/blob\/main\/DATA-SOURCES\.md\)$/,
+  );
 });
 
 test("indexWikiRevisions maps requested titles through normalization, redirects and missing pages", () => {

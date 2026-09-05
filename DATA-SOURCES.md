@@ -27,6 +27,11 @@ Every request the server makes carries this user agent:
 Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://github.com/streamrD/ProCyclingResults/blob/main/DATA-SOURCES.md; <contact email>)
 ```
 
+The one exception is the YouTube search for finish highlights, which carries the same
+string without the contact email. YouTube answers any agent string with a token after
+the policy URL by serving its mobile site, which the highlights parser cannot read.
+The policy URL still identifies us there.
+
 The site runs as a single small process. There is no crawler, no parallel fleet and
 no scraping of pages we do not show.
 
@@ -76,3 +81,7 @@ how the site fetches. The review log below is updated each time.
   every minute whether or not it had changed, and that the user agent named Wikipedia
   as our contact instead of ourselves. Fixed all three, added racing-hours pacing, and
   cut the steady-state rebuild from 58 requests to 5. Started this document.
+- **2026-09-05, later.** Adding the contact email to the user agent cost every Vuelta
+  stage its finish video: YouTube serves its mobile site to any agent string with a
+  token after the policy URL. The YouTube search now sends the string without the
+  contact. No change to request counts.
