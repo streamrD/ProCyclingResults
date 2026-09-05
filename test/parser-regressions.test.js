@@ -104,6 +104,8 @@ function loadParserExports() {
       buildSeasonCalendar,
       buildSeasonCalendarSection,
       renderMarkdown,
+      buildNationalChampionshipMapMarkup,
+      CONTINENT_MAP_DATA,
       cleanNationalChampionCell,
       isAuthorizedSiteEdit,
       buildSiteContentPage,
@@ -4984,4 +4986,46 @@ test("cleanNationalChampionCell drops status words the index writes into undecid
   assert.equal(cleanNationalChampionCell("TBC"), "");
   assert.equal(cleanNationalChampionCell("Filippo Ganna"), "Filippo Ganna");
   assert.equal(cleanNationalChampionCell("Artem Schmidt"), "Artem Shmidt");
+});
+
+test("the continent map covers every federation in the index with a shape or a dot", () => {
+  const { CONTINENT_MAP_DATA, COUNTRY_NAME_ALPHA2, CONTINENT_BY_ALPHA2 } = loadParserExports();
+  assert.ok(CONTINENT_MAP_DATA && CONTINENT_MAP_DATA.countries.length > 150, "data/continent-map.json should be committed");
+  const drawn = new Set([
+    ...CONTINENT_MAP_DATA.countries.map((country) => country.alpha2),
+    ...CONTINENT_MAP_DATA.dots.map((dot) => dot.alpha2),
+  ]);
+  const missing = [...new Set(Object.values(COUNTRY_NAME_ALPHA2))].filter((alpha2) => !drawn.has(alpha2));
+  assert.equal(missing.join(","), "");
+  // Every drawn federation sits in the continent the almanac files it under.
+  const misplaced = CONTINENT_MAP_DATA.countries
+    .filter((country) => CONTINENT_BY_ALPHA2[country.alpha2] && CONTINENT_BY_ALPHA2[country.alpha2] !== country.continent)
+    .map((country) => country.alpha2);
+  assert.equal(misplaced.join(","), "");
+  assert.ok(Object.keys(CONTINENT_MAP_DATA.labels).length === 6);
+});
+
+test("buildNationalChampionshipMapMarkup shades countries by the almanac's own status and links each continent to its group", () => {
+  const { parseNationalChampionshipsIndex, groupNationalChampionshipsByContinent, buildNationalChampionshipMapMarkup } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE ITT</th><th>WE Road Race</th></tr>
+      <tr><th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+      <tr><th>Sweden</th><td>Axel K&auml;llberg</td><td></td><td>Zo&euml; Andersson</td><td></td></tr>
+      <tr><th>Great Britain</th><td></td><td></td><td></td><td></td></tr>
+      <tr><th>Bermuda</th><td>Someone Fast</td><td></td><td></td><td></td></tr>
+    </table>`);
+  const markup = buildNationalChampionshipMapMarkup(groupNationalChampionshipsByContinent(parsed.events));
+
+  assert.equal((markup.match(/data-national-map-continent="/g) || []).length, 6);
+  assert.match(markup, /data-national-map-continent="europe"[^>]*data-tip-detail="1 of 2 federations with champions · usually the last week of June"/);
+  // Sweden has two titles, Great Britain none, France is not in this index at all.
+  assert.match(markup, /class="national-map-country is-champion" data-has-meitt="1" data-has-weitt="1" d="[^"]+"><title>Sweden<\/title>/);
+  assert.match(markup, /class="national-map-country is-listed" d="[^"]+"><title>United Kingdom<\/title>/);
+  assert.match(markup, /class="national-map-country is-none" d="[^"]+"><title>France<\/title>/);
+  // Bermuda has no shape at this scale and is drawn as a dot.
+  assert.match(markup, /<circle class="national-map-dot is-champion" data-has-meitt="1" cx="[\d.]+" cy="[\d.]+" r="4"><title>Bermuda<\/title>/);
+  assert.match(markup, /data-national-map-tooltip/);
+  assert.equal(buildNationalChampionshipMapMarkup([], null), "");
 });

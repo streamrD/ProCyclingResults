@@ -9,7 +9,8 @@
     "benchmark:load": "node scripts/benchmark-load.js",
     "benchmark:ready": "node scripts/benchmark-load.js --wait-ready",
     "benchmark:homepage-ready": "node scripts/benchmark-load.js --wait-homepage-ready",
-    "refresh:stage-profiles": "node scripts/refresh-stage-profiles.js"
+    "refresh:stage-profiles": "node scripts/refresh-stage-profiles.js",
+    "refresh:continent-map": "node scripts/build-continent-map.js"
   },
   "engines": {
     "node": ">=20"

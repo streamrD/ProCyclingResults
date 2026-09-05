@@ -187,6 +187,8 @@ National championship results are parsed from the Cyclingnews 2026 Road National
 
 The parser reads the `2026 Elite Road National Champions` table and extracts country-level elite men's and women's individual time trial and road race winners. Empty placeholder cells are treated as missing results. The app then expands each country row into four event-level records; `groupNationalChampionshipsByContinent()` folds those back into one row per federation, bucketed by `CONTINENT_BY_ALPHA2` (geographic continents, so the Americas split the way their championship windows do).
 
+Above the continent groups sits a world map (`buildNationalChampionshipMapMarkup`): every country outline from `data/continent-map.json`, shaded by the same groups the tables use (blue for a recorded champion, hatched for a federation without a result, pale for countries not in the index, a dot for the ten federations too small to draw). Hovering a continent shows its count; clicking opens its group. The shape file is built by `npm run refresh:continent-map` from Natural Earth's public-domain 1:110m countries, projected and simplified, and committed like the stage profiles. A test fails if any federation in the index lacks a shape or a dot.
+
 The index carries no dates. The schedule strip therefore draws two hatched "typical" windows from `NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS` (southern hemisphere in January–February, Europe and North America in late June) and plots confirmed dates only where `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` has them. The hatching and the "typical, not confirmed" wording are deliberate: a band that looked like measured data would mislead.
 
 Some championship event records have small local metadata overrides for known date, location, podium, source report, or finish-video information. Keep these narrow and source-backed; the broad winner list should continue to come from the Cyclingnews index.
@@ -556,6 +558,7 @@ Every stage panel opens with a profile block. A stage with a measured trace (see
 Client-side JS is still intentionally small, but it now does more than simple form submission:
 
 - Polls `/api/homepage-data` while the homepage is warming
+- Runs the National Championships map: hovering a continent shows a tooltip with its count and usual window, clicking or pressing Enter opens that continent's group and scrolls to it, and an open group is marked on the map. A category chip re-shades the map to the countries holding that title.
 - Filters the National Championships almanac: a search box matches federation or rider names across every continent group (opening the groups with matches and hiding the rest), category chips narrow the table to one title via a `data-category` attribute the CSS reads, and an "include federations without a recorded result" toggle reveals the rows the default view hides.
 - Runs the season calendar: the section is hidden until the hero's "Season Calendar" button (or a `#season-calendar` link) opens it and scrolls to it, a close button in its header hides it again, series chips switch between three pre-rendered SVGs, each bar has a tooltip fed from its `data-tip-*` attributes, and clicking a bar whose card is hidden behind "Load more races" reveals it before the jump and flashes the card.
 - Keeps deferred-section loading utilities available for future sections, though none are active right now
@@ -648,7 +651,7 @@ Typical files/areas:
 - section copy / labels in render helpers
 - national championship parser/render helpers when changing championship coverage
 - `NATIONAL_CHAMPIONSHIP_EVENT_METADATA` for narrow date, location, podium, source-report, and finish-video overrides
-- `CONTINENT_BY_ALPHA2` when a new federation appears in the index (a test fails if any alpha-2 code lacks a continent)
+- `CONTINENT_BY_ALPHA2` when a new federation appears in the index (a test fails if any alpha-2 code lacks a continent), and `scripts/build-continent-map.js` if it is too small to draw at 1:110m (add it to `TINY_FEDERATIONS`, rerun, commit `data/continent-map.json`)
 - `SEASON_CALENDAR_GRAND_TOURS` / `SEASON_CALENDAR_MONUMENTS` for the only two emphasised tiers on the season calendar
 
 Examples:

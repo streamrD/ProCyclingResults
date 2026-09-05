@@ -248,6 +248,14 @@ Rebuilt on 2026-09-04 as an almanac rather than a results feed. The old view ren
 - Search matches federation or rider names (`data-search` on each row); category chips
   set `data-category` on the almanac root and CSS hides the other columns.
 - Fully expanded, the table is about 83 rows (~4.5 screens); collapsed it is six lines.
+- A world map above the groups (`buildNationalChampionshipMapMarkup`, `bindNationalChampionshipMap`)
+  draws every country from `data/continent-map.json`, shaded by the group data: `is-champion`,
+  `is-listed`, `is-none`, plus `national-map-dot` for the ten federations without a shape.
+  Hover shows a tooltip, click opens the group; a category chip re-shades via
+  `data-has-<key>` attributes. Hidden under 720px. The file comes from
+  `npm run refresh:continent-map` (Natural Earth 1:110m, Robinson, Douglas–Peucker at
+  0.55px, ~87 KB); rerun it only when a federation appears that is not drawn — the test
+  "the continent map covers every federation" says so.
 
 Continent buckets are geographic, not UCI confederations, so the Americas split the way
 their championship windows do. `CONTINENT_BY_ALPHA2` is checked by a test against
@@ -258,6 +266,7 @@ Key functions/constants:
 - `NATIONAL_CHAMPIONSHIP_EVENT_KEYS`, `NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS`
 - `NATIONAL_CHAMPIONSHIP_EVENT_METADATA`
 - `NATIONAL_CHAMPIONSHIP_CONTINENTS`, `CONTINENT_BY_ALPHA2`, `NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS`
+- `CONTINENT_MAP_DATA`, `buildNationalChampionshipMapMarkup()`, `scripts/build-continent-map.js`
 - `parseNationalChampionshipsIndex()`
 - `buildNationalChampionshipEventRecords()`
 - `sortNationalChampionshipEvents()`

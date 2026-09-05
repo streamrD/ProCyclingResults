@@ -2,12 +2,14 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 4 September 2026
 
+- **Link previews for every page.** Sharing the About or Release Notes pages now shows a proper title, description and image, like the results page.
 - **Release notes and an About page.** This page and the About page added. The footer of the results page links to them. The About page introduces the Grupetto Committee, the five people who keep the site.
 - **A season calendar.** Timeline view of the men's and women's WorldTour race year. Grand Tours and Monuments labelled, finished races filled in, the live race filling up day by day, and a hover for each winner. On phones it becomes a month-by-month list.
 - **National Championships rebuilt as an almanac.** Instead of nearly three hundred cards, the section now shows when the championships happen, whether the season is over, a handful of featured titles with full podiums, and one searchable row per federation grouped by continent. Type a country or a rider to find a champion.
 - **Jersey holders.** Each stage race's general classification now lists who holds every jersey, drawn from the race's classification leadership table.
 - **A new tag line** for the top of the page.
 - **A new favicon.** The browser-tab icon is now a cyclist in the site's colours, in the pose of the cyclist emoji.
+- **A championship map.** The continent groups now sit under a world map drawn from real geography. Countries are shaded by whether a 2026 champion is recorded, a hover shows each continent's count, and a click opens its champions. Pick a category and the map re-shades to the countries holding that title.
 - **Cleaner championship data.** A title the index marks as postponed or cancelled no longer shows those words where a champion's name belongs.
 
 ## 3 September 2026

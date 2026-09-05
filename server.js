@@ -8930,6 +8930,91 @@ function buildNationalChampionshipGroupMarkup(group) {
     </details>`;
 }
 
+// ---------------------------------------------------------------------------
+// National Championships map. Shapes come from data/continent-map.json (built by
+// scripts/build-continent-map.js from Natural Earth); status shading comes from the
+// same continent groups the almanac tables use, so the two can never disagree.
+
+function loadContinentMapData() {
+  try {
+    return require(path.join(process.cwd(), "data", "continent-map.json"));
+  } catch (error) {
+    return null;
+  }
+}
+
+const CONTINENT_MAP_DATA = loadContinentMapData();
+
+function buildNationalChampionshipMapMarkup(groups, mapData = CONTINENT_MAP_DATA) {
+  if (!mapData?.countries?.length) {
+    return "";
+  }
+  const federations = new Map();
+  (groups || []).forEach((group) => {
+    group.federations.forEach((federation) => {
+      const alpha2 = COUNTRY_NAME_ALPHA2[String(federation.country || "").trim().toLowerCase()];
+      if (alpha2) {
+        federations.set(alpha2, { ...federation, continent: group.id });
+      }
+    });
+  });
+  const groupById = new Map((groups || []).map((group) => [group.id, group]));
+  const statusOf = (alpha2) => {
+    const federation = federations.get(alpha2);
+    if (!federation) {
+      return "none";
+    }
+    return federation.championKeys.length ? "champion" : "listed";
+  };
+  const championAttributes = (alpha2) => {
+    const federation = federations.get(alpha2);
+    return federation ? federation.championKeys.map((key) => ` data-has-${key.toLowerCase()}="1"`).join("") : "";
+  };
+
+  const continents = NATIONAL_CHAMPIONSHIP_CONTINENTS.map((continent) => {
+    const group = groupById.get(continent.id);
+    const countries = mapData.countries.filter((country) => country.continent === continent.id);
+    const dots = (mapData.dots || []).filter((dot) => dot.continent === continent.id);
+    const paths = countries
+      .map(
+        (country) =>
+          `<path class="national-map-country is-${statusOf(country.alpha2)}"${championAttributes(country.alpha2)} d="${country.d}"><title>${escapeHtml(country.name)}</title></path>`,
+      )
+      .join("");
+    const dotMarkup = dots
+      .map(
+        (dot) =>
+          `<circle class="national-map-dot is-${statusOf(dot.alpha2)}"${championAttributes(dot.alpha2)} cx="${dot.x}" cy="${dot.y}" r="4"><title>${escapeHtml(dot.name)}</title></circle>`,
+      )
+      .join("");
+    const label = mapData.labels?.[continent.id];
+    const count = group ? `${group.reportingCount}/${group.federationCount}` : "";
+    const labelMarkup = label
+      ? `<g class="national-map-label"><rect x="${(label.x - 4).toFixed(1)}" y="${(label.y - 13).toFixed(1)}" width="${(continent.label.length * 7.6 + 54).toFixed(0)}" height="18" rx="9"></rect><text x="${(label.x + 4).toFixed(1)}" y="${label.y.toFixed(1)}" class="national-map-label-name">${escapeHtml(continent.label.toUpperCase())}</text><text x="${(label.x + continent.label.length * 7.6 + 8).toFixed(1)}" y="${label.y.toFixed(1)}" class="national-map-label-count">${escapeHtml(count)}</text></g>`
+      : "";
+    const tip = group
+      ? `${group.reportingCount} of ${group.federationCount} federations with champions${group.hint ? ` · ${group.hint.charAt(0).toLowerCase()}${group.hint.slice(1)}` : ""}`
+      : "No federations listed";
+    return `<g class="national-map-continent" data-national-map-continent="${escapeHtml(continent.id)}" role="button" tabindex="0" aria-label="${escapeHtml(`${continent.label}: ${tip}. Opens the ${continent.label} champions.`)}" data-tip-title="${escapeHtml(continent.label)}" data-tip-detail="${escapeHtml(tip)}">${paths}${dotMarkup}${labelMarkup}</g>`;
+  }).join("");
+
+  return `
+    <div class="national-map" data-national-map>
+      <svg class="national-map-svg" viewBox="0 0 ${mapData.width} ${mapData.height}" role="group" aria-label="World map of national championship federations, one region per continent">
+        <defs><pattern id="national-map-listed" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="rgba(0, 120, 199, 0.12)"></rect><line x1="0" y1="0" x2="0" y2="5" stroke="rgba(0, 51, 160, 0.45)" stroke-width="1"></line></pattern></defs>
+        ${continents}
+      </svg>
+      <div class="season-tooltip national-map-tooltip" data-national-map-tooltip role="tooltip" hidden></div>
+      <div class="national-map-legend">
+        <span class="season-legend-item"><span class="season-swatch national-map-swatch-champion"></span>Champion recorded in ${escapeHtml(String(SEASON_YEAR))}</span>
+        <span class="season-legend-item"><span class="season-swatch national-map-swatch-listed"></span>In the index, no result yet</span>
+        <span class="season-legend-item"><span class="season-swatch national-map-swatch-none"></span>Not a federation in the index</span>
+        <span class="season-legend-item"><span class="season-swatch national-map-swatch-dot"></span>Federation too small to draw</span>
+      </div>
+      <p class="meta national-map-note">Hover a continent for its count; click it to open its champions below. Shapes from Natural Earth, public domain. Ten federations are smaller than a pixel at this scale and appear as dots.</p>
+    </div>`;
+}
+
 function buildNationalChampionshipsSection(nationalChampionships) {
   const data = nationalChampionships || buildEmptyNationalChampionships();
   const events = sortNationalChampionshipEvents(data.events || buildNationalChampionshipEventRecords(data.rows || []));
@@ -9002,6 +9087,7 @@ function buildNationalChampionshipsSection(nationalChampionships) {
             </label>
             <div class="national-chip-row" role="group" aria-label="Category">${chips}</div>
           </div>
+          ${buildNationalChampionshipMapMarkup(groups)}
           <div class="national-groups">
             ${groups.map(buildNationalChampionshipGroupMarkup).join("")}
           </div>
@@ -10346,6 +10432,171 @@ function buildHtmlPage(data, view) {
 
       [data-national-almanac][data-category]:not([data-category=""]) .national-table {
         min-width: 0;
+      }
+
+      .national-map {
+        position: relative;
+        margin-top: 1rem;
+      }
+
+      .national-map-svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        padding: 0.4rem 0.3rem 0.1rem;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(0, 120, 199, 0.05), rgba(255, 255, 255, 0.6));
+      }
+
+      .national-map-continent {
+        cursor: pointer;
+        outline: none;
+      }
+
+      .national-map-country {
+        stroke: rgba(255, 255, 255, 0.9);
+        stroke-width: 0.6;
+        stroke-linejoin: round;
+        transition: fill 0.15s ease;
+      }
+
+      .national-map-country.is-champion,
+      .national-map-dot.is-champion {
+        fill: #0078c7;
+      }
+
+      .national-map-country.is-listed {
+        fill: url(#national-map-listed);
+      }
+
+      .national-map-country.is-none {
+        fill: rgba(0, 51, 160, 0.08);
+      }
+
+      .national-map-dot {
+        stroke: white;
+        stroke-width: 1.5;
+      }
+
+      .national-map-dot.is-listed,
+      .national-map-dot.is-none {
+        fill: white;
+        stroke: rgba(0, 51, 160, 0.5);
+      }
+
+      .national-map-continent:hover .national-map-country.is-champion,
+      .national-map-continent:focus-visible .national-map-country.is-champion,
+      .national-map-continent.is-active .national-map-country.is-champion,
+      .national-map-continent:hover .national-map-dot.is-champion,
+      .national-map-continent:focus-visible .national-map-dot.is-champion,
+      .national-map-continent.is-active .national-map-dot.is-champion {
+        fill: #0033a0;
+      }
+
+      .national-map-continent:hover .national-map-country,
+      .national-map-continent:focus-visible .national-map-country,
+      .national-map-continent.is-active .national-map-country {
+        stroke: #00184d;
+        stroke-width: 0.8;
+      }
+
+      .national-map-label {
+        pointer-events: none;
+      }
+
+      .national-map-label rect {
+        fill: rgba(255, 255, 255, 0.85);
+      }
+
+      .national-map-label text {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 11.5px;
+        font-weight: 800;
+      }
+
+      .national-map-label-name {
+        letter-spacing: 0.08em;
+        fill: #09214c;
+      }
+
+      .national-map-label-count {
+        font-weight: 700;
+        fill: #0078c7;
+      }
+
+      .national-map-continent:hover .national-map-label rect,
+      .national-map-continent:focus-visible .national-map-label rect,
+      .national-map-continent.is-active .national-map-label rect {
+        fill: #00184d;
+      }
+
+      .national-map-continent:hover .national-map-label-name,
+      .national-map-continent:focus-visible .national-map-label-name,
+      .national-map-continent.is-active .national-map-label-name {
+        fill: white;
+      }
+
+      .national-map-continent:hover .national-map-label-count,
+      .national-map-continent:focus-visible .national-map-label-count,
+      .national-map-continent.is-active .national-map-label-count {
+        fill: #ffcc00;
+      }
+
+      /* A category chip re-shades the map: only countries holding that title stay blue. */
+      [data-national-almanac][data-category="meRoadRace"] .national-map-country.is-champion:not([data-has-meroadrace]),
+      [data-national-almanac][data-category="meItt"] .national-map-country.is-champion:not([data-has-meitt]),
+      [data-national-almanac][data-category="weRoadRace"] .national-map-country.is-champion:not([data-has-weroadrace]),
+      [data-national-almanac][data-category="weItt"] .national-map-country.is-champion:not([data-has-weitt]) {
+        fill: url(#national-map-listed);
+      }
+
+      [data-national-almanac][data-category="meRoadRace"] .national-map-dot.is-champion:not([data-has-meroadrace]),
+      [data-national-almanac][data-category="meItt"] .national-map-dot.is-champion:not([data-has-meitt]),
+      [data-national-almanac][data-category="weRoadRace"] .national-map-dot.is-champion:not([data-has-weroadrace]),
+      [data-national-almanac][data-category="weItt"] .national-map-dot.is-champion:not([data-has-weitt]) {
+        fill: white;
+        stroke: rgba(0, 51, 160, 0.5);
+      }
+
+      .national-map-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.1rem;
+        margin-top: 0.7rem;
+        padding: 0 0.3rem;
+      }
+
+      .national-map-swatch-champion {
+        background: #0078c7;
+      }
+
+      .national-map-swatch-listed {
+        background: repeating-linear-gradient(45deg, rgba(0, 51, 160, 0.45) 0 1px, rgba(0, 120, 199, 0.12) 1px 5px);
+        border: 1px solid rgba(0, 51, 160, 0.18);
+      }
+
+      .national-map-swatch-none {
+        background: rgba(0, 51, 160, 0.08);
+        border: 1px solid rgba(0, 51, 160, 0.18);
+      }
+
+      .national-map-swatch-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background: #0078c7;
+        border: 1.5px solid white;
+        box-shadow: 0 0 0 1px rgba(0, 51, 160, 0.3);
+      }
+
+      .national-map-note {
+        font-size: 0.8rem;
+      }
+
+      .national-group.is-map-target {
+        box-shadow: 0 0 0 3px rgba(0, 120, 199, 0.18);
+        border-color: var(--line-strong);
       }
 
       /* Season calendar */
@@ -11848,7 +12099,8 @@ function buildHtmlPage(data, view) {
           flex-basis: 100%;
         }
 
-        .season-full {
+        .season-full,
+        .national-map {
           display: none;
         }
 
@@ -12069,6 +12321,105 @@ function buildHtmlPage(data, view) {
           });
         }
         applyFilters();
+      }
+
+      // National Championships map: hovering a continent shows its count, clicking or
+      // pressing Enter opens that continent's table below and marks it on the map. The
+      // map is hidden on phones, where the grouped list stands on its own.
+      function bindNationalChampionshipMap() {
+        const root = document.querySelector("[data-national-almanac]");
+        const map = root ? root.querySelector("[data-national-map]") : null;
+        if (!root || !map) {
+          return;
+        }
+        const tooltip = map.querySelector("[data-national-map-tooltip]");
+        const continents = Array.prototype.slice.call(map.querySelectorAll("[data-national-map-continent]"));
+        const groups = Array.prototype.slice.call(root.querySelectorAll("[data-national-group]"));
+
+        const groupFor = (id) =>
+          groups.find((group) => group.dataset.nationalGroupId === id) || null;
+
+        const markActive = () => {
+          continents.forEach((continent) => {
+            const group = groupFor(continent.dataset.nationalMapContinent);
+            continent.classList.toggle("is-active", Boolean(group && group.open && !group.hidden));
+          });
+        };
+
+        const showTooltip = (continent, event) => {
+          if (!tooltip) {
+            return;
+          }
+          tooltip.textContent = "";
+          const title = document.createElement("strong");
+          title.textContent = continent.dataset.tipTitle || "";
+          const detail = document.createElement("span");
+          detail.textContent = continent.dataset.tipDetail || "";
+          const hint = document.createElement("span");
+          hint.textContent = "Click to open";
+          tooltip.appendChild(title);
+          tooltip.appendChild(detail);
+          tooltip.appendChild(hint);
+          tooltip.hidden = false;
+          const mapBox = map.getBoundingClientRect();
+          const tipBox = tooltip.getBoundingClientRect();
+          let anchorX;
+          let anchorY;
+          if (event && typeof event.clientX === "number" && event.type !== "focus") {
+            anchorX = event.clientX - mapBox.left;
+            anchorY = event.clientY - mapBox.top;
+          } else {
+            const box = continent.getBoundingClientRect();
+            anchorX = box.left - mapBox.left + box.width / 2;
+            anchorY = box.top - mapBox.top + box.height / 2;
+          }
+          let left = anchorX - tipBox.width / 2;
+          left = Math.max(8, Math.min(left, mapBox.width - tipBox.width - 8));
+          let top = anchorY - tipBox.height - 16;
+          if (top < 0) {
+            top = anchorY + 20;
+          }
+          tooltip.style.left = left + "px";
+          tooltip.style.top = top + "px";
+        };
+        const hideTooltip = () => {
+          if (tooltip) {
+            tooltip.hidden = true;
+          }
+        };
+
+        const openContinent = (continent) => {
+          const group = groupFor(continent.dataset.nationalMapContinent);
+          if (!group) {
+            return;
+          }
+          group.open = true;
+          group.classList.add("is-map-target");
+          window.setTimeout(() => {
+            group.classList.remove("is-map-target");
+          }, 2400);
+          markActive();
+          group.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+
+        continents.forEach((continent) => {
+          continent.addEventListener("mouseenter", (event) => showTooltip(continent, event));
+          continent.addEventListener("mousemove", (event) => showTooltip(continent, event));
+          continent.addEventListener("mouseleave", hideTooltip);
+          continent.addEventListener("focus", (event) => showTooltip(continent, event));
+          continent.addEventListener("blur", hideTooltip);
+          continent.addEventListener("click", () => openContinent(continent));
+          continent.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openContinent(continent);
+            }
+          });
+        });
+        groups.forEach((group) => {
+          group.addEventListener("toggle", markActive);
+        });
+        markActive();
       }
 
       // Season calendar: hidden until the hero button or a #season-calendar link opens it,
@@ -12538,6 +12889,7 @@ function buildHtmlPage(data, view) {
       bindArticleControls();
       bindLoadMoreRaces();
       bindNationalChampionshipFilters();
+      bindNationalChampionshipMap();
       bindSeasonCalendar();
     </script>
   </body>
@@ -12710,9 +13062,25 @@ function buildWarmupPage() {
 // an edit lives only until the next deploy, and the response says so.
 
 const SITE_CONTENT_PAGES = {
-  "release-notes": { file: "release-notes.md", title: "Release Notes", tag: "What changed", path: "/release-notes" },
-  about: { file: "about.md", title: "About", tag: "Who makes this", path: "/about" },
+  "release-notes": {
+    file: "release-notes.md",
+    title: "Release Notes",
+    tag: "What changed",
+    path: "/release-notes",
+    description: "Every change to Pro Cycling Results in plain language, newest first, dated by the day it went live.",
+  },
+  about: {
+    file: "about.md",
+    title: "About",
+    tag: "Who makes this",
+    path: "/about",
+    description: "Who makes Pro Cycling Results: the Grupetto Committee, purely for the love of the sport, free for all to use and enjoy.",
+  },
 };
+const SITE_ORIGIN = "https://procyclingresults.up.railway.app";
+const OG_IMAGE_PATH = "/assets/og-image.jpg";
+const OG_IMAGE_WIDTH = 1200;
+const OG_IMAGE_HEIGHT = 405;
 const SITE_CONTENT_MAX_BYTES = 256 * 1024;
 const SITE_EDIT_TOKEN = process.env.SITE_EDIT_TOKEN || "";
 const GITHUB_CONTENT_TOKEN = process.env.GITHUB_CONTENT_TOKEN || "";
@@ -13119,6 +13487,20 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>${escapeHtml(page.title)} · Pro Cycling Results</title>
+    <meta name="description" content="${escapeHtml(page.description)}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pro Cycling Results" />
+    <meta property="og:title" content="${escapeHtml(page.title)} · Pro Cycling Results" />
+    <meta property="og:description" content="${escapeHtml(page.description)}" />
+    <meta property="og:url" content="${escapeHtml(SITE_ORIGIN + page.path)}" />
+    <meta property="og:image" content="${escapeHtml(SITE_ORIGIN + OG_IMAGE_PATH)}" />
+    <meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />
+    <meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />
+    <meta property="og:image:alt" content="Pro Cycling Results" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(page.title)} · Pro Cycling Results" />
+    <meta name="twitter:description" content="${escapeHtml(page.description)}" />
+    <meta name="twitter:image" content="${escapeHtml(SITE_ORIGIN + OG_IMAGE_PATH)}" />
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
       @font-face { font-family: "Manrope"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/fonts/manrope-500.ttf") format("truetype"); }
