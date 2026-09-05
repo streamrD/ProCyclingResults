@@ -12002,6 +12002,13 @@ function buildHtmlPage(data, view) {
           padding-top: 0.7rem;
         }
 
+        /* A phone is too narrow for the expanded chart: the trace flattens and the
+           start and finish towns run into the caption. Compact only; the client
+           keeps the class off as well. */
+        .stage-profile-expand {
+          display: none;
+        }
+
         .hero,
         .section {
           border-radius: 22px;
@@ -12842,8 +12849,11 @@ function buildHtmlPage(data, view) {
       });
 
       // Measured profiles open compact; expanding one expands them all, and the choice
-      // is kept the same way the units are.
+      // is kept the same way the units are. Phones stay compact whatever is stored:
+      // the expanded chart needs more width than they have, so the control is hidden
+      // there and the class is never applied. The stored choice survives a rotation.
       const PROFILE_VIEW_KEY = "pcr-profile-view";
+      const narrowViewport = window.matchMedia("(max-width: 720px)");
 
       function readProfileView() {
         try {
@@ -12854,7 +12864,7 @@ function buildHtmlPage(data, view) {
       }
 
       function applyProfileView(view) {
-        const expanded = view === "expanded";
+        const expanded = view === "expanded" && !narrowViewport.matches;
         document.querySelectorAll(".stage-profile.is-measured").forEach((figure) => {
           figure.classList.toggle("is-expanded", expanded);
           const button = figure.querySelector("[data-profile-toggle]");
@@ -12898,6 +12908,7 @@ function buildHtmlPage(data, view) {
       }).observe(document.body, { childList: true, subtree: true });
       applyUnitPreference(readUnitPreference());
       applyProfileView(readProfileView());
+      narrowViewport.addEventListener("change", () => applyProfileView(readProfileView()));
 
       bindArticleControls();
       bindLoadMoreRaces();

@@ -50,7 +50,7 @@ function loadServer() {
   };
 }
 
-function buildPage() {
+function buildPage({ probe: customProbe, setup = "" } = {}) {
   const { buildStageSwitcherMarkup, style, script } = loadServer();
   const profile = { source: "komoot", distanceKm: 166.6, elevationGainM: 4527, points: [[0, 113], [80, 900], [120, 700], [166.6, 2137]] };
   const race = {
@@ -114,10 +114,30 @@ function buildPage() {
     }, 50);
   `;
   return `<!doctype html><meta charset="utf-8"><style>${style}</style>
-<body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));</script>
+<body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));${setup}</script>
 <main>${switcher}</main><pre id="smoke"></pre>
 <script>${script}</script>
-<script>${probe}</script>`;
+<script>${customProbe || probe}</script>`;
+}
+
+function runProbe(chrome, page, chromeArgs = []) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pcr-smoke-"));
+  const file = path.join(dir, "card.html");
+  fs.writeFileSync(file, page);
+  let dom = "";
+  try {
+    dom = execFileSync(
+      chrome,
+      ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000", "--dump-dom", ...chromeArgs, `file://${file}`],
+      { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "ignore"] },
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  const match = dom.match(/<pre id="smoke">([\s\S]*?)<\/pre>/);
+  assert.ok(match && match[1].trim(), "the probe never reported: the client script threw before it ran or the page did not load");
+  return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
 }
 
 test("the stage card's client script works in a real browser", (t) => {
@@ -127,23 +147,7 @@ test("the stage card's client script works in a real browser", (t) => {
     return;
   }
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pcr-smoke-"));
-  const file = path.join(dir, "card.html");
-  fs.writeFileSync(file, buildPage());
-  let dom = "";
-  try {
-    dom = execFileSync(
-      chrome,
-      ["--headless", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000", "--dump-dom", `file://${file}`],
-      { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "ignore"] },
-    );
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-
-  const match = dom.match(/<pre id="smoke">([\s\S]*?)<\/pre>/);
-  assert.ok(match && match[1].trim(), "the probe never reported: the client script threw before it ran or the page did not load");
-  const out = JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  const out = runProbe(chrome, buildPage());
 
   assert.deepEqual(out.errors, []);
   assert.equal(out.otherPanelShown, true);
@@ -170,4 +174,39 @@ test("the stage card's client script works in a real browser", (t) => {
   assert.equal(out.rowInactive, true);
   assert.equal(out.lateExpanded, true);
   assert.equal(out.lateDistance, "103.5 mi");
+});
+
+// A phone never gets the expanded chart: the trace is too flat to read at that width
+// and the start and finish towns collide with the caption. The control is hidden and a
+// choice remembered from a wider screen is not applied, though it is not forgotten.
+test("phones keep stage profiles compact even when expansion is remembered", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  const probe = `
+    const out = { errors: window.__errors };
+    out.width = window.innerWidth;
+    out.expanded = document.querySelectorAll('.stage-profile.is-expanded').length;
+    out.measured = document.querySelectorAll('.stage-profile.is-measured').length;
+    out.buttonVisible = getComputedStyle(document.querySelector('[data-profile-toggle]')).display !== 'none';
+    out.endMarkerVisible = getComputedStyle(document.querySelector('.stage-profile-end')).display !== 'none';
+    out.storedView = localStorage.getItem('pcr-profile-view');
+    document.getElementById('smoke').textContent = JSON.stringify(out);
+  `;
+  const out = runProbe(
+    chrome,
+    buildPage({ probe, setup: "localStorage.setItem('pcr-profile-view', 'expanded');" }),
+    ["--window-size=390,844"],
+  );
+
+  assert.deepEqual(out.errors, []);
+  assert.ok(out.width <= 720, `phone run rendered at ${out.width}px`);
+  assert.equal(out.measured, 2);
+  assert.equal(out.expanded, 0);
+  assert.equal(out.buttonVisible, false);
+  assert.equal(out.endMarkerVisible, false);
+  assert.equal(out.storedView, "expanded");
 });

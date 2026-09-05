@@ -545,7 +545,12 @@ caption — and "Expand profile" swaps the same SVG into a tall chart with an
 altitude-coloured fill, gridlines, km ticks and start/finish markers (towns parsed from
 the course cell by `parseStageCourseEnds`). One markup, two CSS states; the axes and
 markers are simply hidden while compact. The client keeps the choice in `localStorage`
-under `pcr-profile-view` and applies it to every measured profile on the page. A stage without one gets the `STAGE_TYPE_GLYPHS` icon for its type — the
+under `pcr-profile-view` and applies it to every measured profile on the page. Phones
+(the 720px breakpoint) never expand: the chart is too compressed to read at that width
+and the start and finish towns run into the caption, so the button is hidden there and
+`applyProfileView` refuses the class while `matchMedia("(max-width: 720px)")` matches
+(decided 2026-09-05). The stored choice is kept, so rotating a tablet back restores it;
+`test/browser-smoke.test.js` runs a second Chrome pass at 390px to guard this. A stage without one gets the `STAGE_TYPE_GLYPHS` icon for its type — the
 same icon for every stage of that type, in a dashed box, with the note "no elevation
 profile is available" — because a plausible-looking silhouette was tried first and read
 as a real profile (the user spotted three Tour mountain stages drawn nearly alike). Do

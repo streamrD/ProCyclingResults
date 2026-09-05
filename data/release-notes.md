@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 5 September 2026
+
+- **No profile expansion on phones.** The "Expand profile" button on measured stage profiles is gone on narrow screens. The tall chart was too squeezed there to be readable, and the start and finish town labels ran into other text. Phones now always show the compact profile. On wider screens nothing changes.
+
 ## 4 September 2026
 
 - **New link previews, and one for each section.** Sharing the site now shows a fresh image built from its own visuals: a Vuelta stage profile for the results page, the season timeline when you share procyclingresults.up.railway.app/calendar, and the championships map when you share procyclingresults.up.railway.app/championships. Those two links open the results page at that section. The About and Release Notes pages carry previews too.
