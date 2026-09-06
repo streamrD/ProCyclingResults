@@ -85,3 +85,7 @@ how the site fetches. The review log below is updated each time.
   stage its finish video: YouTube serves its mobile site to any agent string with a
   token after the policy URL. The YouTube search now sends the string without the
   contact. No change to request counts.
+- **2026-09-06.** Added a "Refresh results" button to the page. It asks our own server
+  whether it holds a newer copy than the one on screen and reloads only then; it does
+  not ask any source directly, and it cannot make the server rebuild sooner than the
+  cadence above. No change to request counts.

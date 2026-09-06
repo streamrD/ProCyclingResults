@@ -136,6 +136,8 @@ There is currently:
   Returns the active aggregated race payload as JSON. It currently mirrors the WorldTour plus national championship product scope.
 - `/api/build-info`
   Returns the deployment marker from `BUILD_INFO` in `server.js`. On Railway it reflects the deployed commit, branch and message from `RAILWAY_GIT_*` environment variables; elsewhere it falls back to hardcoded values. The `source` field says which — `railway-env` or `hardcoded-fallback` — so a fallback marker is never mistaken for the live commit.
+- `/api/data-status`
+  What the page's "Refresh results" button asks before reloading: `{ fetchedAt, ageMs, ttlMs, nextRebuildDueMs, rebuilding }` for the homepage payload. It reads through `loadRaceData`, so an expired payload starts its background rebuild exactly as a page view would, and it never reaches an upstream source on its own. During cold warmup it returns `202` like `/api/homepage-data`.
 - `/api/competition-section?group=<id>`
   Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
 - `/api/race-news?race=<race id>`

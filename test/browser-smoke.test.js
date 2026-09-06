@@ -51,7 +51,7 @@ function loadServer() {
   };
 }
 
-function buildPage({ probe: customProbe, setup = "" } = {}) {
+function buildPage({ probe: customProbe, setup = "", markup = "" } = {}) {
   const { buildStageSwitcherMarkup, buildRaceNewsMarkup, style, script } = loadServer();
   const profile = { source: "komoot", distanceKm: 166.6, elevationGainM: 4527, points: [[0, 113], [80, 900], [120, 700], [166.6, 2137]] };
   const race = {
@@ -134,7 +134,7 @@ function buildPage({ probe: customProbe, setup = "" } = {}) {
   `;
   return `<!doctype html><meta charset="utf-8"><style>${style}</style>
 <body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));${setup}</script>
-<main>${switcher}<article class="card" id="narrow" style="width: 300px">${news}</article></main><pre id="smoke"></pre>
+<main>${markup}${switcher}<article class="card" id="narrow" style="width: 300px">${news}</article></main><pre id="smoke"></pre>
 <script>${script}</script>
 <script>${customProbe || probe}</script>`;
 }
@@ -233,4 +233,53 @@ test("phones keep stage profiles compact even when expansion is remembered", (t)
   assert.equal(out.buttonVisible, false);
   assert.equal(out.endMarkerVisible, false);
   assert.equal(out.storedView, "expanded");
+});
+
+// The refresh button asks the server first. When the server's copy is the one already
+// on screen it must say so and hand the button back, never reload into the same page.
+test("the refresh button reports when there is nothing newer instead of reloading", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  const markup = `<div class="updated-row"><div class="updated">Updated now</div>
+    <button type="button" class="refresh-button" data-refresh-button data-fetched-at="2026-09-06T15:32:07.658Z"><span data-refresh-label>Refresh results</span></button></div>
+    <p class="refresh-status" data-refresh-status hidden></p>`;
+  const setup = `
+    window.__fetches = [];
+    window.fetch = (url, options) => {
+      window.__fetches.push({ url, cache: options && options.cache });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({
+        fetchedAt: "2026-09-06T15:32:07.658Z", ageMs: 4 * 60000, ttlMs: 15 * 60000, nextRebuildDueMs: 11 * 60000, rebuilding: false,
+      }) });
+    };
+  `;
+  const probe = `
+    const out = { errors: window.__errors };
+    const button = document.querySelector('[data-refresh-button]');
+    const status = document.querySelector('[data-refresh-status]');
+    button.click();
+    out.busyLabel = button.querySelector('[data-refresh-label]').textContent;
+    out.disabledWhileChecking = button.disabled;
+    setTimeout(() => {
+      out.fetches = window.__fetches;
+      out.statusText = status.textContent;
+      out.statusShown = !status.hidden;
+      out.enabledAgain = !button.disabled && !button.classList.contains('is-busy');
+      out.idleLabel = button.querySelector('[data-refresh-label]').textContent;
+      document.getElementById('smoke').textContent = JSON.stringify(out);
+    }, 100);
+  `;
+  const out = runProbe(chrome, buildPage({ probe, setup, markup }));
+
+  assert.deepEqual(out.errors, []);
+  assert.equal(out.busyLabel, "Checking for newer results…");
+  assert.equal(out.disabledWhileChecking, true);
+  assert.deepEqual(out.fetches, [{ url: "/api/data-status", cache: "no-store" }]);
+  assert.equal(out.statusShown, true);
+  assert.equal(out.statusText, "You already have the latest results. Built 4 minutes ago; the next rebuild is due in about 11 minutes.");
+  assert.equal(out.enabledAgain, true);
+  assert.equal(out.idleLabel, "Refresh results");
 });

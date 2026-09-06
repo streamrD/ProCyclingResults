@@ -23,6 +23,9 @@ const BUILD_INFO = {
 };
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const EASTERN_TIMEZONE = "America/New_York";
+const REFRESH_ICON_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg>';
+
 const UMAMI_ANALYTICS_SCRIPT =
   '<script defer src="https://todd-umami.up.railway.app/script.js" data-website-id="2ad971aa-bf49-4708-b2b3-e117825d9e13"></script>';
 const MAX_RACE_ARTICLES = 8;
@@ -7116,6 +7119,24 @@ function buildHomepageDataPayload(data) {
   };
 }
 
+// What the page's refresh button asks: is there a newer copy of the results than the
+// one on screen, or is one being built? Reading through loadRaceData means an expired
+// payload starts its background rebuild here, exactly as a page view would; the button
+// never reaches upstream sources on its own.
+async function buildDataStatusPayload(now = Date.now()) {
+  const data = await loadRaceData({ includeDeferred: false });
+  const updatedAt = raceDataCache.updatedAt || 0;
+  const ttlMs = getRaceDataCacheTtlMs(data, new Date(now));
+  const ageMs = updatedAt ? Math.max(0, now - updatedAt) : null;
+  return {
+    fetchedAt: data.fetchedAt || "",
+    ageMs,
+    ttlMs,
+    nextRebuildDueMs: ageMs === null ? null : Math.max(0, ttlMs - ageMs),
+    rebuilding: Boolean(raceDataCache.promise),
+  };
+}
+
 function parseClockSeconds(value) {
   const parts = String(value || "").split(":").map((part) => Number.parseInt(part, 10));
   if (parts.length < 2 || parts.length > 3 || parts.some((part) => !Number.isFinite(part))) {
@@ -10006,6 +10027,73 @@ function buildHtmlPage(data, view) {
         font-size: 0.82rem;
       }
 
+      /* The refresh button beside the timestamp: it asks the server whether a newer copy
+         of the results exists before reloading, and says so when none does. */
+      .updated-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.9rem;
+        margin-top: 1.1rem;
+      }
+
+      .updated-row .updated {
+        margin-top: 0;
+      }
+
+      .refresh-button {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0.55rem 0.95rem 0.55rem 0.8rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.12);
+        color: white;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+        backdrop-filter: blur(10px);
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+
+      .refresh-button:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.34);
+      }
+
+      .refresh-button[disabled] {
+        cursor: default;
+        opacity: 0.85;
+      }
+
+      .refresh-button svg {
+        flex: none;
+      }
+
+      .refresh-button.is-busy svg {
+        animation: refresh-spin 900ms linear infinite;
+      }
+
+      @keyframes refresh-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .refresh-status {
+        margin: 0.6rem 0 0;
+        max-width: 38rem;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: 0.86rem;
+        line-height: 1.5;
+      }
+
       .hero-menu {
         display: grid;
         gap: 0.8rem;
@@ -12394,7 +12482,11 @@ function buildHtmlPage(data, view) {
             <div class="eyebrow">UCI-Inspired Race Desk</div>
             <h1>Pro Cycling Results</h1>
             <p class="hero-subtitle">${escapeHtml(heroSubheader)}</p>
-            <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
+            <div class="updated-row">
+              <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
+              <button type="button" class="refresh-button" data-refresh-button data-fetched-at="${escapeHtml(data.fetchedAt || "")}">${REFRESH_ICON_SVG}<span data-refresh-label>Refresh results</span></button>
+            </div>
+            <p class="refresh-status" data-refresh-status role="status" aria-live="polite" hidden></p>
           </div>
           <nav class="hero-menu" aria-label="Page sections">${heroMenu}</nav>
         </div>
@@ -12665,6 +12757,108 @@ function buildHtmlPage(data, view) {
       // A share path such as /championships serves this same page with its own link
       // preview; once loaded it jumps to the section and settles on the /#section URL.
       // The calendar path is handled by bindSeasonCalendar, which opens the section.
+      // The refresh button beside the timestamp. A reload on its own can return the same
+      // copy the visitor already has, because the server serves one in-memory payload
+      // until it expires; a tab restored hours later, on the other hand, never asked the
+      // server at all. So the button asks /api/data-status first: a newer copy means
+      // reload now, a rebuild in progress means wait for it (bounded), and nothing newer
+      // means say so instead of pretending. It never triggers an upstream fetch itself.
+      function bindRefreshButton() {
+        const button = document.querySelector("[data-refresh-button]");
+        const status = document.querySelector("[data-refresh-status]");
+        if (!button || !status) {
+          return;
+        }
+        const label = button.querySelector("[data-refresh-label]");
+        const idleText = label ? label.textContent : "";
+        const REBUILD_WAIT_MS = 45000;
+        const POLL_MS = 2500;
+
+        const setBusy = (text) => {
+          button.disabled = true;
+          button.classList.add("is-busy");
+          if (label) {
+            label.textContent = text;
+          }
+        };
+        const setIdle = () => {
+          button.disabled = false;
+          button.classList.remove("is-busy");
+          if (label) {
+            label.textContent = idleText;
+          }
+        };
+        const say = (text) => {
+          status.textContent = text;
+          status.hidden = !text;
+        };
+        const describeMinutes = (ms) => {
+          const minutes = Math.round(ms / 60000);
+          if (minutes < 1) {
+            return "under a minute";
+          }
+          return minutes === 1 ? "1 minute" : minutes + " minutes";
+        };
+        const reload = () => {
+          window.location.reload();
+        };
+        const fetchStatus = async () => {
+          const response = await fetch("/api/data-status", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error("status " + response.status);
+          }
+          return response.json();
+        };
+
+        button.addEventListener("click", async () => {
+          if (button.disabled) {
+            return;
+          }
+          const shownAt = button.getAttribute("data-fetched-at") || "";
+          say("");
+          setBusy("Checking for newer results…");
+          try {
+            let info = await fetchStatus();
+            if (info.status === "warming" || (info.fetchedAt && info.fetchedAt !== shownAt)) {
+              reload();
+              return;
+            }
+            if (info.rebuilding) {
+              setBusy("Newer results are being prepared…");
+              const deadline = Date.now() + REBUILD_WAIT_MS;
+              while (Date.now() < deadline) {
+                await new Promise((resolve) => window.setTimeout(resolve, POLL_MS));
+                info = await fetchStatus();
+                if (info.fetchedAt && info.fetchedAt !== shownAt) {
+                  reload();
+                  return;
+                }
+                if (!info.rebuilding) {
+                  break;
+                }
+              }
+            }
+            const age = typeof info.ageMs === "number" ? "Built " + describeMinutes(info.ageMs) + " ago" : "";
+            const due =
+              typeof info.nextRebuildDueMs === "number"
+                ? info.rebuilding
+                  ? "a rebuild is still running; try again shortly"
+                  : "the next rebuild is due in about " + describeMinutes(info.nextRebuildDueMs)
+                : "";
+            say(
+              "You already have the latest results." +
+                (age ? " " + age + (due ? "; " + due : "") + "." : ""),
+            );
+          } catch (error) {
+            // The status check failed (offline, or the server restarting): a plain reload
+            // is still the most useful thing to do.
+            reload();
+            return;
+          }
+          setIdle();
+        });
+      }
+
       function bindShareJump() {
         const jump = document.body.dataset.jumpTo;
         if (!jump || jump === "season-calendar") {
@@ -13164,6 +13358,7 @@ function buildHtmlPage(data, view) {
       bindNationalChampionshipMap();
       bindSeasonCalendar();
       bindShareJump();
+      bindRefreshButton();
     </script>
   </body>
 </html>`;
@@ -14022,7 +14217,7 @@ const server = http.createServer(async (request, response) => {
     if (shouldWarmHomepage) {
       warmRaceDataInBackground().catch(() => {});
 
-      if (url.pathname === "/api/homepage-data") {
+      if (url.pathname === "/api/homepage-data" || url.pathname === "/api/data-status") {
         sendJson(response, 202, {
           status: "warming",
           message: "Live race data is still loading.",
@@ -14039,6 +14234,11 @@ const server = http.createServer(async (request, response) => {
     if (!getShareView(url.pathname)) {
       if (url.pathname === "/api/build-info") {
         sendJson(response, 200, BUILD_INFO);
+        return;
+      }
+
+      if (url.pathname === "/api/data-status") {
+        sendJson(response, 200, await buildDataStatusPayload());
         return;
       }
 
