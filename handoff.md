@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-04 (season calendar, championships almanac and map, editable pages, share previews)
+Updated: 2026-09-06 (refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -799,6 +799,25 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   (https://claude.ai/code/artifact/5b2f654d-0e7d-43a2-a31e-bb4d203ca07a): page 1 the
   chosen line under the GC, page 2 the four directions A–D at desktop and phone width.
 
+### Added 2026-09-06
+
+- **The refresh button compares `fetchedAt` only.** Late official snapshots
+  (`applyLateOfficialSnapshots`) are folded into the cached payload in place without
+  changing its timestamp, so for the few seconds between a rebuild and a slow
+  provider landing, the button reports "already the latest" while a reload would in
+  fact show more. Harmless during a live race (the next rebuild is under a minute
+  away); if it ever matters, stamp a `lateAppliedAt` on the payload and include it in
+  `/api/data-status`.
+- **`/api/data-status` is unauthenticated and cheap by construction.** It reads
+  through `loadRaceData`, which returns the cached payload immediately and at most
+  starts the background rebuild a page view would have started. Keep it that way: a
+  variant that forced a rebuild would hand every visitor a lever on our sources and
+  break the cadence promised in `DATA-SOURCES.md`.
+- **The refresh-button comps** live on a design canvas
+  (https://claude.ai/code/artifact/9ed1996b-2344-46a1-b37a-04f3fa55347f): A inline
+  link, B pill beside the timestamp (chosen), C fifth menu item, each at desktop and
+  phone width, plus a board of the four states the button moves through.
+
 ## Live-Race Freshness, Measured 2026-09-05
 
 Stage 14 of the Vuelta: the riders finished at about 15:48 UTC (13:33 real start plus
@@ -1131,7 +1150,7 @@ stage that has not happened, so the two carry different titles.
 - The hero and page overflow a 390px viewport in headless Chrome, on production as well as locally. Noticed on 2026-09-04 while checking the season calendar's phone layout; not caused by it and not yet fixed.
 - Every save from the site editor is a commit to `main` and therefore a Railway redeploy (about 30s, then a short warm-up during which `/` serves the warm-up page and `/api/homepage-data` returns 202). Two saves within seconds can make the second one hit a GitHub 409; the server re-reads the file version and retries once.
 - When you push, another commit may already be on `origin/main` from the site editor. Always `git pull --rebase origin main` before `git push`; a hand edit to `data/release-notes.md` can conflict with an edit the maintainer made on the site.
-- CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
+- CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer, the refresh button against a stubbed fetch) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
 
 ## Process Lessons From The 2026-09-04 Session
 
@@ -1243,6 +1262,48 @@ Traps that cost time:
   scanning, not regex; the generator in the session scratchpad did both.
 - Headless Chrome's default window is 800×600, so a phone-width smoke check needs
   `--window-size=390,844`, and an anchor to a `hidden` element does not scroll.
+
+## Process Lessons From The 2026-09-06 Session
+
+A short session, one feature: a "Refresh results" button beside the hero timestamp,
+backed by `/api/data-status`. One push, verified on production, with the release note,
+README, this file and the `DATA-SOURCES.md` review log in the same commit.
+
+- **The question was answered before the button was designed.** "A refresh button for
+  when someone sees a cached page" first needed "cached where?". The HTML and the JSON
+  already go out `no-store`, so the browser is not the culprit; the two real cases are
+  a phone restoring an old tab (never asks the server) and the server's own single
+  in-memory copy (a reload can return the identical payload). That analysis is what
+  made the button honest: check first, reload only when there is something newer,
+  otherwise say so and when the next rebuild is due.
+- **"Fetch the freshest data" was deliberately not taken literally.** A button that
+  forced an upstream rebuild would let any visitor set our request rate to the sources.
+  The endpoint reads through `loadRaceData` and does nothing a page view would not;
+  the review log in `DATA-SOURCES.md` says so, so the next reader of that document
+  does not have to rediscover it.
+- **Three placements, one recommendation, tradeoffs named.** Comps were built from the
+  live hero markup and the production stylesheet (curl the page, cut `<style>` and the
+  hero section, Google Fonts for Barlow/Manrope), rendered with headless Chrome before
+  publishing, and put on a canvas with desktop and phone frames plus a states board.
+  The maintainer answered "b. thank you" in one line, which is the point of comps.
+- **The client path got a real-browser test the same day.** `buildPage` in
+  `test/browser-smoke.test.js` now takes `markup`, and the new test stubs
+  `window.fetch`, clicks the button and asserts the busy label, the single
+  `no-store` request, the "already the latest" sentence and that the button is
+  handed back. It cannot observe `location.reload`, so the reload branches are covered
+  by the local server run and the production check instead.
+- **Verification on production was the same loop as before**: poll `/api/build-info`
+  for the SHA (six polls at 6s), wait for `/api/data-status` to answer `200` past
+  warm-up, then grep the live page for the button and its `data-fetched-at`.
+
+Traps that cost time:
+
+- Headless Chrome will not open a window narrower than about 500px in the old headless
+  mode; a `--window-size=390,…` screenshot comes out 390 wide but laid out at ~500 and
+  looks clipped. `--headless=new` honours the width. The smoke test's phone run was
+  already on the new mode and is fine.
+- `git pull --rebase` refuses with unstaged changes; commit first, then pull, then push
+  (the site editor may have committed to `main` in the meantime).
 
 ## Suggested First Checks For A New Agent
 
