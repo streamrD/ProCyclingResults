@@ -39,7 +39,7 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
+| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
 | Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
 | Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. |
 | Cyclingnews | The national championships index page | At most once an hour. |
@@ -89,3 +89,8 @@ how the site fetches. The review log below is updated each time.
   whether it holds a newer copy than the one on screen and reloads only then; it does
   not ask any source directly, and it cannot make the server rebuild sooner than the
   cadence above. No change to request counts.
+- **2026-09-07.** Added the UCI Road World Championships article to the pages we
+  read, for the schedule of its four elite events. It joins the same revision query
+  as the season pages, so a steady-state rebuild still makes one request to Wikipedia;
+  the article itself is fetched only when it changes. The event pages it links to are
+  not fetched: they do not exist before race week.

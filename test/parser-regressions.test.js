@@ -73,6 +73,9 @@ function loadParserExports() {
       parseWikiTableGrid,
       buildJerseyHoldersMarkup,
       parseAthleteDetails,
+      parseWorldChampionshipEliteEvents,
+      buildUpcomingCard,
+      getCompetitionGroups,
       cleanWikiText,
       buildRaceArticleQueries,
       scoreRaceArticle,
@@ -1489,6 +1492,78 @@ test("fetchTourDeFranceOfficialSnapshot follows the nested ASO GC subtab", async
   assert.ok(fetchedUrls.some((url) => url.endsWith("/gc-subtab/subtab")));
 });
 
+test("parseWorldChampionshipEliteEvents reads the four elite events from the schedule tables", () => {
+  const { parseWorldChampionshipEliteEvents, buildUpcomingCard } = loadParserExports();
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "uci-road-world-championships-2026.wikitext"), "utf8");
+  const events = parseWorldChampionshipEliteEvents(
+    raw,
+    { pageTitle: "2026_UCI_Road_World_Championships", label: "UCI Road World Championships" },
+    2026,
+  );
+
+  // The events are built inside the VM sandbox, so compare values, not prototypes.
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(events.map((event) => [
+      event.title,
+      event.lane,
+      event.startDate.toISOString().slice(0, 10),
+      event.startTimeLocal,
+      event.distanceKm,
+      event.laps,
+    ]))),
+    [
+      ["Elite women's time trial", "womens", "2026-09-20", "09:00", 39.2, 0],
+      ["Elite men's time trial", "mens", "2026-09-20", "12:45", 39.2, 0],
+      ["Elite women's road race", "womens", "2026-09-26", "09:00", 180.1, 8],
+      ["Elite men's road race", "mens", "2026-09-27", "09:00", 273.4, 12],
+    ],
+  );
+  // Under-23, junior and mixed-relay rows sit in the same tables and must not leak in.
+  assert.equal(events.length, 4);
+  assert.ok(events.every((event) => event.series === "UCI Road World Championships"));
+  assert.ok(events.every((event) => event.countryCode === "CAN" && event.location === "Montreal, Canada"));
+  assert.ok(events.every((event) => event.locationFromSchedule === true));
+  assert.equal(events[3].pageTitle, "2026 UCI Road World Championships – Men's road race");
+
+  const card = buildUpcomingCard(events[3]);
+  assert.match(card, /data-championship="worlds"/);
+  assert.match(card, /Start 09:00 local · 273.4 km · 12 laps/);
+  assert.match(card, /27 September 2026 • Montreal, Canada/);
+  assert.doesNotMatch(buildUpcomingCard(events[0]), /laps/);
+});
+
+test("getCompetitionGroups gives the Worlds their own section, men's events first", () => {
+  const { parseWorldChampionshipEliteEvents, getCompetitionGroups } = loadParserExports();
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "uci-road-world-championships-2026.wikitext"), "utf8");
+  const events = parseWorldChampionshipEliteEvents(raw, undefined, 2026);
+  const worldTourRace = {
+    pageTitle: "2026 Il Lombardia",
+    title: "Il Lombardia",
+    series: "Men's WorldTour",
+    startDate: new Date("2026-10-10T00:00:00Z"),
+    endDate: new Date("2026-10-10T00:00:00Z"),
+  };
+  const groups = getCompetitionGroups({ upcomingRaces: [...events, worldTourRace], recentResults: [], liveStageRaces: [] });
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(groups.map((group) => group.id))),
+    ["mens-worldtour", "womens-worldtour", "world-championships"],
+  );
+  const worlds = groups[2];
+  assert.equal(worlds.tag, "Montreal, 20–27 September");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(worlds.upcomingRaces.map((race) => race.title))),
+    ["Elite men's time trial", "Elite men's road race", "Elite women's time trial", "Elite women's road race"],
+  );
+  // The WorldTour lanes keep only their own races.
+  assert.deepEqual(JSON.parse(JSON.stringify(groups[0].upcomingRaces.map((race) => race.title))), ["Il Lombardia"]);
+  assert.equal(groups[1].upcomingRaces.length, 0);
+  // With the events raced, the group is empty and its section is not rendered.
+  const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] })[2];
+  assert.equal(after.upcomingRaces.length, 0);
+  assert.equal(after.tag, "");
+});
+
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
   const { parseAthleteDetails } = loadParserExports();
 
@@ -2560,8 +2635,12 @@ test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out 
   assert.deepEqual(JSON.parse(JSON.stringify(groups.map((group) => group.id))), [
     "mens-worldtour",
     "womens-worldtour",
+    "world-championships",
   ]);
   assert.equal(groups.some((group) => group.deferred), false);
+  // The Worlds group exists for its upcoming cards only; with none it renders nothing.
+  assert.equal(groups[2].upcomingRaces.length, 0);
+  assert.equal(groups[2].recentResults.length, 0);
 });
 
 test("buildRecentResultsBlock reveals the first three races and hides the rest behind a button", () => {

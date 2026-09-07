@@ -19,6 +19,7 @@ Active product scope:
 - Men's WorldTour
 - Women's WorldTour
 - Elite road National Championships
+- UCI Road World Championships, upcoming cards only for the four elite events (added 2026-09-07; see "Data Source Cross-Reference")
 
 Retired scope:
 
@@ -201,6 +202,14 @@ Primary race calendar and result source:
 - Wikipedia raw wikitext season pages
 - Active pages: `2026_UCI_World_Tour`, `2026_UCI_Women's_World_Tour`
 - Raw URL shape: `https://en.wikipedia.org/w/index.php?title=<PAGE>&action=raw`
+
+World Championships (added 2026-09-07):
+
+- `2026_UCI_Road_World_Championships` (`WORLD_CHAMPIONSHIPS.pageTitle`), read once per rebuild through the same revision index
+- `parseWorldChampionshipEliteEvents()` reads the "Schedule" section's tables with `parseWikiTableGrid` (the date and distance cells span rows) and keeps the four rows whose link target ends in "Men's/Women's road race/time trial"; under-23, junior and mixed-relay rows sit in the same tables
+- Events carry `series: "UCI Road World Championships"`, `lane` (`mens`/`womens`), `startTimeLocal`, `distanceKm`, `laps` and `locationFromSchedule: true`, which makes `enrichLocations` skip them (their event pages 404 until race week and must not be asked for every rebuild)
+- They render only as upcoming cards, in the `world-championships` competition group (men's events first, via `compareWorldChampionshipEvents`); the group renders no section once its upcoming list is empty. They are not in the season calendar (`isWorldTourRace`) and never enter recent results (no winner is ever parsed)
+- Fixture: `test/fixtures/uci-road-world-championships-2026.wikitext`
 
 National Championships:
 

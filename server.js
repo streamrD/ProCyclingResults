@@ -1279,6 +1279,120 @@ function parseSeasonRows(rawText, season, year) {
     .filter((race) => seasonIncludesRace(season, race));
 }
 
+// The UCI Road World Championships are not on either WorldTour season table: they are
+// a UCI championship raced by national teams, so the two season pages skip the week.
+// The elite events are read from the championship article's "Schedule" tables instead
+// (one table per discipline) and shown as upcoming cards only. Results are not read:
+// the per-event articles do not exist until race week and their tables list a nation
+// where our parsers expect a team.
+const WORLD_CHAMPIONSHIPS = {
+  pageTitle: "2026_UCI_Road_World_Championships",
+  label: "UCI Road World Championships",
+};
+
+// Elite events only, by the link target the schedule row carries. Under-23 and junior
+// targets carry those words between the gender and the discipline, so they do not match.
+const WORLD_CHAMPIONSHIP_ELITE_EVENT_PATTERN = /–\s*(Men|Women)'s (road race|time trial)$/;
+
+function findWikiSection(rawText, headingPattern) {
+  const lines = String(rawText || "").split("\n");
+  const start = lines.findIndex((line) => /^==\s*[^=].*==\s*$/.test(line) && headingPattern.test(line));
+  if (start === -1) {
+    return "";
+  }
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^==\s*[^=].*==\s*$/.test(line));
+  return (end === -1 ? rest : rest.slice(0, end)).join("\n");
+}
+
+function extractWikiTables(text) {
+  return [...String(text || "").matchAll(/\{\|[\s\S]*?\n\|\}/g)].map((match) => match[0]);
+}
+
+function parseWorldChampionshipVenue(rawText) {
+  const venueLine = String(rawText || "").match(/^\|\s*venue\s*=\s*(.+)$/m)?.[1] || "";
+  const places = [...venueLine.matchAll(/\[\[([^|\]]+)(?:\|[^\]]+)?\]\]/g)].map((match) => cleanWikiText(match[1]));
+  // The infobox writes {{flagicon|Canada}}, a name rather than a UCI code.
+  const flagValue = String(venueLine.match(/\{\{flagicon\|([^}|]+)\}\}/i)?.[1] || "").trim();
+  const countryCode =
+    flagValue.length === 3
+      ? normalizeCountryCode(flagValue)
+      : normalizeAlpha2CountryCode(COUNTRY_NAME_ALPHA2[flagValue.toLowerCase()] || "");
+  const location =
+    places.length >= 2 ? `${places[0]}, ${places[places.length - 1]}` : places[0] || COUNTRY_NAMES[countryCode] || "";
+  return { location, countryCode };
+}
+
+function parseWorldChampionshipEliteEvents(rawText, championship = WORLD_CHAMPIONSHIPS, year = SEASON_YEAR) {
+  const venue = parseWorldChampionshipVenue(rawText);
+  const schedule = findWikiSection(rawText, /schedule/i);
+
+  return extractWikiTables(schedule).flatMap((tableText) => {
+    const grid = parseWikiTableGrid(tableText);
+    const headerRow = grid.find((row) => row.some((cell) => cell?.header));
+    if (!headerRow) {
+      return [];
+    }
+    const columnIndex = (pattern) => headerRow.findIndex((cell) => cell?.header && pattern.test(cleanWikiText(stripWikiFootnoteTemplates(cell.content))));
+    const dateIndex = columnIndex(/^date$/i);
+    const timingIndex = columnIndex(/^timings?$/i);
+    const eventIndex = columnIndex(/^event$/i);
+    const distanceIndex = columnIndex(/^distance$/i);
+    const lapsIndex = columnIndex(/^laps$/i);
+    if (dateIndex === -1 || eventIndex === -1) {
+      return [];
+    }
+
+    return grid
+      .filter((row) => row !== headerRow && !row.some((cell) => cell?.header))
+      .flatMap((row) => {
+        const eventLink = String(row[eventIndex]?.content || "").match(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/);
+        const eliteMatch = eventLink?.[1].match(WORLD_CHAMPIONSHIP_ELITE_EVENT_PATTERN);
+        if (!eliteMatch) {
+          return [];
+        }
+        const dateRange = parseDateRange(cleanWikiText(row[dateIndex]?.content), year);
+        if (!dateRange.start) {
+          return [];
+        }
+        const gender = eliteMatch[1].toLowerCase();
+        const discipline = eliteMatch[2];
+        const timeText = (index) => (index >= 0 ? cleanWikiText(row[index]?.content).match(/\d{1,2}:\d{2}/)?.[0] || "" : "");
+        const distanceKm = Number(String(row[distanceIndex]?.content || "").match(/\{\{convert\|([\d.]+)\|km/i)?.[1] || 0);
+        const laps = Number(String(row[lapsIndex]?.content || "").match(/^\s*(\d+)/)?.[1] || 0);
+
+        return [
+          {
+            pageTitle: eventLink[1].replace(/&nbsp;/g, " "),
+            title: `Elite ${gender}'s ${discipline}`,
+            countryCode: venue.countryCode,
+            location: venue.location || COUNTRY_NAMES[venue.countryCode] || "Location TBC",
+            // Locations come from the championship article: the event pages do not
+            // exist before race week, and a missing page must not be asked for again
+            // every rebuild.
+            locationFromSchedule: true,
+            series: championship.label,
+            lane: gender === "men" ? "mens" : "womens",
+            date: formatDateLabel(cleanWikiText(row[dateIndex]?.content), year),
+            startTimeLocal: timeText(timingIndex),
+            finishTimeLocal: timeText(timingIndex + 1),
+            distanceKm,
+            laps,
+            winner: "",
+            winnerCountryCode: "",
+            second: "",
+            secondCountryCode: "",
+            third: "",
+            thirdCountryCode: "",
+            startDate: dateRange.start,
+            endDate: dateRange.end,
+            isCancelled: false,
+          },
+        ];
+      });
+  });
+}
+
 async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
@@ -5410,6 +5524,9 @@ function isLikelyLocation(value) {
 async function enrichLocations(races, loadWikiRaw = fetchWikiRaw) {
   await Promise.all(
     races.map(async (race) => {
+      if (race.locationFromSchedule) {
+        return;
+      }
       try {
         const raw = await loadWikiRaw(race.pageTitle);
         const location = extractInfoboxLocation(raw) || extractLeadLocation(raw);
@@ -6317,6 +6434,7 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
   const upcomingDisplayRaces = [
     ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Men's WorldTour"),
     ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Women's WorldTour"),
+    ...selectUpcomingRaces(upcomingRaces, isWorldChampionshipRace),
     ...selectUpcomingRaces(upcomingRaces, (race) => /ProSeries/.test(race.series)),
   ];
 
@@ -6450,11 +6568,27 @@ function selectHomepageRecentStandingsTargets(recentCandidates) {
     .slice(0, HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT);
 }
 
+function isWorldChampionshipRace(race) {
+  return race?.series === WORLD_CHAMPIONSHIPS.label;
+}
+
 function selectHomepageWorldTourUpcomingRaces(upcomingRaces) {
   return [
     ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Men's WorldTour"),
     ...selectUpcomingRaces(upcomingRaces, (race) => race.series === "Women's WorldTour"),
+    ...selectUpcomingRaces(upcomingRaces, isWorldChampionshipRace),
   ];
+}
+
+// One page, revision-checked with the season tables. A failure leaves the Worlds off
+// the list for this rebuild rather than failing the whole build.
+async function loadWorldChampionshipEliteEvents() {
+  try {
+    const rawText = await fetchWikiRaw(WORLD_CHAMPIONSHIPS.pageTitle);
+    return parseWorldChampionshipEliteEvents(rawText, WORLD_CHAMPIONSHIPS, SEASON_YEAR);
+  } catch {
+    return [];
+  }
 }
 
 async function buildRaceMetadata(options = {}) {
@@ -6471,10 +6605,10 @@ async function buildRaceMetadata(options = {}) {
       return parseSeasonRows(rawText, season, year);
     }),
   );
+  const worldChampionshipEvents = await loadWorldChampionshipEliteEvents();
   const seasonPagesMs = Date.now() - seasonPagesStartedAt;
 
-  const allRaces = seasonPages
-    .flat()
+  const allRaces = [...seasonPages.flat(), ...worldChampionshipEvents]
     .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
   allRaces.forEach((race) => {
     race.id = getRaceId(race);
@@ -8693,12 +8827,27 @@ function buildLiveStageRaceCard(race) {
   return buildStageRaceCard(race, { live: true });
 }
 
+// Start time, distance and laps, known only for championship events read from a
+// schedule table. Season-table races carry none of these and get no line.
+function buildUpcomingDetailLine(race) {
+  return [
+    race.startTimeLocal ? `Start ${race.startTimeLocal} local` : "",
+    race.distanceKm ? `${race.distanceKm} km` : "",
+    race.laps ? `${race.laps} laps` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function buildUpcomingCard(race) {
+  const detail = buildUpcomingDetailLine(race);
+  const championshipAttribute = race.series === WORLD_CHAMPIONSHIPS.label ? ` data-championship="worlds"` : "";
   return `
-    <article class="card upcoming-card" id="${escapeHtml(createRaceAnchorId(race))}">
+    <article class="card upcoming-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
       <div class="card-kicker">${escapeHtml(race.series)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
+      ${detail ? `<p class="meta upcoming-detail">${escapeHtml(detail)}</p>` : ""}
     </article>`;
 }
 
@@ -8967,6 +9116,14 @@ function getCompetitionGroups(data) {
       recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
       recentGridClass: "competition-grid-three",
     },
+    {
+      id: "world-championships",
+      label: WORLD_CHAMPIONSHIPS.label,
+      tag: buildWorldChampionshipTag(data),
+      description: "The four elite events, raced by national teams.",
+      predicate: isWorldChampionshipRace,
+      sortUpcoming: compareWorldChampionshipEvents,
+    },
   ];
 
   return definitions.map((definition) => ({
@@ -8977,8 +9134,38 @@ function getCompetitionGroups(data) {
       .slice(0, definition.recentResultsLimit || MAX_RECENT_RESULTS),
     upcomingRaces: (data[definition.upcomingSource || "upcomingRaces"] || [])
       .filter(definition.predicate)
+      .sort(definition.sortUpcoming || (() => 0))
       .slice(0, definition.upcomingRacesLimit || MAX_UPCOMING_RACES),
   }));
+}
+
+// Men's events first, then women's, each in date order: the order the user asked for.
+function compareWorldChampionshipEvents(left, right) {
+  const laneOrder = { mens: 0, womens: 1 };
+  const laneDelta = (laneOrder[left.lane] ?? 2) - (laneOrder[right.lane] ?? 2);
+  if (laneDelta !== 0) {
+    return laneDelta;
+  }
+  return new Date(left.startDate) - new Date(right.startDate);
+}
+
+// "Montreal, 20–27 September": the host city and the span of the elite events we
+// show, read from the events themselves so nothing here goes stale next year.
+function buildWorldChampionshipTag(data) {
+  const events = (data?.upcomingRaces || []).filter(isWorldChampionshipRace);
+  if (events.length === 0) {
+    return "";
+  }
+  const days = events.map((event) => toIsoDay(event.startDate)).filter(Boolean).sort();
+  const city = String(events[0].location || "").split(",")[0].trim();
+  const first = new Date(`${days[0]}T00:00:00Z`);
+  const last = new Date(`${days[days.length - 1]}T00:00:00Z`);
+  const month = first.toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
+  const span =
+    first.getUTCMonth() === last.getUTCMonth()
+      ? `${first.getUTCDate()}–${last.getUTCDate()} ${month}`
+      : `${first.getUTCDate()} ${month} – ${last.getUTCDate()} ${last.toLocaleString("en-GB", { month: "long", timeZone: "UTC" })}`;
+  return [city, span].filter(Boolean).join(", ");
 }
 
 function buildCompetitionBlock(title, description, markup, options = {}) {
@@ -10281,6 +10468,15 @@ function buildHtmlPage(data, view) {
         margin: 0.6rem 0 0;
         color: var(--muted);
         line-height: 1.5;
+      }
+
+      .upcoming-card[data-championship="worlds"]::before {
+        background: var(--rainbow);
+      }
+
+      .upcoming-card .upcoming-detail {
+        margin-top: 0.2rem;
+        font-size: 0.9rem;
       }
 
       .section {

@@ -2,6 +2,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 7 September 2026
 
+- **The Montréal World Championships are on the page.** A new "UCI Road World Championships" section, below the two WorldTour sections, lists the four elite events as upcoming cards: the men's time trial and road race first, then the women's. Each card gives the date, the local start time, the distance and, for the road races, the number of laps of the Mount Royal circuit, all read from the championship's schedule. The cards carry the rainbow stripe. A card leaves the list on the day its event is raced, and the section goes with the last one on 27 September. Results are not read yet: the Worlds are raced by national teams and their result pages are laid out differently from the races we cover. Until now the site skipped the Worlds week entirely, because the championships are not part of either WorldTour calendar.
+
 - **The live race card says what kind of day it is.** On a rest day the yellow "Live stage race" pill reads "Rest day", and the line under the race title says so in words, with the last stage raced and when racing resumes. The same line now tells you when the stage on the card finished ("Stage 15 finished today") or that a stage is on the road ("Stage 16 is today: Cortegana to Palos de la Frontera"). The "Up next" row is labelled "Tomorrow" or "Today" when that is what it is, and carries the stage's date. Before this, on the Vuelta's second rest day the card showed Wout van Aert's stage 15 win under a "Live" pill with nothing to say the race was not racing, which read like a stalled data feed.
 
 ## 6 September 2026
