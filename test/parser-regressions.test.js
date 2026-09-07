@@ -5140,19 +5140,22 @@ test("every results card ends with a news line that opens the race's stories in 
 
 test("a live race rebuilds itself on a timer and never sends visitors back to the warm-up page", () => {
   const { getLiveRaceRefreshDelayMs, scheduleLiveRaceRefresh, shouldServeHomepageWarmup } = loadParserExports();
+  // Mid-afternoon in the host country. The delay follows racing hours, so a run on the
+  // wall clock passed by day and failed after 21:00 Paris time (CI, 2026-09-07).
+  const afternoon = new Date("2026-09-05T15:00:00.000Z");
 
   // One TTL after a build that carries a live or just-finished race; nothing otherwise.
-  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [{ id: "vuelta" }] }), 60 * 1000);
-  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: true }] }), 60 * 1000);
-  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: false }] }), 0);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [{ id: "vuelta" }] }, afternoon), 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: true }] }, afternoon), 60 * 1000);
+  assert.equal(getLiveRaceRefreshDelayMs({ liveStageRaces: [], recentResults: [{ finishedToday: false }] }, afternoon), 0);
 
   // The scheduler arms a single timer for that delay and none off-season; the timer
   // must not hold the process open.
-  const armed = scheduleLiveRaceRefresh({ liveStageRaces: [{ id: "vuelta" }] }, () => {});
+  const armed = scheduleLiveRaceRefresh({ liveStageRaces: [{ id: "vuelta" }] }, () => {}, afternoon);
   assert.ok(armed, "a live payload arms the refresh timer");
   assert.equal(typeof armed.unref, "function");
   clearTimeout(armed);
-  assert.equal(scheduleLiveRaceRefresh({ liveStageRaces: [] }, () => {}), null);
+  assert.equal(scheduleLiveRaceRefresh({ liveStageRaces: [] }, () => {}, afternoon), null);
 
   // Warm-up is for an empty cache only: an expired live payload is served as it is.
   assert.equal(shouldServeHomepageWarmup({ data: null, updatedAt: 0, promise: null }), true);

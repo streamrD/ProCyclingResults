@@ -6898,13 +6898,13 @@ function getLiveRaceRefreshDelayMs(data, now = new Date()) {
   return hasFreshnessSensitiveRaceData(data) ? getRaceDataCacheTtlMs(data, now) : 0;
 }
 
-function scheduleLiveRaceRefresh(data, refresh = refreshLiveRaceDataOnTimer) {
+function scheduleLiveRaceRefresh(data, refresh = refreshLiveRaceDataOnTimer, now = new Date()) {
   if (liveRaceRefreshTimer) {
     clearTimeout(liveRaceRefreshTimer);
     liveRaceRefreshTimer = null;
   }
 
-  const delayMs = getLiveRaceRefreshDelayMs(data);
+  const delayMs = getLiveRaceRefreshDelayMs(data, now);
   if (!delayMs) {
     return null;
   }
