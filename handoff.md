@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-06 (refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
+Updated: 2026-09-07 (live-card day line and Rest day pill; 2026-09-06 refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -616,6 +616,18 @@ https://claude.ai/code/artifact/2b15b13e-8da7-4973-90f3-5c5736ba0c7c — and the
 the chip plus the row, with the chip alone ("B") as the fallback if the row proves busy:
 dropping it is deleting the `nextRow` line in `buildStageSwitcherMarkup` and nothing else.
 Nothing renders once the final stage is raced or on a finished race.
+
+*Which day it is (added 2026-09-07).* `describeLiveRaceDay(race, now)` compares the
+calendar day in the host country (`getRaceLocalDate`, same zone table as the racing
+hours) with the route table's dates for the last raced stage and the next one, and
+returns `rest-day`, `racing-today`, `finished-today` or null. `buildStageRaceCard`
+uses it on live races only: the pill reads "Rest day" on a rest day, the status line
+under the title becomes a dated sentence from `buildLiveRaceDayNote` (null keeps the
+old generic copy), and `buildNextStageRowMarkup` labels the row "Tomorrow" / "Today"
+and adds the date. Prompted by the 2026 Vuelta's 7 September rest day, when the card
+showed the previous day's stage 15 under a "Live stage race" pill and read as a stalled
+pipeline. Tests pass `now` through `buildStageRaceCard(race, { live: true, now })`.
+A route without dates never gets a day-specific line.
 
 *Axes.* Gridlines and distance ticks are built twice — round metres/kilometres and round
 feet/miles — tagged `data-unit-system`; the client stamps `data-units` on `<html>` and

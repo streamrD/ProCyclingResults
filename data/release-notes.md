@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 7 September 2026
+
+- **The live race card says what kind of day it is.** On a rest day the yellow "Live stage race" pill reads "Rest day", and the line under the race title says so in words, with the last stage raced and when racing resumes. The same line now tells you when the stage on the card finished ("Stage 15 finished today") or that a stage is on the road ("Stage 16 is today: Cortegana to Palos de la Frontera"). The "Up next" row is labelled "Tomorrow" or "Today" when that is what it is, and carries the stage's date. Before this, on the Vuelta's second rest day the card showed Wout van Aert's stage 15 win under a "Live" pill with nothing to say the race was not racing, which read like a stalled data feed.
+
 ## 6 September 2026
 
 - **A Refresh results button.** Next to the "Updated" time at the top of the page there is now a button for when you suspect you are looking at an old copy, for instance a tab your phone brought back from earlier in the day. It checks whether the site has newer results than the ones on your screen and reloads only if it does. If a fresh copy is being prepared at that moment it waits for it. If there is nothing newer it says so, and tells you when the next update is due.

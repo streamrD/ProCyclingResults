@@ -3028,9 +3028,28 @@ function hasFreshnessSensitiveRaceData(data) {
   ].some((race) => race?.finishedToday);
 }
 
+function getRaceTimeZone(race) {
+  return RACE_HOST_TIME_ZONES[normalizeCountryCode(race?.countryCode)] || DEFAULT_RACE_TIME_ZONE;
+}
+
 function getRaceLocalHour(race, now = new Date()) {
-  const timeZone = RACE_HOST_TIME_ZONES[normalizeCountryCode(race?.countryCode)] || DEFAULT_RACE_TIME_ZONE;
-  return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now));
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: getRaceTimeZone(race), hour: "numeric", hourCycle: "h23" }).format(now),
+  );
+}
+
+// The calendar day in the host country, as a UTC-midnight Date so it compares directly
+// with the route table's stage dates from parseRouteStageDate.
+function getRaceLocalDate(race, now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: getRaceTimeZone(race),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const read = (type) => Number(parts.find((part) => part.type === type)?.value);
+  const date = new Date(Date.UTC(read("year"), read("month") - 1, read("day")));
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 // Whether a stage of this race could be finishing or its result still settling: from
@@ -7759,6 +7778,107 @@ function getNextRouteStage(race) {
   return (race.stageRace?.route || []).find((entry) => Number(entry?.number) === nextNumber) || null;
 }
 
+// Which kind of day it is for a live race, read from the route table's dates against
+// the calendar in the host country. The card's headline result is always the last
+// stage raced, which on any morning is yesterday's; on a rest day it stays yesterday's
+// all day and the next stage is two days out, so a reader who does not check the dates
+// can take a working pipeline for a stalled one (the 2026 Vuelta's 7 September rest day
+// showed Van Aert's stage 15 win under a "Live stage race" pill). Three kinds are told
+// apart — the latest stage finished today, the next stage is today, or today falls
+// between the two — and anything else (no dates, a gap the route does not explain)
+// returns null so the card keeps its generic copy. Dates come from the route entries;
+// a stage race whose table carries no dates never gets a day-specific line.
+function describeLiveRaceDay(race, now = new Date()) {
+  const stages = (race?.stageRace?.stages || []).filter((stage) => (stage?.standings?.length || 0) > 0);
+  const latestStage = stages[stages.length - 1] || null;
+  if (!latestStage) {
+    return null;
+  }
+
+  const raceYear = getRaceYear(race);
+  const route = race.stageRace?.route || [];
+  const routeDate = (stage) =>
+    parseRouteStageDate(stage?.date || route.find((entry) => Number(entry?.number) === stage?.number)?.date, raceYear);
+  const today = getRaceLocalDate(race, now);
+  const latestDate = routeDate(latestStage);
+  if (!today || !latestDate) {
+    return null;
+  }
+
+  const nextStage = getNextRouteStage(race);
+  const nextDate = nextStage ? parseRouteStageDate(nextStage.date, raceYear) : null;
+  const dayOffset = (date) => Math.round((date.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  const day = {
+    today,
+    latestStage,
+    latestDate,
+    nextStage,
+    nextDate,
+    latestOffset: dayOffset(latestDate),
+    nextOffset: nextDate ? dayOffset(nextDate) : null,
+  };
+
+  if (day.latestOffset === 0) {
+    return { ...day, kind: "finished-today" };
+  }
+  if (day.nextOffset === 0) {
+    return { ...day, kind: "racing-today" };
+  }
+  if (day.latestOffset < 0 && day.nextOffset > 0) {
+    return { ...day, kind: "rest-day" };
+  }
+  return null;
+}
+
+// "Monday 7 September" / "Mon 7 September" for a UTC-midnight route date.
+function formatRouteDay(date, weekday = "long") {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday, day: "numeric", month: "long" }).format(date);
+}
+
+// The day of a stage relative to today, as it would be said: "today", "yesterday",
+// "tomorrow", otherwise "on Tuesday 8 September".
+function describeRelativeDay(offset, date) {
+  if (offset === 0) return "today";
+  if (offset === -1) return "yesterday";
+  if (offset === 1) return "tomorrow";
+  return `on ${formatRouteDay(date)}`;
+}
+
+// The status line under a live race's title. Bold lead, then one plain sentence that
+// places the headline result and the next stage on the calendar; null when the day
+// could not be classified so the caller keeps its generic copy.
+function buildLiveRaceDayNote(day) {
+  if (!day) {
+    return null;
+  }
+  const stageName = (stage) => stage.label || `Stage ${stage.number}`;
+  const latest = stageName(day.latestStage);
+  const next = day.nextStage ? stageName(day.nextStage) : "";
+  const nextCourse = day.nextStage?.course ? `, ${day.nextStage.course}` : "";
+  const nextWhen = day.nextOffset === null ? "" : describeRelativeDay(day.nextOffset, day.nextDate);
+  const latestWhen = describeRelativeDay(day.latestOffset, day.latestDate);
+
+  if (day.kind === "rest-day") {
+    return {
+      lead: `Rest day, ${formatRouteDay(day.today)}.`,
+      text: `${latest} was raced ${latestWhen}; racing resumes ${nextWhen} with ${next}${nextCourse}.`,
+    };
+  }
+  if (day.kind === "racing-today") {
+    return {
+      lead: `${next} is today${day.nextStage?.course ? `: ${day.nextStage.course}.` : "."}`,
+      text: `Results land here after the finish. ${latest} was raced ${latestWhen}.`,
+    };
+  }
+  if (day.kind === "finished-today") {
+    return {
+      lead: `${latest} finished today.`,
+      text: next ? `${next} follows ${nextWhen}${nextCourse}.` : "",
+    };
+  }
+  return null;
+}
+
 // Profiles already fetched for this race are re-attached from the cache. Used when a
 // race's stage history is rebuilt from Wikipedia (`/api/race-stages`), which would
 // otherwise drop them until the next full build.
@@ -8349,7 +8469,7 @@ function buildStageSwitcherMarkup(race, options = {}) {
           Load full stage results
         </button>`;
 
-  const nextRow = nextStage ? buildNextStageRowMarkup(nextStage, stageId(nextStage.number)) : "";
+  const nextRow = nextStage ? buildNextStageRowMarkup(nextStage, stageId(nextStage.number), options.day) : "";
   const nextPanel = nextStage ? buildNextStagePanelMarkup(race, nextStage, stageId(nextStage.number)) : "";
 
   return `
@@ -8373,9 +8493,13 @@ function describeNextStage(nextStage) {
   ].filter(Boolean);
 }
 
-function buildNextStageRowMarkup(nextStage, panelId) {
+// `day` (from describeLiveRaceDay) turns the row's label into "Tomorrow" or "Today"
+// when that is what the next stage is, and adds the date after the stage name.
+function buildNextStageRowMarkup(nextStage, panelId, day = null) {
   const label = nextStage.label || `Stage ${nextStage.number}`;
-  const parts = describeNextStage(nextStage).map((part) => escapeHtml(part));
+  const rowLabel = day?.nextOffset === 1 ? "Tomorrow" : day?.nextOffset === 0 ? "Today" : "Up next";
+  const dateText = day?.nextDate ? escapeHtml(formatRouteDay(day.nextDate, "short")) : "";
+  const parts = [dateText, ...describeNextStage(nextStage).map((part) => escapeHtml(part))];
   const distance =
     Number(nextStage.distanceKm) > 0
       ? `<span data-unit-metric="${escapeHtml(formatStageDistance(nextStage.distanceKm, "metric"))}" data-unit-imperial="${escapeHtml(
@@ -8385,7 +8509,7 @@ function buildNextStageRowMarkup(nextStage, panelId) {
 
   return `
         <button type="button" class="stage-next-row" data-stage-target="${escapeHtml(panelId)}" aria-controls="${escapeHtml(panelId)}">
-          <span class="stage-next-row-label">Up next</span>
+          <span class="stage-next-row-label">${escapeHtml(rowLabel)}</span>
           <span class="stage-next-row-text">${[escapeHtml(label), ...parts, distance].filter(Boolean).join(" · ")}</span>
           <span class="stage-next-row-arrow" aria-hidden="true">▸</span>
         </button>`;
@@ -8456,17 +8580,23 @@ function buildStageRaceCard(race, options = {}) {
       : race.finishedToday
         ? "The race finished today."
         : "Final standings are now available.";
+  const liveDay = options.live ? describeLiveRaceDay(race, options.now || new Date()) : null;
+  const liveDayNote = buildLiveRaceDayNote(liveDay);
   const statusBadge = options.live
-    ? `<span class="status-pill">Live stage race</span>`
+    ? `<span class="status-pill">${liveDay?.kind === "rest-day" ? "Rest day" : "Live stage race"}</span>`
     : isFinalized
       ? `<span class="status-pill status-pill-finished">${escapeHtml(race.finishedToday ? "Finished today" : "Final stage race")}</span>`
       : "";
   const statusNote = options.live
-    ? `<p class="stage-status-note">Live classifications refresh as stage and GC data become available.</p>`
+    ? liveDayNote
+      ? `<p class="stage-status-note"><strong>${escapeHtml(liveDayNote.lead)}</strong>${
+          liveDayNote.text ? ` ${escapeHtml(liveDayNote.text)}` : ""
+        }</p>`
+      : `<p class="stage-status-note">Live classifications refresh as stage and GC data become available.</p>`
     : isFinalized
       ? `<p class="stage-status-note">${escapeHtml(totalStagesLabel)}</p>`
       : "";
-  const stageSwitcher = buildStageSwitcherMarkup(race, { live: Boolean(options.live) });
+  const stageSwitcher = buildStageSwitcherMarkup(race, { live: Boolean(options.live), day: liveDay });
   const stageContent = stageSwitcher
     ? stageSwitcher
     : latestStage?.winner

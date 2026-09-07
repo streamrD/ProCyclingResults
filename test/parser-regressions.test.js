@@ -154,6 +154,8 @@ function loadParserExports() {
       getStageStandingMetrics,
       buildNextStagePanelMarkup,
       getNextRouteStage,
+      describeLiveRaceDay,
+      buildLiveRaceDayNote,
       applyRouteDetails,
       buildStageProfileMarkup,
       parseStageType,
@@ -5254,4 +5256,92 @@ test("indexWikiRevisions maps requested titles through normalization, redirects 
   assert.equal(revids.get("2026 Tour de France"), 99);
   assert.equal(revids.get("No Such Race"), 0);
   assert.equal(revids.has("Unasked"), false);
+});
+
+test("describeLiveRaceDay reads rest days, stage days and finish days off the route dates", () => {
+  const { describeLiveRaceDay, buildLiveRaceDayNote } = loadParserExports();
+  const race = {
+    id: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    countryCode: "ESP",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 21,
+      stages: [
+        { number: 14, label: "Stage 14", date: "5 September", standings: [{ place: "1", rider: "A" }] },
+        { number: 15, label: "Stage 15", date: "6 September", standings: [{ place: "1", rider: "Wout van Aert" }] },
+      ],
+      route: [
+        { number: 15, label: "Stage 15", date: "6 September", course: "Palma del Río to Córdoba" },
+        { number: 16, label: "Stage 16", date: "8 September", course: "Cortegana to Palos de la Frontera" },
+      ],
+    },
+  };
+
+  // 7 September, mid-afternoon in Spain: the rest day between stages 15 and 16.
+  const rest = describeLiveRaceDay(race, new Date("2026-09-07T14:00:00.000Z"));
+  assert.equal(rest.kind, "rest-day");
+  assert.equal(buildLiveRaceDayNote(rest).lead, "Rest day, Monday 7 September.");
+  assert.equal(buildLiveRaceDayNote(rest).text, "Stage 15 was raced yesterday; racing resumes tomorrow with Stage 16, Cortegana to Palos de la Frontera.");
+
+  // Late on 6 September UTC is still 6 September in Madrid: the stage finished today.
+  const finished = describeLiveRaceDay(race, new Date("2026-09-06T21:30:00.000Z"));
+  assert.equal(finished.kind, "finished-today");
+  assert.equal(buildLiveRaceDayNote(finished).lead, "Stage 15 finished today.");
+  assert.equal(buildLiveRaceDayNote(finished).text, "Stage 16 follows on Tuesday 8 September, Cortegana to Palos de la Frontera.");
+
+  // 22:30 UTC on 7 September is already 8 September in Madrid: stage 16 is today and
+  // the headline result is from two days back, so it is dated rather than "yesterday".
+  const racing = describeLiveRaceDay(race, new Date("2026-09-07T22:30:00.000Z"));
+  assert.equal(racing.kind, "racing-today");
+  assert.equal(buildLiveRaceDayNote(racing).lead, "Stage 16 is today: Cortegana to Palos de la Frontera.");
+  assert.equal(buildLiveRaceDayNote(racing).text, "Results land here after the finish. Stage 15 was raced on Sunday 6 September.");
+
+  // A route without dates, or a day the dates do not explain, gives nothing.
+  assert.equal(describeLiveRaceDay(race, new Date("2026-09-10T12:00:00.000Z")), null);
+  const undated = { ...race, stageRace: { ...race.stageRace, stages: race.stageRace.stages.map(({ date, ...stage }) => stage), route: [] } };
+  assert.equal(describeLiveRaceDay(undated, new Date("2026-09-07T14:00:00.000Z")), null);
+  assert.equal(buildLiveRaceDayNote(null), null);
+});
+
+test("a live card wears a Rest day pill and dates the Up next row on a rest day", () => {
+  const { buildStageRaceCard } = loadParserExports();
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    date: "22 August – 13 September 2026",
+    location: "Spain",
+    countryCode: "ESP",
+    startDate: new Date("2026-08-22T00:00:00.000Z"),
+    endDate: new Date("2026-09-13T00:00:00.000Z"),
+    stageRace: {
+      totalStages: 21,
+      completedStages: 15,
+      stages: [
+        { number: 14, order: 14, label: "Stage 14", date: "5 September", winner: "A", standings: [{ place: "1", rider: "A" }] },
+        { number: 15, order: 15, label: "Stage 15", date: "6 September", winner: "Wout van Aert", standings: [{ place: "1", rider: "Wout van Aert" }] },
+      ],
+      route: [
+        { number: 15, label: "Stage 15", date: "6 September", course: "Palma del Río to Córdoba" },
+        { number: 16, label: "Stage 16", date: "8 September", course: "Cortegana to Palos de la Frontera", stageType: "flat", distanceKm: 186 },
+      ],
+    },
+  };
+
+  const rest = buildStageRaceCard(race, { live: true, now: new Date("2026-09-07T14:00:00.000Z") });
+  assert.match(rest, /<span class="status-pill">Rest day<\/span>/);
+  assert.match(
+    rest,
+    /<p class="stage-status-note"><strong>Rest day, Monday 7 September\.<\/strong> Stage 15 was raced yesterday; racing resumes tomorrow with Stage 16, Cortegana to Palos de la Frontera\.<\/p>/,
+  );
+  assert.match(rest, /stage-next-row-label">Tomorrow<\/span>\s*<span class="stage-next-row-text">Stage 16 · Tue 8 September · Cortegana to Palos de la Frontera · Flat · /);
+
+  // On a day the dates do not explain the card keeps its usual pill, copy and row label.
+  const generic = buildStageRaceCard(race, { live: true, now: new Date("2026-09-10T12:00:00.000Z") });
+  assert.match(generic, /<span class="status-pill">Live stage race<\/span>/);
+  assert.match(generic, /Live classifications refresh as stage and GC data become available\./);
+  assert.match(generic, /stage-next-row-label">Up next<\/span>/);
 });
