@@ -823,6 +823,34 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   (https://claude.ai/code/artifact/5b2f654d-0e7d-43a2-a31e-bb4d203ca07a): page 1 the
   chosen line under the GC, page 2 the four directions A–D at desktop and phone width.
 
+### Added 2026-09-07 (Worlds session)
+
+- **What shipped.** The UCI Road World Championships (Montréal, 20–27 September 2026)
+  now have their own section below the two WorldTour sections: upcoming cards for the
+  four elite events (men's first), then a Results block as each event's Wikipedia page
+  fills in. Commits `73f1ccc` (schedule + upcoming cards) and `4a52625` (results,
+  finish video, news, race-day pacing). Both verified on production. The user chose
+  "Option B, men first" from a comp; the canvas with both options and the results
+  block rendered from the 2025 Kigali pages is
+  https://claude.ai/code/artifact/9d6216f4-92dd-48b1-806c-34feb554a6fc.
+- **Why it was missing.** The race list comes only from the two WorldTour season
+  tables on Wikipedia, and the Worlds are a UCI championship, not a WorldTour event.
+  Production went from GP de Montréal (13 Sept) straight to Il Lombardia (10 Oct).
+  The project started in April 2026, so there was no earlier Worlds to learn from.
+- **The one thing left to check.** The 2026 event pages returned 404 on 2026-09-07,
+  so `parseWorldChampionshipEventResult` has only ever run against the 2025 layout
+  (fixtures under `test/fixtures/uci-road-world-championships-2025-*`). On the
+  evening of 20 September, confirm the two time trials appear in `recentResults` on
+  production; if they are still "Today" upcoming cards, fetch the 2026 page's wikitext
+  and run it through the parser. Everything else — the "Today" state, the ten-minute
+  miss retry, the live cadence on race days, the video filter — is covered by tests.
+- **Scope decisions the user made.** Elite events only (no under-23, junior or mixed
+  relay). Upcoming cards, then results, in a separate section rather than inside the
+  WorldTour lanes. Men's cards before women's. Not on the season calendar.
+- **Where the details live.** "World Championships" under "Data Source Cross-Reference"
+  above; the scope line in `AGENTS.md`; two entries in `data/release-notes.md`; two
+  review-log lines in `DATA-SOURCES.md`.
+
 ### Added 2026-09-06
 
 - **The refresh button compares `fetchedAt` only.** Late official snapshots
