@@ -1877,6 +1877,42 @@ test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-fold
   assert.match(buildRiderMarkup({ rider: "Tadej Pogačar", countryCode: "SLO" }), /data-rider-key="tadej pogacar"/);
 });
 
+test("a rider spelled with an extra surname in the GC keeps one tally", () => {
+  const { buildRiderSeasonIndex } = loadParserExports();
+
+  // The Vuelta's stage results said "Enric Mas" while its general classification
+  // said "Enric Mas Nicolau", which used to leave the race leader's card empty.
+  const index = buildRiderSeasonIndex(
+    [{ winner: "Isaac del Toro", winnerCountryCode: "MEX", second: "Magnus Cort", secondCountryCode: "DEN", third: "" }],
+    [
+      {
+        pageTitle: "2026 Vuelta a España",
+        stageRace: {
+          stages: [
+            { standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP", pageTitle: "Enric Mas" }, { place: "2", rider: "Oscar Onley", countryCode: "GBR" }] },
+            { standings: [{ place: "1", rider: "Tadej Pogačar", countryCode: "SLO" }, { place: "2", rider: "Enric Mas", countryCode: "ESP" }] },
+          ],
+          generalClassification: { standings: [{ place: "1", rider: "Enric Mas Nicolau", countryCode: "ESP" }, { place: "2", rider: "Isaac del Toro Romero", countryCode: "MEX" }] },
+        },
+      },
+    ],
+  );
+
+  const leader = { name: "Enric Mas Nicolau", countryCode: "ESP", wins: 0, podiums: 0, stageWins: 1, stagePodiums: 2, wikiTitle: "Enric Mas" };
+  assert.deepEqual(JSON.parse(JSON.stringify(index["enric mas nicolau"])), leader);
+  // Both spellings answer with the same tally, each under the name its own row used.
+  assert.deepEqual(JSON.parse(JSON.stringify(index["enric mas"])), { ...leader, name: "Enric Mas" });
+  // A win recorded under the short spelling reaches the long one and is not doubled.
+  assert.equal(index["isaac del toro romero"].wins, 1);
+  assert.equal(index["isaac del toro"].wins, 1);
+  // A rider with no longer spelling on the page is untouched, and neither is a
+  // different rider who merely shares a first name.
+  assert.equal(index["magnus cort"].podiums, 1);
+  assert.equal("magnus cort nielsen" in index, false);
+  assert.equal(index["oscar onley"].stagePodiums, 1);
+  assert.equal(index["tadej pogacar"].stageWins, 1);
+});
+
 test("the rider's Wikipedia article title travels from the wikitext to the rider index", () => {
   const { parseAthleteDetails, extractRiderPageTitle, buildStandingEntry, parseSeasonRows, buildRiderSeasonIndex, parseWorldChampionshipEventResult } =
     loadParserExports();

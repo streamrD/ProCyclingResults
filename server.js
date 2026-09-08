@@ -590,6 +590,93 @@ function foldRiderKey(name) {
   return buildRiderSlug(name).replace(/-/g, " ");
 }
 
+// Sources disagree about how many surnames a rider carries: a stage result says
+// "Enric Mas" where the general classification says "Enric Mas Nicolau". Folding
+// alone left the longer spelling as a second, empty entry, so the hover card told
+// the Vuelta's race leader he had never won or placed. Treat one spelling as the
+// other when it is the same name plus a single extra surname.
+function isRiderNameVariant(shortTokens, longTokens) {
+  if (shortTokens.length < 2 || longTokens.length !== shortTokens.length + 1 || shortTokens[0] !== longTokens[0]) {
+    return false;
+  }
+  let matched = 0;
+  longTokens.forEach((token) => {
+    if (matched < shortTokens.length && token === shortTokens[matched]) {
+      matched += 1;
+    }
+  });
+  return matched === shortTokens.length;
+}
+
+// One tally per rider, published under every spelling the page uses, so a lookup
+// by either key finds it. Each key keeps its own name so the card's heading still
+// reads the way the row the reader hovered does.
+function mergeRiderNameVariants(index) {
+  const keys = [...index.keys()];
+  const tokens = new Map(keys.map((key) => [key, key.split(" ")]));
+  const parent = new Map(keys.map((key) => [key, key]));
+  const find = (key) => {
+    let root = key;
+    while (parent.get(root) !== root) {
+      root = parent.get(root);
+    }
+    let walk = key;
+    while (parent.get(walk) !== root) {
+      const next = parent.get(walk);
+      parent.set(walk, root);
+      walk = next;
+    }
+    return root;
+  };
+
+  for (let left = 0; left < keys.length; left += 1) {
+    for (let right = left + 1; right < keys.length; right += 1) {
+      const leftTokens = tokens.get(keys[left]);
+      const rightTokens = tokens.get(keys[right]);
+      const shortTokens = leftTokens.length <= rightTokens.length ? leftTokens : rightTokens;
+      const longTokens = shortTokens === leftTokens ? rightTokens : leftTokens;
+      if (!isRiderNameVariant(shortTokens, longTokens)) {
+        continue;
+      }
+      const leftRoot = find(keys[left]);
+      const rightRoot = find(keys[right]);
+      if (leftRoot !== rightRoot) {
+        parent.set(leftRoot, rightRoot);
+      }
+    }
+  }
+
+  const groups = new Map();
+  keys.forEach((key) => {
+    const root = find(key);
+    if (!groups.has(root)) {
+      groups.set(root, []);
+    }
+    groups.get(root).push(key);
+  });
+
+  groups.forEach((members) => {
+    if (members.length < 2) {
+      return;
+    }
+    const entries = members.map((key) => index.get(key));
+    const totals = {
+      wins: entries.reduce((sum, entry) => sum + entry.wins, 0),
+      podiums: entries.reduce((sum, entry) => sum + entry.podiums, 0),
+      stageWins: entries.reduce((sum, entry) => sum + entry.stageWins, 0),
+      stagePodiums: entries.reduce((sum, entry) => sum + entry.stagePodiums, 0),
+      countryCode: (entries.find((entry) => entry.countryCode) || {}).countryCode || "",
+      // The shortest spelling that Wikipedia actually linked is the article title.
+      wikiTitle: (entries.filter((entry) => entry.wikiTitle).sort((a, b) => a.wikiTitle.length - b.wikiTitle.length)[0] || {}).wikiTitle || "",
+    };
+    members.forEach((key) => {
+      Object.assign(index.get(key), totals);
+    });
+  });
+
+  return index;
+}
+
 // What the site itself knows about each rider this season: podiums from the season
 // tables (every race, so complete for the year) and stage wins from the stage
 // histories on the page (only the races whose history the page holds). The card
@@ -659,6 +746,8 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
       }
     });
   });
+
+  mergeRiderNameVariants(index);
 
   return Object.fromEntries([...index.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
