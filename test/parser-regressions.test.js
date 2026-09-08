@@ -76,6 +76,15 @@ function loadParserExports() {
       parseWorldChampionshipEliteEvents,
       buildUpcomingCard,
       getCompetitionGroups,
+      parseWorldChampionshipEventResult,
+      enrichWorldChampionshipResults,
+      partitionRaceBuckets,
+      buildRaceCard,
+      buildRecentResultsBlock,
+      getRaceArticleVariants,
+      buildFinishVideoQuery,
+      isLikelyFinishVideo,
+      getFreshnessSensitiveRaces,
       cleanWikiText,
       buildRaceArticleQueries,
       scoreRaceArticle,
@@ -1562,6 +1571,198 @@ test("getCompetitionGroups gives the Worlds their own section, men's events firs
   const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] })[2];
   assert.equal(after.upcomingRaces.length, 0);
   assert.equal(after.tag, "");
+});
+
+function loadWorldsFixture(name) {
+  return fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
+}
+
+function worldsEvent(overrides = {}) {
+  return {
+    pageTitle: "2026 UCI Road World Championships – Men's road race",
+    title: "Elite men's road race",
+    series: "UCI Road World Championships",
+    lane: "mens",
+    countryCode: "CAN",
+    location: "Montreal, Canada",
+    locationFromSchedule: true,
+    date: "27 September 2026",
+    startTimeLocal: "09:00",
+    distanceKm: 273.4,
+    laps: 12,
+    winner: "",
+    winnerCountryCode: "",
+    second: "",
+    secondCountryCode: "",
+    third: "",
+    thirdCountryCode: "",
+    startDate: new Date("2026-09-27T00:00:00Z"),
+    endDate: new Date("2026-09-27T00:00:00Z"),
+    isCancelled: false,
+    ...overrides,
+  };
+}
+
+test("parseWorldChampionshipEventResult reads a road race podium and top five with gaps", () => {
+  const { parseWorldChampionshipEventResult } = loadParserExports();
+  const result = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2025-mens-road-race.wikitext"));
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result.podium)), [
+    { rider: "Tadej Pogačar", countryCode: "SLO" },
+    { rider: "Remco Evenepoel", countryCode: "BEL" },
+    { rider: "Ben Healy", countryCode: "IRL" },
+  ]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(result.standings.map((entry) => [entry.place, entry.rider, entry.countryCode, entry.time, entry.gap]))),
+    [
+      ["1", "Tadej Pogačar", "SLO", "6:21:20", ""],
+      ["2", "Remco Evenepoel", "BEL", "", "+01:28"],
+      ["3", "Ben Healy", "IRL", "", "+02:16"],
+      ["4", "Mattias Skjelmose", "DEN", "", "+02:53"],
+      ["5", "Toms Skujiņš", "LAT", "", "+06:41"],
+    ],
+  );
+});
+
+test("parseWorldChampionshipEventResult keeps time-trial hundredths and the Diff column", () => {
+  const { parseWorldChampionshipEventResult } = loadParserExports();
+  const result = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2025-womens-time-trial.wikitext"));
+
+  assert.equal(result.podium[0].rider, "Marlen Reusser");
+  assert.equal(result.podium[0].countryCode, "SUI");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(result.standings.slice(0, 3).map((entry) => [entry.place, entry.rider, entry.time, entry.gap]))),
+    [
+      ["1", "Marlen Reusser", "43:09.34", ""],
+      ["2", "Anna van der Breggen", "44:01.23", "+0:51.89"],
+      ["3", "Demi Vollering", "44:14.07", "+1:04.73"],
+    ],
+  );
+  assert.equal(result.standings.length, 5);
+  // A page created before the race, with an empty infobox and no table, yields nothing.
+  const empty = parseWorldChampionshipEventResult("{{Infobox cycling race report\n| first = \n| second = \n}}\n==Final classification==\n");
+  assert.equal(empty.podium.length, 0);
+  assert.equal(empty.standings.length, 0);
+});
+
+test("enrichWorldChampionshipResults asks for an event page from race day only and fills the podium", async () => {
+  const { enrichWorldChampionshipResults, partitionRaceBuckets } = loadParserExports();
+  const page = loadWorldsFixture("uci-road-world-championships-2025-mens-road-race.wikitext");
+  const calls = [];
+  const loader = async (title) => {
+    calls.push(title);
+    if (/Women's time trial/.test(title)) {
+      throw new Error("Request failed: 404 Not Found");
+    }
+    return page;
+  };
+  const roadRace = worldsEvent();
+  const timeTrial = worldsEvent({
+    pageTitle: "2026 UCI Road World Championships – Women's time trial",
+    title: "Elite women's time trial",
+    lane: "womens",
+    startDate: new Date("2026-09-20T00:00:00Z"),
+    endDate: new Date("2026-09-20T00:00:00Z"),
+  });
+
+  // The day before: nothing is asked for.
+  await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-19T12:00:00Z"));
+  assert.equal(calls.length, 0);
+  assert.equal(roadRace.winner, "");
+
+  // Race day for the time trial: it is asked for, misses, and stays upcoming as "today".
+  await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-20T15:00:00Z"));
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ["2026 UCI Road World Championships – Women's time trial"]);
+  assert.equal(timeTrial.winner, "");
+  const buckets = partitionRaceBuckets([roadRace, timeTrial], new Date("2026-09-20T15:00:00Z"));
+  assert.deepEqual(JSON.parse(JSON.stringify(buckets.upcomingRaces.map((race) => race.title))), ["Elite women's time trial", "Elite men's road race"]);
+  assert.equal(buckets.recentOneDayResults.length, 0);
+
+  // A missing page is not asked for again straight away.
+  await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-20T15:05:00Z"));
+  assert.equal(calls.length, 1);
+
+  // Race day for the road race: the page exists and the podium lands.
+  await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-27T20:00:00Z"));
+  assert.equal(roadRace.winner, "Tadej Pogačar");
+  assert.equal(roadRace.winnerCountryCode, "SLO");
+  assert.equal(roadRace.third, "Ben Healy");
+  assert.equal(roadRace.resultStandings.length, 5);
+  const later = partitionRaceBuckets([roadRace, timeTrial], new Date("2026-09-27T20:00:00Z"));
+  assert.deepEqual(JSON.parse(JSON.stringify(later.recentOneDayResults.map((race) => race.title))), ["Elite men's road race"]);
+  assert.equal(later.upcomingRaces.length, 0);
+  // Once filled in, the page is not asked for again by this enrichment.
+  const callsBefore = calls.length;
+  await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-28T09:00:00Z"));
+  assert.equal(calls.length, callsBefore + 1);
+  assert.ok(calls.every((title) => !/Men's road race/.test(title) || calls.filter((entry) => entry === title).length === 1));
+});
+
+test("Worlds results render in their section, men first, all four cards visible", () => {
+  const { getCompetitionGroups, buildRaceCard, buildRecentResultsBlock, getFreshnessSensitiveRaces } = loadParserExports();
+  const make = (title, lane, day, winner, code) =>
+    worldsEvent({
+      pageTitle: `2026 UCI Road World Championships – ${title}`,
+      title: `Elite ${title.toLowerCase()}`,
+      lane,
+      winner,
+      winnerCountryCode: code,
+      startDate: new Date(`2026-09-${day}T00:00:00Z`),
+      endDate: new Date(`2026-09-${day}T00:00:00Z`),
+      resultStandings: [{ place: "1", rider: winner, countryCode: code, time: "6:21:20", gap: "" }],
+    });
+  const recentResults = [
+    make("Men's road race", "mens", "27", "Tadej Pogačar", "SLO"),
+    make("Women's road race", "womens", "26", "Pauline Ferrand-Prévot", "FRA"),
+    make("Men's time trial", "mens", "20", "Remco Evenepoel", "BEL"),
+    make("Women's time trial", "womens", "20", "Marlen Reusser", "SUI"),
+  ];
+  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] })[2];
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(worlds.recentResults.map((race) => race.title))),
+    ["Elite men's time trial", "Elite men's road race", "Elite women's time trial", "Elite women's road race"],
+  );
+  const block = buildRecentResultsBlock(worlds);
+  assert.equal((block.match(/data-recent-slot/g) || []).length, 4);
+  assert.doesNotMatch(block, /load-more-races/);
+  assert.match(block, /<h3>Results<\/h3>/);
+
+  const card = buildRaceCard(recentResults[0]);
+  assert.match(card, /data-championship="worlds"/);
+  assert.match(card, /🇸🇮/);
+  assert.match(card, /Tadej Pogačar/);
+  assert.match(card, /6:21:20/);
+
+  // A race-day event still waiting for its result keeps the page on the live cadence.
+  const awaiting = worldsEvent({ finishedToday: true });
+  assert.equal(getFreshnessSensitiveRaces({ upcomingRaces: [awaiting] }).length, 1);
+  assert.equal(getFreshnessSensitiveRaces({ upcomingRaces: [worldsEvent()] }).length, 0);
+});
+
+test("Worlds searches name the championship and reject the week's other events", () => {
+  const { getRaceArticleVariants, buildFinishVideoQuery, isLikelyFinishVideo } = loadParserExports();
+  const roadRace = worldsEvent({ winner: "Tadej Pogačar" });
+  const timeTrial = worldsEvent({ title: "Elite women's time trial", pageTitle: "2026 UCI Road World Championships – Women's time trial", lane: "womens" });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(getRaceArticleVariants(roadRace))), [
+    "UCI Road World Championships men's road race",
+    "Road World Championships men's road race",
+    "World Championships men's road race",
+    "Worlds men's road race",
+  ]);
+  assert.equal(buildFinishVideoQuery(roadRace), "UCI Road World Championships men's road race 2026 highlights");
+  assert.equal(buildFinishVideoQuery(timeTrial), "UCI Road World Championships women's time trial 2026 highlights");
+
+  const video = (title) => ({ id: "x", title, channel: "Eurosport Cycling", verified: true, lengthSeconds: 480 });
+  assert.equal(isLikelyFinishVideo(video("Men's Road Race Highlights | 2026 UCI Road World Championships Montréal"), roadRace), true);
+  assert.equal(isLikelyFinishVideo(video("Men's Time Trial Highlights | 2026 UCI Road World Championships"), roadRace), false);
+  assert.equal(isLikelyFinishVideo(video("Women's Road Race Highlights | 2026 UCI Road World Championships"), roadRace), false);
+  assert.equal(isLikelyFinishVideo(video("Mixed Team Relay Highlights | 2026 UCI Road World Championships"), roadRace), false);
+  assert.equal(isLikelyFinishVideo(video("Men's Road Race Highlights | 2025 UCI Road World Championships Kigali"), roadRace), false);
+  assert.equal(isLikelyFinishVideo(video("Il Lombardia 2026 Highlights"), roadRace), false);
+  assert.equal(isLikelyFinishVideo(video("Women's Elite Time Trial Highlights | 2026 UCI Road World Championships"), timeTrial), true);
+  assert.equal(isLikelyFinishVideo(video("Men's Elite Time Trial Highlights | 2026 UCI Road World Championships"), timeTrial), false);
 });
 
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {

@@ -1,0 +1,901 @@
+{{Short description|Cycling event}}
+{{Infobox cycling race report
+| name               = Men's road race
+| image              =
+| image_caption      = 
+| image_size         =
+| series             = [[2025 UCI Road World Championships]]
+| date               = 28 September 2025
+| distance           = 267.5
+| unit               = km
+| time               = 6h 21' 20"
+| type               = medals
+| first              = {{flagUCIRoadathlete|[[Tadej Pogačar]]|SLO}}
+| second             = {{flagUCIRoadathlete|[[Remco Evenepoel]]|BEL}}
+| third              = {{flagUCIRoadathlete|[[Ben Healy (cyclist)|Ben Healy]]|IRL}}
+| previous           = [[2024 UCI Road World Championships&nbsp;– Men's road race|2024]]
+| next               = [[2026 UCI Road World Championships&nbsp;– Men's road race|2026]]
+}}
+{{2025 UCI Road World Championships}}
+
+The '''[[UCI Road World Championships – Men's road race|Men's road race]]''' of the [[2025 UCI Road World Championships]] was a cycling event that took place on 28 September 2025 in [[Kigali]], [[Rwanda]]. It was the 92nd edition of the championship, for which [[Tadej Pogačar]] of [[Slovenia]] was the defending champion, having won in [[2024 UCI Road World Championships – Men's road race|2024]]. Pogačar won the race for the second year in a row.<ref>{{cite web|url=https://www.bbc.com/sport/cycling/articles/cgmzlp8gg2yo|title=Imperious Pogacar wins Worlds with epic solo attack|date=28 September 2025|work=BBC Sport|accessdate=30 September 2025}}</ref>
+<ref>{{cite web|url=https://ucikigali2025.rw/competition-program/men-elite-2/|title=Men's Elite Road Race|accessdate=28 September 2025}}</ref><ref>{{cite news|url=https://www.cyclingnews.com/races/uci-road-world-championships-2025/elite-men-road-race/results/|title=Road World Championships: Unstoppable Tadej Pogačar seals consecutive men's road race victories after 66km solo break
+|publisher=CyclingNews|first=Alasdair|last=Fotheringham|date=28 September 2025|accessdate=28 September 2025}}</ref>
+
+==Final classification==
+{| class="wikitable"
+|-
+! scope="row" style="text-align:center;" | Rank
+| Position in the road race
+|-
+! scope="row" style="text-align:center;" | Time
+| Time taken to complete the road race
+|-
+! scope="row" style="text-align:center;" | DNS
+| Denotes a rider who did not start
+|-
+! scope="row" style="text-align:center;" | DNF
+| Denotes a rider who did not finish
+|-
+! scope="row" style="text-align:center;" | DSQ
+| Denotes a rider who was disqualified from the race
+|-
+! scope="row" style="text-align:center;" | OTL
+| Denotes a rider who finished outside the time limit
+|}
+
+{{col-begin}}
+{{col-break|width=40%}}
+{| class="wikitable sortable" style="font-size:95%; text-align:center;"
+|-
+!scope="col"| Rank
+!scope="col"| Rider<ref>{{cite web |date=28 September 2025 |title=Men Elite Road Race - Final results |url=https://prod.server.tissottiming.com/file/0003180200010301FFFFFFFFFFFFFF03 |accessdate=28 September 2025 |website=Tissot Timing}}</ref>
+!scope="col"| Country
+!scope="col"| Time
+|-
+| {{Gold1}}
+| align=left| [[Tadej Pogačar]]
+| align=left| {{FlagUCIRoad|SLO}}
+| 6h 21' 20"
+|-
+| {{Silver2}}
+| align=left| [[Remco Evenepoel]]
+| align=left| {{FlagUCIRoad|BEL}}
+| + 1' 28"
+|-
+| {{Bronze3}}
+| align=left| [[Ben Healy (cyclist)|Ben Healy]]
+| align=left| {{FlagUCIRoad|IRL}}
+| + 2' 16"
+|-
+| 4
+| align=left| [[Mattias Skjelmose]]
+| align=left| {{FlagUCIRoad|DEN}}
+| + 2' 53"
+|-
+| 5
+| align=left| [[Toms Skujiņš]]
+| align=left| {{FlagUCIRoad|LAT}}
+| + 6' 41"
+|-
+| 6
+| align=left| [[Giulio Ciccone]]
+| align=left| {{FlagUCIRoad|ITA}} 
+| + 6' 47"
+|-
+| 7
+| align=left| [[Isaac del Toro]] 
+| align=left| {{FlagUCIRoad|MEX}} 
+| s.t.
+|-
+| 8
+| align=left| [[Juan Ayuso]]
+| align=left| {{FlagUCIRoad|ESP}}
+| s.t.
+|-
+| 9
+| align=left| [[Afonso Eulálio]]
+| align=left| {{FlagUCIRoad|POR}}
+| + 7' 06"
+|-
+| 10
+| align=left| [[Tom Pidcock]]
+| align=left| {{FlagUCIRoad|GBR}}
+| + 9' 05"
+|-
+| 11
+| align=left| [[Primož Roglič]]
+| align=left| {{FlagUCIRoad|SLO}}
+| s.t.
+|-
+| 12
+| align=left| [[Mikkel Frølich Honoré]]
+| align=left| {{FlagUCIRoad|DEN}}
+| + 9' 07"
+|-
+| 13
+| align=left| [[Paul Seixas]]
+| align=left| {{FlagUCIRoad|FRA}}
+| s.t.
+|-
+| 14
+| align=left| [[Harold Tejada]]
+| align=left| {{FlagUCIRoad|COL}}
+| s.t.
+|-
+| 15
+| align=left| [[Pavel Sivakov]]
+| align=left| {{FlagUCIRoad|FRA}}
+| + 9' 47"
+|-
+| 16
+| align=left| [[Jai Hindley]]
+| align=left| {{FlagUCIRoad|AUS}}
+| + 10' 01"
+|-
+| 17
+| align=left| [[Andrea Bagioli]]
+| align=left| {{FlagUCIRoad|ITA}}  
+| + 10' 06"
+|-
+| 18
+| align=left| [[Marc Hirschi]]
+| align=left| {{FlagUCIRoad|SUI}}
+| s.t.
+|-
+| 19
+| align=left| [[Michael Storer]]
+| align=left| {{FlagUCIRoad|AUS}}
+| + 10' 12"
+|-
+| 20
+| align=left| [[Carlos Canal]] 
+| align=left| {{FlagUCIRoad|ESP}} 
+| s.t.
+|-
+| 21
+| align=left| [[Bauke Mollema]]
+| align=left| {{FlagUCIRoad|NED}}
+| s.t.
+|-
+| 22
+| align=left| [[Gianmarco Garofoli]]
+| align=left| {{FlagUCIRoad|ITA}}
+| + 10' 16"
+|-
+| 23
+| align=left| [[Kevin Vermaerke]]
+| align=left| {{FlagUCIRoad|USA}}
+| s.t.
+|-
+| 24
+| align=left| [[Artem Nych]]
+| align=left| {{flagicon|AIN}} [[Authorised Neutral Athletes|Individual Neutral Athletes]]
+| s.t.
+|-
+| 25
+| align=left| [[Andreas Leknessund]]
+| align=left| {{FlagUCIRoad|NOR}}
+| + 10' 18"
+|-
+| 26
+| align=left| [[Cian Uijtdebroeks]]
+| align=left| {{FlagUCIRoad|BEL}}
+| s.t.
+|-
+| 27
+| align=left| [[Embret Svestad-Bårdseng]]
+| align=left| {{FlagUCIRoad|NOR}}
+| + 10' 48"
+|-
+| 28
+| align=left| [[Valentin Paret-Peintre]]
+| align=left| {{FlagUCIRoad|FRA}}  
+| + 10' 59"
+|-
+| 29
+| align=left| [[Jan Christen]]
+| align=left| {{FlagUCIRoad|SUI}}
+| + 11' 55"
+|-
+| 30
+| align=left| [[Amanuel Ghebreigzabhier]]
+| align=left| {{FlagUCIRoad|ERI}}
+| + 12' 04"
+|-
+|}
+{{col-break}}
+{| class="wikitable sortable" style="font-size:95%; text-align:left;"
+|-
+! Rank
+! Rider
+! Country
+! Time
+|-
+| 
+| align=left| [[Thymen Arensman]]
+| align=left| {{FlagUCIRoad|NED}}
+| DNF
+|-
+| 
+| align=left| [[Richard Carapaz]]
+| align=left| {{FlagUCIRoad|ECU}}
+| DNF
+|-
+| 
+| align=left| [[Louis Vervaeke]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF
+|-
+| 
+| align=left| [[Jonathan Caicedo]]
+| align=left| {{FlagUCIRoad|ECU}}
+| DNF
+|-
+| 
+| align=left| [[Jordan Jegat]]
+| align=left| {{FlagUCIRoad|FRA}}
+| DNF 
+|-
+| 
+| align=left| [[Johannes Staune-Mittet]]
+| align=left| {{FlagUCIRoad|NOR}}
+| DNF 
+|-
+| 
+| align=left| [[Attila Valter]]
+| align=left| {{FlagUCIRoad|HUN}}
+| DNF 
+|-
+| 
+| align=left| [[Roger Adrià]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF
+|-
+| 
+| align=left| [[Anthon Charmig]]
+| align=left| {{FlagUCIRoad|DEN}}   
+| DNF 
+|-
+| 
+| align=left| [[Valentin Madouas]]
+| align=left| {{FlagUCIRoad|FRA}}
+| DNF
+|-
+| 
+| align=left| [[Marco Frigo]]
+| align=left| {{FlagUCIRoad|ITA}}
+| DNF
+|-
+| 
+| align=left| [[Xandro Meurisse]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF  
+|-
+| 
+| align=left| [[Fausto Masnada]]
+| align=left| {{FlagUCIRoad|ITA}}
+| DNF
+|-
+| 
+| align=left| [[Mark Donovan (cyclist)|Mark Donovan]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF  
+|-
+| 
+| align=left| [[Oscar Onley]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF  
+|-
+| 
+| align=left| [[Fabian Weiss (cyclist)|Fabian Weiss]]
+| align=left| {{FlagUCIRoad|SUI}}
+| DNF  
+|-
+| 
+| align=left| [[Abel Balderstone]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF  
+|-
+| 
+| align=left| [[Wouter Poels]]
+| align=left| {{FlagUCIRoad|NED}}
+| DNF  
+|-
+| 
+| align=left| [[Quinten Hermans]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF  
+|-
+| 
+| align=left| [[Victor Campenaerts]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF  
+|-
+| 
+| align=left| [[Jay Vine]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF  
+|-
+| 
+| align=left| [[Mattia Cattaneo]]
+| align=left| {{FlagUCIRoad|ITA}}
+| DNF  
+|-
+| 
+| align=left| [[Michael Matthews (cyclist)|Michael Matthews]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF  
+|-
+| 
+| align=left| [[Henok Mulubrhan]] 
+| align=left| {{FlagUCIRoad|ERI}}
+| DNF  
+|-
+| 
+| align=left| [[Henrique Avancini]]
+| align=left| {{FlagUCIRoad|BRA}}
+| DNF 
+|-
+| 
+| align=left| [[Lawrence Warbasse]]
+| align=left| {{FlagUCIRoad|USA}}
+| DNF 
+|-
+| 
+| align=left| [[Sergio Chumil]]
+| align=left| {{FlagUCIRoad|GUA}}
+| DNF  
+|-
+| 
+| align=left| [[Eder Frayre]]
+| align=left| {{FlagUCIRoad|MEX}} 
+| DNF  
+|-
+| 
+| align=left| [[Merhawi Kudus]]
+| align=left| {{FlagUCIRoad|ERI}}
+| DNF  
+|-
+| 
+| align=left| [[Frank van den Broek]]
+| align=left| {{FlagUCIRoad|NED}}
+| DNF  
+|-
+| 
+| align=left| [[Michael Leonard (cyclist)|Michael Leonard]]
+| align=left| {{FlagUCIRoad|CAN}}
+| DNF  
+|-
+| 
+| align=left| [[Byron Munton]]
+| align=left| {{FlagUCIRoad|RSA}}
+| DNF  
+|-
+| 
+| align=left| [[Ivo Oliveira]]
+| align=left| {{FlagUCIRoad|POR}}
+| DNF  
+|-
+| 
+| align=left| [[Edward Dunbar]]
+| align=left| {{FlagUCIRoad|IRL}}
+| DNF  
+|-
+| 
+| align=left| [[Mauro Schmid]]
+| align=left| {{FlagUCIRoad|SUI}}
+| DNF  
+|-
+| 
+| align=left| [[Anders Foldager]]
+| align=left| {{FlagUCIRoad|DEN}}
+| DNF  
+|-
+| 
+| align=left| [[Luka Mezgec]]
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF  
+|-
+| 
+| align=left| [[Tiago Antunes]]
+| align=left| {{FlagUCIRoad|POR}}
+| DNF  
+|-
+| 
+| align=left| [[Julien Bernard]]
+| align=left| {{FlagUCIRoad|FRA}}
+| DNF  
+|-
+| 
+| align=left| [[Quinn Simmons]]
+| align=left| {{FlagUCIRoad|USA}}
+| DNF
+|-
+| 
+| align=left| [[Domen Novak]]
+| align=left| {{FlagUCIRoad|SVK}}
+| DNF
+|-
+| 
+| align=left| [[Egan Bernal]]
+| align=left| {{FlagUCIRoad|COL}}
+| DNF
+|-
+| 
+| align=left| [[Christopher Jensen]]
+| align=left| {{FlagUCIRoad|DEN}}
+| DNF  
+|-
+| 
+| align=left| [[Matej Mohorič]]
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF  
+|-
+| 
+| align=left| [[Victor Langellotti]]
+| align=left| {{FlagUCIRoad|MON}}
+| DNF 
+|-
+| 
+| align=left| [[Nadav Raisberg]]
+| align=left| {{FlagUCIRoad|ISR}}
+| DNF 
+|-
+| 
+| align=left| [[Martin Svrček]]
+| align=left| {{FlagUCIRoad|SVK}}
+| DNF
+|-
+| 
+| align=left| [[Casper Pedersen]]
+| align=left| {{FlagUCIRoad|DEN}}
+| DNF
+|-
+| 
+| align=left| [[Joseph Blackmore]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF
+|-
+| 
+| align=left| [[Sven Erik Bystrom]]
+| align=left| {{FlagUCIRoad|NOR}}
+| DNF
+|-
+| 
+| align=left| [[Carlos Verona]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF
+|-
+| 
+| align=left| [[Raúl García Pierna]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF
+|-
+| 
+| align=left| [[Brandon Rivera]]
+| align=left| {{FlagUCIRoad|COL}}
+| DNF
+|-
+| 
+| align=left| [[Natnael Tesfatsion]]
+| align=left| {{FlagUCIRoad|ERI}}
+| DNF
+|-
+| 
+| align=left| {{ill|Šimon Vaníček|fr}}
+| align=left| {{FlagUCIRoad|CZE}}
+| DNF
+|-
+| 
+| align=left| [[Asbjørn Hellemose]]
+| align=left| {{FlagUCIRoad|DEN}}
+| DNF
+|-
+| 
+| align=left| [[Darren Rafferty]]
+| align=left| {{FlagUCIRoad|IRL}}
+| DNF
+|-
+| 
+| align=left| [[Michael Boroš]]
+| align=left| {{FlagUCIRoad|CZE}}
+| DNF
+|-
+| 
+| align=left| [[Shemu Nsengiyumva]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[Fred Wright (cyclist)|Fred Wright]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF
+|-
+| 
+| align=left| [[Menno Huising]]
+| align=left| {{FlagUCIRoad|NED}}
+| DNF
+|-
+| 
+| align=left| [[Harold Martín López]]
+| align=left| {{FlagUCIRoad|ECU}}
+| DNF
+|-
+| 
+| align=left| [[Fabio Christen]]
+| align=left| {{FlagUCIRoad|SUI}}
+| DNF
+|-
+| 
+| align=left| [[Marius Mayrhofer]]
+| align=left| {{FlagUCIRoad|GER}}
+| DNF
+|-
+| 
+| align=left| [[Florian Vermeersch]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF
+|-
+| 
+| align=left| [[Biniam Girmay]]
+| align=left| {{FlagUCIRoad|ERI}}
+| DNF
+|-
+| 
+| align=left| [[Damien Howson]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF
+|-
+| 
+| align=left| [[Walter Vargas]]
+| align=left| {{FlagUCIRoad|COL}}
+| DNF
+|-
+| 
+| align=left| [[Gal Glivar]]
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF
+|-
+| 
+| align=left| [[Lorenzo Fortunato]]
+| align=left| {{FlagUCIRoad|ITA}}
+| DNF
+|-
+| 
+| align=left| [[Matteo Sobrero]]
+| align=left| {{FlagUCIRoad|ITA}}
+| DNF
+|-
+| 
+| align=left| [[Rory Townsend]]
+| align=left| {{FlagUCIRoad|IRL}}
+| DNF
+|-
+| 
+| align=left| [[Chris Hamilton (cyclist)|Chris Hamilton]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF
+|-
+| 
+| align=left| [[James Knox (cyclist)|James Knox]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF
+|-
+| 
+| align=left| {{ill|Kristiāns Belohvoščiks|fr}}
+| align=left| {{FlagUCIRoad|LAT}}
+| DNF
+|-
+| 
+| align=left| [[Charles Kagimu]]
+| align=left| {{FlagUCIRoad|UGA}}
+| DNF
+|-
+| 
+| align=left| [[Yuhi Todome]]
+| align=left| {{FlagUCIRoad|JPN}}
+| DNF
+|-
+| 
+| align=left| [[António Morgado]]
+| align=left| {{FlagUCIRoad|POR}}
+| DNF
+|-
+| 
+| align=left| [[Francisco Joel Peñuela]]
+| align=left| {{FlagUCIRoad|VEN}}
+| DNF
+|-
+| 
+| align=left| [[Gabriel Rojas (cyclist)|Gabriel Rojas]]
+| align=left| {{FlagUCIRoad|CRC}}
+| DNF
+|-
+| 
+| align=left| [[Alexander Kamp]]
+| align=left| {{FlagUCIRoad|DEN}}
+| DNF
+|-
+| 
+| align=left| [[Rein Taaramäe]]
+| align=left| {{FlagUCIRoad|EST}}
+| DNF
+|-
+| 
+| align=left| [[Nahom Zeray]]
+| align=left| {{FlagUCIRoad|ERI}}
+| DNF
+|-
+| 
+| align=left| [[Luke Lamperti]]
+| align=left| {{FlagUCIRoad|USA}}
+| DNF
+|-
+| 
+| align=left| [[Alexandre Mayer]]
+| align=left| {{FlagUCIRoad|MRI}}
+| DNF
+|-
+| 
+| align=left| [[Callum Scotson]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF
+|-
+| 
+| align=left| [[Nikolaos Drakos]]
+| align=left| {{FlagUCIRoad|GRE}}
+| DNF
+|-
+| 
+| align=left| [[Laurent Gervais]]
+| align=left| {{FlagUCIRoad|CAN}}
+| DNF
+|-
+| 
+| align=left| [[Tegshbayar Batsaikhan]]
+| align=left| {{FlagUCIRoad|MGL}}
+| DNF
+|-
+| 
+| align=left| [[Matevž Govekar]]
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF
+|-
+| 
+| align=left| [[Jaka Primožič]]
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF
+|-
+| 
+| align=left| [[Iván Romeo]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF
+|-
+| 
+| align=left| [[Mārtiņš Pluto]]
+| align=left| {{FlagUCIRoad|LAT}}
+| DNF
+|-
+| 
+| align=left| [[Peerapol Chawchiangkwang]]
+| align=left| {{FlagUCIRoad|THA}}
+| DNF
+|-
+| 
+| align=left| [[David Ruvalcaba]]
+| align=left| {{FlagUCIRoad|MEX}}
+| DNF
+|-
+| 
+| align=left| [[Eric Manizabayo]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[Oliver Knight (cyclist)|Oliver Knight]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF
+|-
+| 
+| align=left| {{ill|Matic Žumer|fr}}
+| align=left| {{FlagUCIRoad|SLO}}
+| DNF
+|-
+| 
+| align=left| [[Jonas Rutsch]]
+| align=left| {{FlagUCIRoad|GER}}
+| DNF
+|-
+| 
+| align=left| [[Ryan Mullen]]
+| align=left| {{FlagUCIRoad|IRL}}
+| DNF
+|-
+| 
+| align=left| [[Georg Zimmermann]]
+| align=left| {{FlagUCIRoad|GER}}
+| DNF
+|-
+| 
+| align=left| [[Muradjan Khalmuratov]]
+| align=left| {{FlagUCIRoad|UZB}}
+| DNF
+|-
+| 
+| align=left| [[Lucas Plapp]]
+| align=left| {{FlagUCIRoad|AUS}}
+| DNF
+|-
+| 
+| align=left| [[Eric Muhoza]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[Vainqueur Masengesho]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[Franklin Archibold]]
+| align=left| {{FlagUCIRoad|PAN}}
+| DNF
+|-
+| 
+| align=left| [[Felix Engelhardt]]
+| align=left| {{FlagUCIRoad|GER}}
+| DNF
+|-
+| 
+| align=left| [[Krists Neilands]]
+| align=left| {{FlagUCIRoad|LAT}}
+| DNF
+|-
+| 
+| align=left| [[Patrick Byukusenge]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[William Barta]]
+| align=left| {{FlagUCIRoad|USA}}
+| DNF
+|-
+| 
+| align=left| [[Eric Nkundabera]]
+| align=left| {{FlagUCIRoad|RWA}}
+| DNF
+|-
+| 
+| align=left| [[Anatolii Budiak]]
+| align=left| {{FlagUCIRoad|UKR}}
+| DNF
+|-
+| 
+| align=left| [[Louis Barré]]
+| align=left| {{FlagUCIRoad|FRA}}
+| DNF
+|-
+| 
+| align=left| [[Edwin Kieya Ndungu]]
+| align=left| {{FlagUCIRoad|KEN}}
+| DNF
+|-
+| 
+| align=left| [[Briton John]]
+| align=left| {{FlagUCIRoad|GUY}}
+| DNF
+|-
+| 
+| align=left| [[Bjoern Koerdt]]
+| align=left| {{FlagUCIRoad|GBR}}
+| DNF
+|-
+| 
+| align=left| [[Ilan Van Wilder]]
+| align=left| {{FlagUCIRoad|BEL}}
+| DNF
+|-
+| 
+| align=left| [[Mattew-Denis Piciu]]
+| align=left| {{FlagUCIRoad|ROU}}
+| DNF
+|-
+| 
+| align=left| [[Marc Soler]]
+| align=left| {{FlagUCIRoad|ESP}}
+| DNF
+|-
+| 
+| align=left| [[Ognjen Ilić]]
+| align=left| {{FlagUCIRoad|SRB}}
+| DNF
+|-
+| 
+| align=left| [[Ahmad Wais]]
+| align=left| {{FlagUCIRoad|REF}}
+| DNF
+|-
+| 
+| align=left| [[Slimane Badlis]]
+| align=left| {{FlagUCIRoad|ALG}}
+| DNF
+|-
+| 
+| align=left| [[Siriki Diarra]]
+| align=left| {{FlagUCIRoad|MLI}}
+| DNF
+|-
+| 
+| align=left| [[Su Haoyu]]
+| align=left| {{FlagUCIRoad|CHN}}
+| DNF
+|-
+| 
+| align=left| [[Jyven Gonzalez]]
+| align=left| {{FlagUCIRoad|BIZ}}
+| DNF
+|-
+| 
+| align=left| [[Ibrahim Jalloh]]
+| align=left| {{FlagUCIRoad|SLE}}
+| DNF
+|-
+| 
+| align=left| [[Djandouba Diallo]]
+| align=left| {{FlagUCIRoad|MLI}}
+| DNF
+|-
+| 
+| align=left| [[Red Walters]]
+| align=left| {{FlagUCIRoad|GRN}}
+| DNF
+|-
+| 
+| align=left| [[Mauro Alfredo]]
+| align=left| {{FlagUCIRoad|STP}}
+| DNF
+|-
+| 
+| align=left| {{ill|Cheikhouna Cissé|fr}}
+| align=left| {{FlagUCIRoad|SEN}}
+| DNF
+|-
+| 
+| align=left| [[Mustapha Koroma]]
+| align=left| {{FlagUCIRoad|SLE}}
+| DNF
+|-
+| 
+| align=left| [[Julian Alaphilippe]]
+| align=left| {{FlagUCIRoad|FRA}}
+| DNF
+|-
+| 
+| align=left| [[Ahmet Örken]]
+| align=left| {{FlagUCIRoad|TUR}}
+| DNF
+|-
+| 
+| align=left| [[Ediney do Rosario]]
+| align=left| {{FlagUCIRoad|STP}}
+| DNF
+|-
+| 
+| align=left| [[Sam Oomen]]
+| align=left| {{FlagUCIRoad|NED}}
+| DNS
+|}
+{{col-end}}
+
+==References==
+{{reflist}}
+
+{{UCI Road World Championships&nbsp;– Men's road race}}
+{{UCI Road World Champions – Men's road race}}
+
+{{DEFAULTSORT:2025 UCI Road World Championships - Men's road race}}
+[[Category:2025 UCI Road World Championships|Men's road race]]
+[[Category:UCI Road World Championships&nbsp;– Men's road race]]
+[[Category:2025 in men's road cycling]]

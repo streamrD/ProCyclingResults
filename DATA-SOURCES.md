@@ -39,7 +39,7 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
+| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
 | Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
 | Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. |
 | Cyclingnews | The national championships index page | At most once an hour. |
@@ -94,3 +94,10 @@ how the site fetches. The review log below is updated each time.
   as the season pages, so a steady-state rebuild still makes one request to Wikipedia;
   the article itself is fetched only when it changes. The event pages it links to are
   not fetched: they do not exist before race week.
+- **2026-09-07, later.** Worlds results. From the day of each elite event we also read
+  that event's own Wikipedia page (four pages over the week). A page that does not exist
+  yet is asked for at most once every ten minutes; once it exists it joins the revision
+  query like every other page and is fetched only when it changes. A Worlds race day
+  paces the rebuild like a live stage day (once a minute in Montréal racing hours), so
+  the steady-state count in those hours is the same one revisions query per minute as
+  during a Grand Tour, plus one YouTube search per event once it has a result.

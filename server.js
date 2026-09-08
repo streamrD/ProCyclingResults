@@ -947,7 +947,8 @@ function parseAthleteDetails(cell) {
   // ("{{flagathlete}}", "{{Flagathlete}}", "{{Flag athlete}}"). The spaced spelling is
   // now the most common one on Tour de France / Tour de France Femmes pages, so a
   // name-only match silently dropped every rider on those pages.
-  const match = text.match(/\{\{\s*flag[\s_]*athlete\s*\|([\s\S]+?)\}\}/i);
+  // Championship pages use {{flagUCIRoadathlete}}, the same shape with a nation code.
+  const match = text.match(/\{\{\s*flag(?:UCIRoad)?[\s_]*athlete\s*\|([\s\S]+?)\}\}/i);
   const templateArgs = match
     ? splitWikiTemplateArgs(match[0].replace(/^\{\{/, "").replace(/\}\}$/, ""))
     : [];
@@ -1075,6 +1076,14 @@ function getRaceArticleVariants(race) {
     createRaceNameVariants(value, options).forEach(addVariant);
   }
 
+  if (isWorldChampionshipRace(race)) {
+    const eventName = String(race?.title || "").replace(/^Elite\s+/i, "").trim();
+    [WORLD_CHAMPIONSHIPS.label, "Road World Championships", "World Championships", "Worlds"].forEach((championship) => {
+      addVariant(`${championship} ${eventName}`);
+    });
+    return variants;
+  }
+
   const baseVariants = [];
   const baseSeen = new Set();
   const addBaseVariant = (value) => {
@@ -1115,6 +1124,9 @@ function getRaceArticleVariants(race) {
 }
 
 function getRaceTokens(race) {
+  if (isWorldChampionshipRace(race)) {
+    return ["championships", "worlds"];
+  }
   return [...new Set(
     createRaceNameVariants(race?.title)
       .flatMap((variant) => normalizeSearchText(variant).split(/[^a-z0-9]+/i))
@@ -1391,6 +1403,166 @@ function parseWorldChampionshipEliteEvents(rawText, championship = WORLD_CHAMPIO
         ];
       });
   });
+}
+
+// A Worlds event page ("2026 UCI Road World Championships – Men's road race") has the
+// podium in its infobox and a "Final classification" table of rank, rider, country and
+// time. Medals stand in for places 1–3 in the rank column; a time trial adds a
+// separate "Diff." column, a road race writes gaps into the time column ("+ 1' 28"",
+// "s.t."). Riders ride for nations, so there is no team.
+const WORLD_CHAMPIONSHIP_MEDAL_PLACES = { gold1: "1", silver2: "2", bronze3: "3" };
+
+function parseWorldChampionshipInfoboxPodium(rawText) {
+  const text = String(rawText || "");
+  return ["first", "second", "third"].map((key) => {
+    const line = text.match(new RegExp(`^\\|[ \\t]*${key}[ \\t]*=[ \\t]*(.+)$`, "m"))?.[1] || "";
+    const athlete = line.trim() ? parseAthleteDetails(line) : { rider: "", countryCode: "" };
+    return {
+      rider: athlete.rider,
+      countryCode: normalizeCountryCode(athlete.countryCode || getRiderCountryCode(athlete.rider)),
+    };
+  });
+}
+
+// Time-trial times carry hundredths ("43:09.34", "+ 51.89") that the shared
+// normalisers drop or reject; keep the page's own text when they cannot read it.
+function formatWorldChampionshipTime(text) {
+  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  if (/^\d+(?::\d{2}){1,2}\.\d+$/.test(cleaned)) {
+    return cleaned;
+  }
+  return normalizeStandingTime(cleaned);
+}
+
+function formatWorldChampionshipGap(text) {
+  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return "";
+  }
+  if (/^s\.?t\.?$/i.test(cleaned)) {
+    return "s.t.";
+  }
+  const secondsOnly = cleaned.match(/^\+\s*(\d{1,2})\.(\d{1,2})$/);
+  if (secondsOnly) {
+    return `+0:${secondsOnly[1].padStart(2, "0")}.${secondsOnly[2]}`;
+  }
+  return normalizeStandingGap(cleaned) || cleaned.replace(/^\+\s+/, "+");
+}
+
+function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDERS) {
+  const text = String(rawText || "");
+  const podium = parseWorldChampionshipInfoboxPodium(text).filter((entry) => entry.rider);
+  const section = findWikiSection(text, /final classification|^==\s*results?\s*==/i) || text;
+  const standings = [];
+
+  for (const tableText of extractWikiTables(section)) {
+    const grid = parseWikiTableGrid(tableText);
+    const headerRow = grid.find((row) => row.some((cell) => cell?.header));
+    if (!headerRow) {
+      continue;
+    }
+    const headerText = (cell) => cleanWikiText(stripWikiFootnoteTemplates(String(cell?.content || "").replace(/<ref[\s\S]*?(?:<\/ref>|\/>)/gi, "")));
+    const columnIndex = (pattern) => headerRow.findIndex((cell) => cell?.header && pattern.test(headerText(cell)));
+    const rankIndex = columnIndex(/^rank$/i);
+    const riderIndex = columnIndex(/^rider$/i);
+    const countryIndex = columnIndex(/^(country|nation)$/i);
+    const timeIndex = columnIndex(/^time$/i);
+    const diffIndex = columnIndex(/diff|behind|gap/i);
+    if (rankIndex === -1 || riderIndex === -1) {
+      continue;
+    }
+
+    grid
+      .filter((row) => row !== headerRow && !row.some((cell) => cell?.header))
+      .forEach((row) => {
+        const rankSource = String(row[rankIndex]?.content || "");
+        const medal = rankSource.match(/\{\{\s*(gold1|silver2|bronze3)\s*\}\}/i);
+        const place = medal
+          ? WORLD_CHAMPIONSHIP_MEDAL_PLACES[medal[1].toLowerCase()]
+          : cleanWikiText(rankSource).match(/^\d+/)?.[0] || "";
+        const rider = cleanWikiText(row[riderIndex]?.content);
+        if (!place || Number(place) > maxRiders || !rider) {
+          return;
+        }
+        const countryCode = normalizeCountryCode(
+          String(row[countryIndex]?.content || "").match(/\{\{\s*flagUCIRoad\s*\|\s*([A-Za-z]{3})/i)?.[1] || "",
+        );
+        const timeText = cleanWikiText(row[timeIndex]?.content);
+        const diffText = diffIndex >= 0 ? cleanWikiText(row[diffIndex]?.content) : "";
+        const timeIsGap = /^\+/.test(timeText) || /^s\.?t\.?$/i.test(timeText);
+        const entry = buildStandingEntry(place, rider, countryCode);
+        entry.time = timeIsGap ? "" : formatWorldChampionshipTime(timeText);
+        entry.gap = formatWorldChampionshipGap(timeIsGap ? timeText : diffText);
+        standings.push(entry);
+      });
+
+    if (standings.length > 0) {
+      break;
+    }
+  }
+
+  standings.sort((left, right) => Number(left.place) - Number(right.place));
+  return { podium, standings };
+}
+
+// Event pages are asked for from race day onward only: they do not exist before race
+// week, and a page that is still missing is not asked about again for a while. Once a
+// page exists the ordinary revision index decides when it is fetched again.
+const WORLD_CHAMPIONSHIP_MISSING_PAGE_RETRY_MS = 10 * 60 * 1000;
+const worldChampionshipMissingPages = new Map();
+
+async function loadWorldChampionshipEventPage(title, loadWikiRaw = fetchWikiRaw, now = Date.now()) {
+  const missedAt = worldChampionshipMissingPages.get(title);
+  if (missedAt && now - missedAt < WORLD_CHAMPIONSHIP_MISSING_PAGE_RETRY_MS) {
+    return "";
+  }
+  try {
+    const raw = await loadWikiRaw(title);
+    if (raw) {
+      worldChampionshipMissingPages.delete(title);
+    } else {
+      worldChampionshipMissingPages.set(title, now);
+    }
+    return raw;
+  } catch {
+    worldChampionshipMissingPages.set(title, now);
+    return "";
+  }
+}
+
+function isWorldChampionshipEventOnOrAfterRaceDay(race, todayUtc) {
+  const startUtc = toUtcDateOnly(race?.startDate);
+  return Boolean(startUtc && todayUtc && startUtc.getTime() <= todayUtc.getTime());
+}
+
+async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw, now = new Date()) {
+  const todayUtc = toUtcDateOnly(now);
+  const due = (races || []).filter(
+    (race) => isWorldChampionshipRace(race) && !race.winner && isWorldChampionshipEventOnOrAfterRaceDay(race, todayUtc),
+  );
+
+  await Promise.all(
+    due.map(async (race) => {
+      const raw = await loadWorldChampionshipEventPage(race.pageTitle, loadWikiRaw, now.getTime());
+      if (!raw) {
+        return;
+      }
+      const result = parseWorldChampionshipEventResult(raw);
+      const podium = result.podium.length > 0 ? result.podium : result.standings.slice(0, 3);
+      if (!podium[0]?.rider) {
+        return;
+      }
+      [race.winner, race.winnerCountryCode] = [podium[0].rider, podium[0].countryCode || ""];
+      [race.second, race.secondCountryCode] = [podium[1]?.rider || "", podium[1]?.countryCode || ""];
+      [race.third, race.thirdCountryCode] = [podium[2]?.rider || "", podium[2]?.countryCode || ""];
+      if (result.standings.length > 0) {
+        race.resultStandings = result.standings;
+      }
+      race.resultSource = "wikipedia-event-page";
+    }),
+  );
+
+  return races;
 }
 
 async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
@@ -3131,15 +3303,7 @@ function inferStageCountFromDates(race) {
 }
 
 function hasFreshnessSensitiveRaceData(data) {
-  if ((data?.liveStageRaces?.length || data?.europeTourLiveStageRaces?.length || 0) > 0) {
-    return true;
-  }
-
-  return [
-    ...(data?.recentResults || []),
-    ...(data?.finalizedStageRaces || []),
-    ...(data?.europeTourRecentResults || []),
-  ].some((race) => race?.finishedToday);
+  return getFreshnessSensitiveRaces(data).length > 0;
 }
 
 function getRaceTimeZone(race) {
@@ -3180,6 +3344,8 @@ function getFreshnessSensitiveRaces(data) {
     ...[...(data?.recentResults || []), ...(data?.finalizedStageRaces || []), ...(data?.europeTourRecentResults || [])].filter(
       (race) => race?.finishedToday,
     ),
+    // A Worlds event being raced today, still waiting for its result.
+    ...(data?.upcomingRaces || []).filter((race) => isWorldChampionshipRace(race) && race?.finishedToday),
   ];
 }
 
@@ -4332,7 +4498,8 @@ function normalizeStandingGap(value) {
     return `+${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
 
-  const match = cleaned.match(/\+?\s*(\d+(?::\d{2}){1,2})/);
+  // A time trial's gaps carry hundredths ("+ 1:04.73"); keep them when present.
+  const match = cleaned.match(/\+?\s*(\d+(?::\d{2}){1,2}(?:\.\d{1,2})?)/);
   return match ? `+${match[1]}` : "";
 }
 
@@ -4359,7 +4526,7 @@ function normalizeStandingTime(value) {
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   }
 
-  const match = cleaned.match(/\b(\d+(?::\d{2}){1,2})\b/);
+  const match = cleaned.match(/\b(\d+(?::\d{2}){1,2}(?:\.\d{1,2})?)(?![\d:])/);
   return match ? match[1] : "";
 }
 
@@ -5755,6 +5922,11 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw, op
   await Promise.all(
     races.map(async (race) => {
       const isStageRace = isMultiDayRace(race);
+      // Worlds standings come from their own parser; the event page lists nations
+      // where the shared parser expects teams.
+      if (isWorldChampionshipRace(race)) {
+        return;
+      }
 
       try {
         const officialLookup = loadOfficialStageRaceSnapshotWithinBudget(race, budgetMs);
@@ -6360,6 +6532,15 @@ function cloneRaces(races) {
   return races.map(cloneRace);
 }
 
+// On race day a Worlds event has no result until its page fills in; it keeps its
+// upcoming card (marked "Today") rather than vanishing for the afternoon.
+function isWorldChampionshipEventAwaitingResult(race, todayUtc) {
+  const startUtc = toUtcDateOnly(race?.startDate);
+  return Boolean(
+    isWorldChampionshipRace(race) && !race.winner && startUtc && todayUtc && startUtc.getTime() === todayUtc.getTime(),
+  );
+}
+
 function partitionRaceBuckets(allRaces, now = new Date()) {
   const todayUtc = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
@@ -6401,7 +6582,7 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
     .slice(0, MAX_LIVE_STAGE_RACES);
 
   const upcomingRaces = allRaces
-    .filter((race) => race.startDate && race.startDate > todayUtc)
+    .filter((race) => race.startDate && (race.startDate > todayUtc || isWorldChampionshipEventAwaitingResult(race, todayUtc)))
     .sort((left, right) => left.startDate - right.startDate);
 
   const europeTourRaces = allRaces.filter((race) => race.series === "Men's Europe Tour");
@@ -6552,7 +6733,7 @@ function dedupeRacesByPageTitle(races) {
 }
 
 function selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedStageCandidates) {
-  const worldTourSeries = ["Men's WorldTour", "Women's WorldTour"];
+  const worldTourSeries = ["Men's WorldTour", "Women's WorldTour", WORLD_CHAMPIONSHIPS.label];
 
   return worldTourSeries.flatMap((series) =>
     [...recentOneDayResults, ...finalizedStageCandidates]
@@ -6666,6 +6847,10 @@ async function buildRaceMetadata(options = {}) {
 async function buildRaceData(metadata, options = {}) {
   const startedAt = Date.now();
   const allRaces = cloneRaces(metadata?.allRaces || []);
+  const wikiRawLoader = createWikiRawLoader();
+  // Metadata is cached for an hour; the Worlds podium has to arrive on the live
+  // cadence, so it is read here, on the copy each rebuild works on.
+  await enrichWorldChampionshipResults(allRaces, wikiRawLoader);
   const {
     todayUtc,
     recentOneDayResults,
@@ -6714,7 +6899,6 @@ async function buildRaceData(metadata, options = {}) {
     ...selectedEuropeTourLiveStageRaces,
   ].filter(isMultiDayRace);
 
-  const wikiRawLoader = createWikiRawLoader();
   const recentStandingsStartedAt = Date.now();
   // Finalized stage races only render (and survive isFinalizedStageRace) once they
   // have a stage-race snapshot, so every displayed multi-day recent race must be
@@ -7535,6 +7719,10 @@ function isLikelyFinishVideo(video, race) {
     return false;
   }
 
+  if (isWorldChampionshipRace(race) && !isLikelyWorldChampionshipEventVideo(video, race)) {
+    return false;
+  }
+
   const division = getRaceDivision(race);
   if (division === "women" && !hasWomenMarker(combined)) {
     return false;
@@ -7552,6 +7740,20 @@ function isLikelyFinishVideo(video, race) {
   }
 
   return true;
+}
+
+function isLikelyWorldChampionshipEventVideo(video, race) {
+  const titleText = normalizeSearchText(video.title);
+  if (!/\bchampionships?\b|\bworlds\b/.test(titleText)) {
+    return false;
+  }
+  // The other nine events of the week are not the one on this card.
+  if (/\brelay\b|\bu23\b|\bunder ?23\b|\bjunior/.test(titleText)) {
+    return false;
+  }
+  const wantsTimeTrial = /time trial/i.test(race?.title || "");
+  const titleIsTimeTrial = /\btime trial\b|\bitt\b/.test(titleText);
+  return wantsTimeTrial === titleIsTimeTrial;
 }
 
 function scoreFinishVideo(video, race) {
@@ -8812,8 +9014,9 @@ function buildRaceCard(race) {
     ],
   );
 
+  const championshipAttribute = isWorldChampionshipRace(race) ? ` data-championship="worlds"` : "";
   return `
-    <article class="card result-card" id="${escapeHtml(createRaceAnchorId(race))}">
+    <article class="card result-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
       <div class="card-kicker">${escapeHtml(race.series)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
@@ -8831,6 +9034,7 @@ function buildLiveStageRaceCard(race) {
 // schedule table. Season-table races carry none of these and get no line.
 function buildUpcomingDetailLine(race) {
   return [
+    race.finishedToday ? "Today" : "",
     race.startTimeLocal ? `Start ${race.startTimeLocal} local` : "",
     race.distanceKm ? `${race.distanceKm} km` : "",
     race.laps ? `${race.laps} laps` : "",
@@ -9123,6 +9327,12 @@ function getCompetitionGroups(data) {
       description: "The four elite events, raced by national teams.",
       predicate: isWorldChampionshipRace,
       sortUpcoming: compareWorldChampionshipEvents,
+      sortRecent: compareWorldChampionshipEvents,
+      recentSource: "recentResults",
+      recentResultsLimit: 4,
+      recentStep: 4,
+      recentBlockTitle: "Results",
+      recentBlockDescription: "Medals and the top five as each event finishes.",
     },
   ];
 
@@ -9131,6 +9341,7 @@ function getCompetitionGroups(data) {
     liveStageRaces: (data[definition.liveSource || "liveStageRaces"] || []).filter(definition.predicate),
     recentResults: (data[definition.recentSource || "recentResults"] || [])
       .filter(definition.predicate)
+      .sort(definition.sortRecent || (() => 0))
       .slice(0, definition.recentResultsLimit || MAX_RECENT_RESULTS),
     upcomingRaces: (data[definition.upcomingSource || "upcomingRaces"] || [])
       .filter(definition.predicate)
@@ -9191,7 +9402,7 @@ function buildRecentResultsBlock(group) {
     return "";
   }
 
-  const step = WORLDTOUR_RECENT_RESULTS_STEP;
+  const step = group.recentStep || WORLDTOUR_RECENT_RESULTS_STEP;
   const gridClass = group.recentGridClass ? `grid competition-grid ${group.recentGridClass}` : "grid competition-grid";
   const slots = races
     .map(
@@ -10470,7 +10681,7 @@ function buildHtmlPage(data, view) {
         line-height: 1.5;
       }
 
-      .upcoming-card[data-championship="worlds"]::before {
+      .card[data-championship="worlds"]::before {
         background: var(--rainbow);
       }
 

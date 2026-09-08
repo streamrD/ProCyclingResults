@@ -1,0 +1,331 @@
+{{Short description|Cycling event}}
+{{Infobox cycling race report
+| name               = Women's time trial
+| image              =
+| image_caption      = 
+| image_size         =
+| series             = [[2025 UCI Road World Championships]]
+| date               = 21 September 2025
+| distance           = 31.2
+| unit               = km
+| time               = 43:09.34
+| type               = medals
+| first              = {{flagUCIRoadathlete|[[Marlen Reusser]]|SUI}}
+| second             = {{flagUCIRoadathlete|[[Anna van der Breggen]]|NED}}
+| third              = {{flagUCIRoadathlete|[[Demi Vollering]]|NED}}
+| previous           = [[2024 UCI Road World Championships&nbsp;– Women's time trial|2024]]
+| next               = [[2026 UCI Road World Championships&nbsp;– Women's time trial|2026]]
+}}
+{{2025 UCI Road World Championships}}
+
+The '''[[UCI Road World Championships&nbsp;– Women's time trial|Women's time trial]]''' of the [[2025 UCI Road World Championships]] was a cycling event that took place on 21 September 2025 in [[Kigali]], [[Rwanda]]. It was the 32nd edition of the championship, for which [[Grace Brown (cyclist)|Grace Brown]] of [[Australia]] was the defending champion, having won in [[2024 UCI Road World Championships&nbsp;– Women's time trial|2024]].<ref>{{cite web|url=https://ucikigali2025.rw/competition-program/women-elite-2/|title=Women's Elite Time Trial|accessdate=21 September 2025}}</ref><ref>{{cite news|url=https://www.cyclingnews.com/races/uci-road-world-championships-2025/elite-women-road-race/results/|title=Road World Championships: Marlen Reusser delivers in Kigali to take first elite women's time trial title|publisher=CyclingNews|first=Katy|last=Madgwick|date=21 September 2025|accessdate=21 September 2025}}</ref>
+
+==Final classification==
+{| class="wikitable"
+|-
+! scope="row" style="text-align:center;" | Rank
+| Position in the time trial
+|-
+! scope="row" style="text-align:center;" | Time
+| Time taken to complete the time trial
+|-
+! scope="row" style="text-align:center;" | Diff
+| Deficit to the winner of the time trial
+|-
+! scope="row" style="text-align:center;" | DNS
+| Denotes a rider who did not start
+|-
+! scope="row" style="text-align:center;" | DNF
+| Denotes a rider who did not finish
+|-
+! scope="row" style="text-align:center;" | DSQ
+| Denotes a rider who was disqualified from the race
+|-
+! scope="row" style="text-align:center;" | OTL
+| Denotes a rider who finished outside the time limit
+|}
+
+{| class="wikitable sortable" style="font-size:95%; text-align:center;"
+|-
+!scope="col"| Rank
+!scope="col"| Rider<ref>{{cite web |date=21 September 2025 |title=Women Elite Individual Time Trial - Final results |url=https://prod.server.tissottiming.com/file/0003180200020601FFFFFFFFFFFFFF02 |accessdate=21 September 2025 |website=Tissot Timing}}</ref>
+!scope="col"| Country
+!scope="col"| Time
+!scope="col"| {{Abbr|Diff.|Time behind race winner}}
+|-
+| {{Gold1}}
+| align=left| [[Marlen Reusser]]
+| align=left| {{FlagUCIRoad|SUI}}
+| 43:09.34
+| align=right|
+|-
+| {{Silver2}}
+| align=left| [[Anna van der Breggen]]
+| align=left| {{FlagUCIRoad|NED}}
+| 44:01.23
+| align=right| + 51.89
+|-
+| {{Bronze3}}
+| align=left| [[Demi Vollering]]
+| align=left| {{FlagUCIRoad|NED}}
+| 44:14.07
+| align=right| + 1:04.73
+|-
+| 4
+| align=left| [[Brodie Chapman]]
+| align=left| {{FlagUCIRoad|AUS}}
+| 44:30.21
+| align=right| + 1:20.87
+|-
+| 5
+| align=left| [[Katrine Aalerud]]
+| align=left| {{FlagUCIRoad|NOR}}
+| 44:33.68
+| align=right| + 1:24.33
+|-
+| 6
+| align=left| [[Antonia Niedermaier]]
+| align=left| {{FlagUCIRoad|GER}}
+| 44:38.41
+| align=right| + 1:29.07
+|-
+| 7
+| align=left| [[Juliette Labous]]
+| align=left| {{FlagUCIRoad|FRA}}
+| 44:42.33
+| align=right| + 1:32.99
+|-
+| 8
+| align=left| [[Anna Henderson (cyclist)|Anna Henderson]]
+| align=left| {{FlagUCIRoad|GBR}}
+| 44:47.06
+| align=right| + 1:37.72
+|-
+| 9
+| align=left| [[Chloé Dygert]]
+| align=left| {{FlagUCIRoad|USA}}
+| 45:34.77
+| align=right| + 2:25.43
+|-
+| 10
+| align=left| [[Mireia Benito]]
+| align=left| {{FlagUCIRoad|ESP}}
+| 45:41.39
+| align=right| + 2:32.05
+|-
+| 11
+| align=left| [[Monica Trinca Colonel]]
+| align=left| {{FlagUCIRoad|ITA}}
+| 46:11.92
+| align=right| + 3:02.58
+|-
+| 12
+| align=left| [[Sigrid Ytterhus Haugset]]
+| align=left| {{FlagUCIRoad|NOR}}
+| 46:24.60
+| align=right| + 3:15.26
+|-
+| 13
+| align=left| [[Cedrine Kerbaol]]
+| align=left| {{FlagUCIRoad|FRA}}
+| 46:30.31
+| align=right| + 3:20.97
+|-
+| 14
+| align=left| [[Katarzyna Niewiadoma]]
+| align=left| {{FlagUCIRoad|POL}}
+| 46:32.33
+| align=right| + 3:22.99
+|-
+| 15
+| align=left| [[Yuliia Biriukova]]
+| align=left| {{FlagUCIRoad|UKR}}
+| 46:32.34
+| align=right| + 3:23.00
+|-
+| 16
+| align=left| [[Urška Žigart]]
+| align=left| {{FlagUCIRoad|SLO}}
+| 46:39.95
+| align=right| + 3:30.61
+|-
+| 17
+| align=left| [[Anna Kiesenhofer]]
+| align=left| {{FlagUCIRoad|AUT}}
+| 46:58.99
+| align=right| + 3:49.65
+|-
+| 18
+| align=left| [[Zhang Hao (cyclist)|Zhang Hao]]
+| align=left| {{FlagUCIRoad|CHN}}
+| 47:23.67
+| align=right| + 4:14.33
+|-
+| 19
+| align=left| [[Ruth Edwards (cyclist)|Ruth Edwards]]
+| align=left| {{FlagUCIRoad|USA}}
+| 47:31.17
+| align=right| + 4:21.83
+|-
+| 20
+| align=left| [[Olivia Baril]]
+| align=left| {{FlagUCIRoad|CAN}}
+| 47:43.43
+| align=right| + 4:34.09
+|-
+| 21
+| align=left| {{ill|Marthe Goossens|nl||fr}}
+| align=left| {{FlagUCIRoad|BEL}}
+| 47:53.00
+| align=right| + 4:43.66
+|-
+| 22
+| align=left| [[Leung Wing Yee]]
+| align=left| {{FlagUCIRoad|HKG}}
+| 48:15.58
+| align=right| + 5:06.24
+|-
+| 23
+| align=left| [[Teniel Campbell]]
+| align=left| {{FlagUCIRoad|TTO}}
+| 48:25.09
+| align=right| + 5:15.75
+|-
+| 24
+| align=left| [[Diana Peñuela]]
+| align=left| {{FlagUCIRoad|COL}}
+| 48:30.45
+| align=right| + 5:21.11
+|-
+| 25
+| align=left| [[Nora Jenčušová]]
+| align=left| {{FlagUCIRoad|SVK}}
+| 48:32.30
+| align=right| + 5:22.96
+|-
+| 26
+| align=left| [[Soraya Paladin]]
+| align=left| {{FlagUCIRoad|ITA}}
+| 48:36.76
+| align=right| + 3:41.68
+|-
+| 27
+| align=left| [[Xaveline Nirere]]
+| align=left| {{FlagUCIRoad|RWA}}
+| 50:07.67
+| align=right| + 3:43.67
+|-
+| 28
+| align=left| [[Natalia Frolova]]
+| align=left| {{flagicon|AIN}} [[Authorised Neutral Athletes|Individual Neutral Athletes]]
+| 51:08.95
+| align=right| + 3:43.77
+|-
+| 29
+| align=left| {{ill|Lucie de Marigny-Lagesse|fr}}
+| align=left| {{FlagUCIRoad|MRI}}
+| 51:14.45
+| align=right| + 8:05.11
+|-
+| 30
+| align=left| [[Faina Potapova]]
+| align=left| {{FlagUCIRoad|KAZ}}
+| 51:28.19
+| align=right| + 8:18.85
+|-
+| 31
+| align=left| [[Yulduz Hashimi]]
+| align=left| {{FlagUCIRoad|AFG}}
+| 51:51.78
+| align=right| + 8:42.44
+|-
+| 32
+| align=left| [[Brhan Abrha]]
+| align=left| {{FlagUCIRoad|ETH}}
+| 51:55.79
+| align=right| + 8:46.45
+|-
+| 33
+| align=left| [[Serkalem Watango]]
+| align=left| {{FlagUCIRoad|ETH}}
+| 52:03.57
+| align=right| + 8:54.23
+|-
+| 34
+| align=left| [[Aurelie Halbwachs]]
+| align=left| {{FlagUCIRoad|MRI}}
+| 52:28.10
+| align=right| + 9:18.76
+|-
+| 35
+| align=left| [[Diane Ingabire]]
+| align=left| {{FlagUCIRoad|RWA}}
+| 52:57.79
+| align=right| + 9:48.45
+|-
+| 36
+| align=left| [[Akpeiil Ossim]]
+| align=left| {{FlagUCIRoad|KAZ}}
+| 53:00.22
+| align=right| + 9:50.88
+|-
+| 37
+| align=left| [[Kendra Tabu]]
+| align=left| {{FlagUCIRoad|KEN}}
+| 54:13.05
+| align=right| + 11:03.71
+|-
+| 38
+| align=left| [[Monica Kiplagat]]
+| align=left| {{FlagUCIRoad|KEN}}
+| 57:55.65
+| align=right| + 14:46.31
+|-
+| 39
+| align=left| [[Hermionne Ahouissou]]
+| align=left| {{FlagUCIRoad|BEN}}
+| 58:21.87
+| align=right| + 15:12.53
+|-
+| 40
+| align=left| [[Jamila Abdullah]]
+| align=left| {{FlagUCIRoad|TAN}}
+| 58:23.49
+| align=right| + 15:14.15
+|-
+| 41
+| align=left| [[Lobopo Kono]]
+| align=left| {{FlagUCIRoad|BOT}}
+| 1:00:28.51
+| align=right| + 17:19.17
+|-
+| 42
+| align=left| [[Namukasa Trinitah]]
+| align=left| {{FlagUCIRoad|UGA}}
+| 1:02:26.23
+| align=right| + 19:16.89
+|-
+| 43
+| align=left| [[Lolwa Al-Marri]]
+| align=left| {{FlagUCIRoad|QAT}}
+| 1:08:10.98
+| align=right| + 25:01.64
+|-
+| 44
+| align=left| [[Kholoud Al-Kuwari]]
+| align=left| {{FlagUCIRoad|QAT}}
+| 1:24:16.08
+| align=right| + 41:06.74
+|}
+
+==References==
+{{reflist}}
+
+{{UCI Road World Championships&nbsp;– Women's time trial}}
+{{UCI Road World Champions – Women's time trial}}
+
+{{DEFAULTSORT:2025 UCI Road World Championships - Women's time trial}}
+[[Category:2025 UCI Road World Championships|Women's time trial]]
+[[Category:UCI Road World Championships&nbsp;– Women's time trial]]
+[[Category:2025 in women's road cycling]]
+[[Category:Women's sport in Kigali]]

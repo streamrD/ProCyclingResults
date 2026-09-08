@@ -19,7 +19,7 @@ Active product scope:
 - Men's WorldTour
 - Women's WorldTour
 - Elite road National Championships
-- UCI Road World Championships, upcoming cards only for the four elite events (added 2026-09-07; see "Data Source Cross-Reference")
+- UCI Road World Championships, the four elite events: upcoming cards, then results with finish video and news (added 2026-09-07; see "Data Source Cross-Reference")
 
 Retired scope:
 
@@ -208,8 +208,11 @@ World Championships (added 2026-09-07):
 - `2026_UCI_Road_World_Championships` (`WORLD_CHAMPIONSHIPS.pageTitle`), read once per rebuild through the same revision index
 - `parseWorldChampionshipEliteEvents()` reads the "Schedule" section's tables with `parseWikiTableGrid` (the date and distance cells span rows) and keeps the four rows whose link target ends in "Men's/Women's road race/time trial"; under-23, junior and mixed-relay rows sit in the same tables
 - Events carry `series: "UCI Road World Championships"`, `lane` (`mens`/`womens`), `startTimeLocal`, `distanceKm`, `laps` and `locationFromSchedule: true`, which makes `enrichLocations` skip them (their event pages 404 until race week and must not be asked for every rebuild)
-- They render only as upcoming cards, in the `world-championships` competition group (men's events first, via `compareWorldChampionshipEvents`); the group renders no section once its upcoming list is empty. They are not in the season calendar (`isWorldTourRace`) and never enter recent results (no winner is ever parsed)
-- Fixture: `test/fixtures/uci-road-world-championships-2026.wikitext`
+- They render in the `world-championships` competition group: an Upcoming block and a Results block, both men's events first (`compareWorldChampionshipEvents`), all four result cards visible (`recentStep: 4`). The section disappears when both blocks are empty. They are not in the season calendar (`isWorldTourRace`)
+- Results: `enrichWorldChampionshipResults` runs at the top of `buildRaceData` (metadata is cached for an hour, results have to ride the live cadence). From an event's race day it loads the event page through `loadWorldChampionshipEventPage` (a missing page is remembered for ten minutes) and `parseWorldChampionshipEventResult` reads the infobox podium (`{{flagUCIRoadathlete}}`, now accepted by `parseAthleteDetails`) and the "Final classification" table (medal templates in the rank column, `{{FlagUCIRoad|XXX}}` country column, a road race's gaps in the time column, a time trial's in a "Diff." column with hundredths kept). Filling `winner` is what moves the event from `upcomingRaces` into `recentOneDayResults`; `enrichRecentResultStandings` skips Worlds races so the shared parser cannot overwrite the standings
+- Race day: an event with no result yet stays upcoming (`isWorldChampionshipEventAwaitingResult`), its card says "Today", and `getFreshnessSensitiveRaces` counts it so the rebuild runs on the live TTL in Montréal racing hours
+- Searches: `getRaceArticleVariants` returns championship-named variants ("UCI Road World Championships men's road race", ...) for the news queries and the finish-video query; `isLikelyWorldChampionshipEventVideo` rejects clips for the other events of the week (wrong discipline, relay, under-23, junior) and `getRaceTokens` returns ["championships", "worlds"]. A hand-picked video still goes in `RACE_FINISH_VIDEO_URLS` under the event's page title
+- Fixtures: `test/fixtures/uci-road-world-championships-2026.wikitext` (schedule), `...-2025-mens-road-race.wikitext` and `...-2025-womens-time-trial.wikitext` (results, Kigali layout). Check the 2026 event pages against the parser on the evening of 20 September
 
 National Championships:
 
