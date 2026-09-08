@@ -596,7 +596,13 @@ function foldRiderKey(name) {
 // the Vuelta's race leader he had never won or placed. Treat one spelling as the
 // other when it is the same name plus a single extra surname.
 function isRiderNameVariant(shortTokens, longTokens) {
-  if (shortTokens.length < 2 || longTokens.length !== shortTokens.length + 1 || shortTokens[0] !== longTokens[0]) {
+  if (shortTokens.length < 2 || longTokens.length !== shortTokens.length + 1) {
+    return false;
+  }
+  // The extra name sits at either end: a second surname the classification adds
+  // ("Enric Mas" / "Enric Mas Nicolau") or a first name it puts in front
+  // ("Oscar Onley" / "Edgar Oscar Onley"). Sharing only the middle is not enough.
+  if (shortTokens[0] !== longTokens[0] && shortTokens[shortTokens.length - 1] !== longTokens[longTokens.length - 1]) {
     return false;
   }
   let matched = 0;
@@ -608,8 +614,12 @@ function isRiderNameVariant(shortTokens, longTokens) {
   return matched === shortTokens.length;
 }
 
-// The folded keys that name one rider, as groups of two or more.
-function groupRiderNameVariants(keys) {
+// Two spellings are one rider when the name is the same plus a surname, and also
+// when the page links them to the same Wikipedia article — the stronger signal of
+// the two, and the only one that catches a first name the sources shorten
+// ("Kim Le Court-Pienaar" beside "Kimberley Le Court-Pienaar"). A title with a
+// digit in it is a mis-parsed link target, not a person, and never groups.
+function groupRiderNameVariants(keys, titleOf) {
   const tokens = new Map(keys.map((key) => [key, key.split(" ")]));
   const parent = new Map(keys.map((key) => [key, key]));
   const find = (key) => {
@@ -625,6 +635,27 @@ function groupRiderNameVariants(keys) {
     }
     return root;
   };
+
+  const sharedTitles = new Map();
+  keys.forEach((key) => {
+    const title = String((titleOf && titleOf(key)) || "").trim();
+    if (!title || /\d/.test(title) || !isDirectRiderLinkCandidate(title)) {
+      return;
+    }
+    if (!sharedTitles.has(title)) {
+      sharedTitles.set(title, []);
+    }
+    sharedTitles.get(title).push(key);
+  });
+  sharedTitles.forEach((members) => {
+    members.slice(1).forEach((key) => {
+      const root = find(key);
+      const first = find(members[0]);
+      if (root !== first) {
+        parent.set(root, first);
+      }
+    });
+  });
 
   for (let left = 0; left < keys.length; left += 1) {
     for (let right = left + 1; right < keys.length; right += 1) {
@@ -659,7 +690,7 @@ function groupRiderNameVariants(keys) {
 // by either key finds it. Each key keeps its own name so a card opened from a row
 // this pass did not reach still reads the way that row does.
 function mergeRiderNameVariants(index) {
-  groupRiderNameVariants([...index.keys()]).forEach((members) => {
+  groupRiderNameVariants([...index.keys()], (key) => (index.get(key) || {}).wikiTitle).forEach((members) => {
     const entries = members.map((key) => index.get(key));
     const totals = {
       wins: entries.reduce((sum, entry) => sum + entry.wins, 0),
@@ -682,6 +713,16 @@ function mergeRiderNameVariants(index) {
 // ("Tadej Pogacar", "Anna Van Der Breggen") where Wikipedia has both right. Of
 // the spellings the page holds under one key, prefer the article title, then the
 // one that kept its accents, then the one the page prints most often.
+// The article title the page links most often for one rider, ties going to the
+// first one met so a rebuild does not shuffle it.
+function pickMostLinkedTitle(counts) {
+  const titles = [...(counts || new Map()).entries()];
+  if (!titles.length) {
+    return "";
+  }
+  return titles.sort(([, leftCount], [, rightCount]) => rightCount - leftCount)[0][0];
+}
+
 function pickRiderSpelling(counts, wikiTitle) {
   const spellings = [...(counts || new Map()).entries()];
   if (!spellings.length) {
@@ -710,7 +751,7 @@ function buildCanonicalRiderNames(riderSeasons) {
       canonical.set(key, entry.name);
     }
   });
-  groupRiderNameVariants([...index.keys()]).forEach((members) => {
+  groupRiderNameVariants([...index.keys()], (key) => (index.get(key) || {}).wikiTitle).forEach((members) => {
     const wikiTitle = (index.get(members[0]) || {}).wikiTitle || "";
     const linked = wikiTitle ? members.find((key) => key === foldRiderKey(wikiTitle)) : undefined;
     const shortest = members
@@ -766,6 +807,7 @@ function applyCanonicalRiderNames(riderSeasons, stageRaces) {
 function buildRiderSeasonIndex(allRaces, stageRaces) {
   const index = new Map();
   const spellings = new Map();
+  const titles = new Map();
   const touch = (name, countryCode, pageTitle) => {
     const rider = String(name || "").replace(/\s+/g, " ").trim();
     if (!rider || !isDirectRiderLinkCandidate(rider)) {
@@ -775,6 +817,7 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     if (!index.has(key)) {
       index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0, stagePodiums: 0, wikiTitle: "" });
       spellings.set(key, new Map());
+      titles.set(key, new Map());
     }
     const counts = spellings.get(key);
     counts.set(rider, (counts.get(rider) || 0) + 1);
@@ -782,8 +825,10 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     if (!entry.countryCode && countryCode) {
       entry.countryCode = normalizeCountryCode(countryCode);
     }
-    if (!entry.wikiTitle && pageTitle) {
-      entry.wikiTitle = String(pageTitle).trim();
+    const title = String(pageTitle || "").trim();
+    if (title) {
+      const counts = titles.get(key);
+      counts.set(title, (counts.get(title) || 0) + 1);
     }
     return entry;
   };
@@ -833,9 +878,12 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     });
   });
 
-  // Settle each key's spelling before the merge, so a variant group chooses
-  // between names the page has already agreed on.
+  // Settle each key's article title and spelling before the merge, so a variant
+  // group chooses between names the page has already agreed on. Wikipedia links a
+  // rider under more than one title (a rename, a redirect), and the first one the
+  // build happened to meet is not the one to trust: take the one linked most.
   index.forEach((entry, key) => {
+    entry.wikiTitle = pickMostLinkedTitle(titles.get(key));
     entry.name = pickRiderSpelling(spellings.get(key), entry.wikiTitle) || entry.name;
   });
   mergeRiderNameVariants(index);
@@ -848,6 +896,22 @@ function buildRiderSeasonsScript(riderSeasons) {
   return `<script type="application/json" id="rider-seasons">${json}</script>`;
 }
 
+// One entry per folded key; a key claimed by two different addresses is left out
+// rather than guessed at.
+const FOLDED_RIDER_PROFILE_URLS = (() => {
+  const byKey = new Map();
+  const conflicted = new Set();
+  Object.entries(RIDER_PROFILE_URLS).forEach(([name, url]) => {
+    const key = foldRiderKey(name);
+    if (byKey.has(key) && byKey.get(key) !== url) {
+      conflicted.add(key);
+    }
+    byKey.set(key, url);
+  });
+  conflicted.forEach((key) => byKey.delete(key));
+  return byKey;
+})();
+
 function getRiderProfileUrl(name) {
   const rider = String(name || "").replace(/\s+/g, " ").trim();
   if (!rider) {
@@ -855,6 +919,13 @@ function getRiderProfileUrl(name) {
   }
   if (RIDER_PROFILE_URLS[rider]) {
     return RIDER_PROFILE_URLS[rider];
+  }
+  // The map is keyed by the name as rendered, and what the page renders is settled
+  // at build time, so an accent, a hyphen or a capital moving would otherwise
+  // orphan a hand-checked address silently. Match on the folded key too.
+  const folded = FOLDED_RIDER_PROFILE_URLS.get(foldRiderKey(rider));
+  if (folded) {
+    return folded;
   }
   if (isDirectRiderLinkCandidate(rider)) {
     return `https://www.procyclingstats.com/rider/${buildRiderSlug(rider)}`;

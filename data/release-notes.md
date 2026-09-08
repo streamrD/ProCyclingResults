@@ -6,6 +6,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 - **One spelling of a rider's name.** A card takes its classification from the race organiser and its stage results from Wikipedia, and the two disagree — "Primoz Roglic" in one table, "Primož Roglič" in the next. Every table now prints the Wikipedia spelling, accents and all.
 
+- **Riders the sources call by another name.** Four more were being counted as two people, because the extra name comes at the front ("Edgar Oscar Onley" for Oscar Onley, "James Matthew Brennan" for Matthew Brennan) or because a source shortens a first name ("Kim" and "Kimberley" Le Court-Pienaar). Where two spellings link to the same Wikipedia article they are now one rider, whatever they are called. Katarzyna Niewiadoma-Phinney also keeps her full name across the page again.
+
 ## 7 September 2026
 
 - **A rider card on hover.** On a computer, rest the pointer on a rider's name and a small card opens: flag, name, their wins and podiums this season as this site holds them (one-day races, overall classifications and stages counted together), and links to their ProCyclingStats page and exact Wikipedia article. Escape or moving away closes it. Phones are unchanged.

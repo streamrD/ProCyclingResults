@@ -1801,6 +1801,13 @@ test("rider names link to ProCyclingStats, search by default and direct when ver
   assert.equal(getRiderProfileUrl("Tadej Pogačar"), "https://www.procyclingstats.com/rider/tadej-pogacar");
   // A corrected address wins over the rule.
   assert.equal(getRiderProfileUrl("Juan Ayuso"), "https://www.procyclingstats.com/rider/juan-ayuso-pesquera");
+  // A hand-checked address survives the spelling being settled a different way:
+  // the map is keyed by the rendered name, so it is matched on the folded key too.
+  assert.equal(getRiderProfileUrl("Katarzyna Niewiadoma-Phinney"), "https://www.procyclingstats.com/rider/katarzyna-niewiadoma");
+  assert.equal(getRiderProfileUrl("Katarzyna Niewiadoma Phinney"), "https://www.procyclingstats.com/rider/katarzyna-niewiadoma");
+  assert.equal(getRiderProfileUrl("KATARZYNA NIEWIADOMA-PHINNEY"), "https://www.procyclingstats.com/rider/katarzyna-niewiadoma");
+  // A name the map has never heard of still builds its address from the slug.
+  assert.equal(getRiderProfileUrl("Enric Mas"), "https://www.procyclingstats.com/rider/enric-mas");
   // A team in a team time trial, or a lone surname, has no address to guess.
   // A dash in a team name makes PCS search return nothing; a space finds the team.
   assert.equal(getRiderProfileUrl("Visma–Lease a Bike"), "https://www.procyclingstats.com/search.php?term=Visma%20Lease%20a%20Bike");
@@ -1913,6 +1920,66 @@ test("a rider spelled with an extra surname in the GC keeps one tally", () => {
   assert.equal("magnus cort nielsen" in index, false);
   assert.equal(index["oscar onley"].stagePodiums, 1);
   assert.equal(index["tadej pogacar"].stageWins, 1);
+});
+
+test("a rider the sources link to one article is one rider whatever they call them", () => {
+  const { buildRiderSeasonIndex, buildCanonicalRiderNames } = loadParserExports();
+
+  const index = buildRiderSeasonIndex(
+    [],
+    [
+      {
+        pageTitle: "2026 Tour de Suisse",
+        stageRace: {
+          stages: [
+            {
+              standings: [
+                // Wikipedia links her twice under the name she races with now and
+                // once under the old one; the classification shortens her first name.
+                { place: "1", rider: "Kimberley Le Court-Pienaar", countryCode: "MRI", pageTitle: "Kimberley Le Court" },
+                { place: "2", rider: "Oscar Onley", countryCode: "GBR", pageTitle: "Oscar Onley" },
+                { place: "3", rider: "Ganna Filippo", countryCode: "ITA", pageTitle: "2026 Tour de Suisse – Stage 3" },
+              ],
+            },
+            {
+              standings: [
+                { place: "1", rider: "Kim Le Court-Pienaar", countryCode: "MRI", pageTitle: "Kimberley Le Court" },
+                { place: "2", rider: "Filippo Ganna", countryCode: "ITA", pageTitle: "2026 Tour de Suisse – Stage 3" },
+              ],
+            },
+          ],
+          generalClassification: {
+            standings: [
+              { place: "1", rider: "Kim Le Court-Pienaar", countryCode: "MRI", pageTitle: "Kim Le Court" },
+              // The provider puts a first name in front of the one she races under.
+              { place: "2", rider: "Edgar Oscar Onley", countryCode: "GBR" },
+            ],
+          },
+        },
+      },
+    ],
+  );
+  const canonical = buildCanonicalRiderNames(index);
+
+  // A shared article title joins two spellings no name rule could: "Kim" and
+  // "Kimberley" share no first name, so only the link tells us it is one rider.
+  assert.equal(canonical.get("kimberley le court pienaar"), "Kim Le Court-Pienaar");
+  assert.equal(canonical.get("kim le court pienaar"), "Kim Le Court-Pienaar");
+  assert.equal(index["kimberley le court pienaar"].stageWins, index["kim le court pienaar"].stageWins);
+  assert.equal(index["kim le court pienaar"].stageWins, 2);
+  // Wikipedia linked "Kimberley Le Court" twice and "Kim Le Court" once, and the
+  // one it links most is the one to trust, not the first the build happened to meet.
+  assert.equal(index["kim le court pienaar"].wikiTitle, "Kimberley Le Court");
+
+  // An extra first name in front joins the same way an extra surname behind does.
+  assert.equal(canonical.get("edgar oscar onley"), "Oscar Onley");
+  assert.equal(index["edgar oscar onley"].stagePodiums, 1);
+
+  // A mis-parsed link target with a digit in it is not a person and joins nobody,
+  // so two riders who happen to share one stay apart.
+  assert.equal(canonical.get("filippo ganna"), "Filippo Ganna");
+  assert.equal(canonical.get("ganna filippo"), "Ganna Filippo");
+  assert.notEqual(index["filippo ganna"], index["ganna filippo"]);
 });
 
 test("one spelling of a rider's name reaches every table on the card", () => {
