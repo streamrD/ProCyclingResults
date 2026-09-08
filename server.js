@@ -765,11 +765,14 @@ function buildCanonicalRiderNames(riderSeasons) {
   return canonical;
 }
 
-// Print that one spelling everywhere the race itself named a rider: the stage
-// tables, the general classification and its leader, the jersey holders and the
-// route's winner column. The season rows are left alone — Wikipedia wrote those,
-// and they are the spelling this pass settles on.
-function applyCanonicalRiderNames(riderSeasons, stageRaces) {
+// Print that one spelling everywhere a rider is named: the stage tables, the
+// general classification and its leader, the jersey holders, the route's winner
+// column, and the season rows. Season rows were held back at first on the theory
+// that Wikipedia wrote them and they were already the settled spelling; they are
+// not — its season tables carry "Anna Van Der Breggen" and "Niamh Fisher-black"
+// over stage tables that have them right, and leaving them out left three riders
+// printed two ways on one page.
+function applyCanonicalRiderNames(riderSeasons, stageRaces, seasonRaces) {
   const canonical = buildCanonicalRiderNames(riderSeasons);
   if (!canonical.size) {
     return 0;
@@ -795,6 +798,12 @@ function applyCanonicalRiderNames(riderSeasons, stageRaces) {
     rename(stageRace?.generalClassification, "leader");
     (stageRace?.generalClassification?.standings || []).forEach((standing) => rename(standing, "rider"));
     (stageRace?.classificationLeaders?.entries || []).forEach((entry) => rename(entry, "rider"));
+  });
+
+  (seasonRaces || []).forEach((race) => {
+    rename(race, "winner");
+    rename(race, "second");
+    rename(race, "third");
   });
 
   return renamed;
@@ -7480,7 +7489,7 @@ async function buildRaceData(metadata, options = {}) {
   // general classification and its stage table calling the same rider two names.
   const riderStageRaces = [...liveStageRaces, ...finalizedStageRaces, ...recentResults];
   const riderSeasons = buildRiderSeasonIndex(allRaces, riderStageRaces);
-  applyCanonicalRiderNames(riderSeasons, riderStageRaces);
+  applyCanonicalRiderNames(riderSeasons, riderStageRaces, [...allRaces, ...riderStageRaces]);
 
   return {
     fetchedAt: new Date().toISOString(),

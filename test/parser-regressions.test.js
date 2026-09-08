@@ -2005,6 +2005,9 @@ test("one spelling of a rider's name reaches every table on the card", () => {
     },
   };
   const races = [vuelta, { pageTitle: "2026 Tour de France", stageRace: { stages: [{ standings: [{ place: "1", rider: "Tobias Halland Johannessen", countryCode: "NOR" }] }] } }];
+  // Wikipedia's own season tables carry a mangled spelling too, so they are settled
+  // with the rest rather than trusted as they are.
+  const seasonRow = { winner: "Tadej Pogacar", second: "Enric Mas Nicolau", third: "Oscar Onley" };
   const index = buildRiderSeasonIndex([], races);
 
   // The article title decides, so the longer spelling wins where that is the name
@@ -2017,7 +2020,10 @@ test("one spelling of a rider's name reaches every table on the card", () => {
   // A rider the page spells one way is in the map reading the way he already does.
   assert.equal(canonical.get("oscar onley"), "Oscar Onley");
 
-  assert.equal(applyCanonicalRiderNames(index, races), 5);
+  assert.equal(applyCanonicalRiderNames(index, races, [seasonRow]), 7);
+  assert.equal(seasonRow.winner, "Tadej Pogačar");
+  assert.equal(seasonRow.second, "Enric Mas");
+  assert.equal(seasonRow.third, "Oscar Onley");
   const { stageRace } = vuelta;
   assert.equal(stageRace.generalClassification.leader, "Enric Mas");
   assert.equal(stageRace.generalClassification.standings[0].rider, "Enric Mas");
@@ -2036,7 +2042,7 @@ test("one spelling of a rider's name reaches every table on the card", () => {
   // rename still finds the tally.
   assert.equal(foldRiderKey(stageRace.generalClassification.leader), "enric mas");
   assert.equal(index["enric mas nicolau"].stageWins, 1);
-  assert.equal(applyCanonicalRiderNames(index, races), 0);
+  assert.equal(applyCanonicalRiderNames(index, races, [seasonRow]), 0);
 });
 
 test("the rider's Wikipedia article title travels from the wikitext to the rider index", () => {
