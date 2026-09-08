@@ -929,27 +929,50 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   spelling of a rider's name reaches every table on the card", both in
   `test/parser-regressions.test.js`, with `buildCanonicalRiderNames` and
   `applyCanonicalRiderNames` exported through the harness.
-- **Left open: season rows still carry their own spelling.** The pass skips
-  `race.winner/second/third`, so a rider can still appear under two names on the page
-  — just not inside one card. On 2026-09-08 that is Katarzyna Niewiadoma-Phinney in a
-  Women's WorldTour podium against Katarzyna Niewiadoma in the stage tables (a split
-  this pass created: before it, both said Niewiadoma-Phinney), and Kimberley Le
-  Court-Pienaar against Kim Le Court-Pienaar (pre-existing, and out of reach of a rule
-  keyed on a matching first name). Both keep the right tally and the right PCS address;
-  only the printed name differs. Fixing it is either extending the rewrite to season
-  rows, or preferring the racing name over the article title — a product call, not a
-  parser one.
-- **Verification trap worth remembering:** a sweep that groups rendered names by
+- **Verification trap that hid the rest.** A sweep grouping rendered names by
   `foldRiderKey` cannot see this class of split, because the two spellings fold to
   different keys — which is the whole reason `mergeRiderNameVariants` exists. The
-  "0 riders spelled two ways" check run on the day was blind to exactly the case it
-  was meant to prove. Group by canonical name, not by folded key.
-- **Coupling to watch:** `RIDER_PROFILE_URLS` is keyed by the name as rendered, so a
-  rename can silently orphan an override. Today's renamed "Enric Mas Nicolau" entry is
-  now unreachable, harmlessly (the settled "Enric Mas" slugs to the right address on
-  its own). Whenever the settling rule changes, re-check that map. PCS addresses for
-  names that changed cannot be verified from the server at all — Cloudflare blocks it;
-  use `scripts/pcs-rider-links.browser.js` from a PCS tab.
+  first "0 riders spelled two ways" check was blind to exactly the case it was meant
+  to prove. **Group rendered names by PCS address** (`getRiderProfileUrl`), which is
+  one per rider however a name folds. Doing that found three more defects:
+  - `wikiTitle` took the **first** article title it met, not the one the page links
+    most. Wikipedia links a rider under more than one title after a rename, so
+    Niewiadoma-Phinney settled on a title carried by two rows over one carried by
+    sixteen. `pickMostLinkedTitle` now decides.
+  - Riders are also joined when **two spellings link the same article**, the only
+    signal that catches a shortened first name ("Kim" beside "Kimberley"
+    Le Court-Pienaar) — no name-shape rule can. A title with a digit in it is a
+    mis-parsed link target and joins nobody.
+  - The extra name can sit at the **front**, not only behind: "Edgar Oscar Onley",
+    "James Matthew Brennan". `isRiderNameVariant` accepts a shared first *or* last
+    token. Four more riders had been splitting their season two ways.
+- **Season rows are settled too, and the reasoning for holding them back was wrong.**
+  The first pass skipped `race.winner/second/third` on the theory that Wikipedia wrote
+  them and they were already the settled spelling. Its season tables carry "Anna Van
+  Der Breggen" and "Niamh Fisher-black" over stage tables that have both right, so
+  three riders were printed two ways with the rename reaching half the page.
+- **`applyLateOfficialSnapshots` has to re-settle what it lands.** It replaces
+  `race.stageRace` and `race.resultStandings` wholesale *after* the page is built, so
+  a provider spelling overwrote a settled one and survived two rounds of fixes. The
+  index is now built before the late lookups are wired up and handed to them; each
+  snapshot re-settles the race it lands on. `stageRace.latestStage` carries its own
+  copy of the last stage's standings and is walked as well. **Anything that mutates a
+  race after `buildRaceData` returns must go through `applyCanonicalRiderNames`, or it
+  will undo this.**
+- **Verified:** 288 riders on production, 0 rendered under more than one name, checked
+  twice with the late snapshots landed.
+- **Coupling handled:** `getRiderProfileUrl` matches `RIDER_PROFILE_URLS` on the folded
+  key as well as the exact name, so settling a spelling cannot silently orphan a
+  hand-checked address; a folded key claimed by two different addresses is dropped
+  rather than guessed at. PCS addresses still cannot be checked from the server —
+  Cloudflare blocks it; use `scripts/pcs-rider-links.browser.js` from a PCS tab.
+- **Left open:** nothing on the page, but the rule that decides *which* name wins is
+  worth knowing: the most-linked Wikipedia article title, then the spelling that kept
+  its accents, then the one the page prints most. That is why Niewiadoma-Phinney and
+  Gee-West keep their longer names while Enric Mas and Magnus Cort keep their shorter
+  ones. If the site should prefer the name a rider races under over the one Wikipedia
+  files them under, that is a one-line change in `buildCanonicalRiderNames` and a
+  product decision, not a parser one.
 
 ### Added 2026-09-07, later (cancelled stages)
 
@@ -1596,9 +1619,19 @@ hover card says?" — and three pushes. The answer was no, and the detail is und
   already holds changes shape.
 - **Verify by asking the payload the question the bug asked.** Not "did the SHA
   deploy" but "how many riders does production now spell two ways?" — a sweep over
-  every name-bearing field, before and after, printing the count. It came back 0 of
-  280, and the same script had printed the six splits that justified the second half
-  of the work.
+  every name-bearing field, before and after, printing the count.
+- **…but check that the sweep can see the bug.** The first sweep grouped names by
+  `foldRiderKey` and reported 0 of 280 riders split. It was structurally incapable of
+  finding this class of split, because the two spellings fold to different keys —
+  the whole reason the merge exists. Three more defects and two more deploys came out
+  of re-running it grouped by PCS address instead. A verification that shares an
+  assumption with the code it checks is not a verification. Ask what the check would
+  do if the bug were still there, and if the answer is "pass", change the check.
+- **The last one only showed up on production.** `applyLateOfficialSnapshots` mutates
+  races after `buildRaceData` returns, so two riders kept a provider's spelling
+  through two rounds of fixes that were correct in every local test. When a pass has
+  to settle data, find everything that writes that data afterwards — grep for
+  assignments to the field, not just for the builders.
 
 ## Suggested First Checks For A New Agent
 
