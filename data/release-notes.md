@@ -2,9 +2,9 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 8 September 2026
 
-- **The rider card no longer loses a rider to their second surname.** The Vuelta's general classification calls the race leader "Enric Mas Nicolau" where its stage results call him "Enric Mas", and the card treated the two as different people: hovering the leader said he had no win or podium this season, when the site itself had him winning stage 9. Both spellings now share one tally. The same fix reaches Isaac del Toro, Magnus Cort, Paula Blasi, Tobias Halland Johannessen, Derek Gee and Katarzyna Niewiadoma.
+- **The rider card counts the race leader again.** The Vuelta's classification calls him "Enric Mas Nicolau" and its stage results call him "Enric Mas", so the card read them as two riders and said the leader had no win or podium this season. Seven riders were affected; Isaac del Toro's card was missing six wins.
 
-- **One spelling of a rider's name per card.** A live race card took its general classification from the organiser's own site and its stage results from Wikipedia, and the two disagreed: the same rider was "Enric Mas Nicolau" in one table and "Enric Mas" in the next, "Primoz Roglic" in one and "Primož Roglič" in the next, "Anna Van Der Breggen" and "Anna van der Breggen". Every table now prints the name Wikipedia gives, accents and all.
+- **One spelling of a rider's name.** A card takes its classification from the race organiser and its stage results from Wikipedia, and the two disagree — "Primoz Roglic" in one table, "Primož Roglič" in the next. Every table now prints the Wikipedia spelling, accents and all.
 
 ## 7 September 2026
 
