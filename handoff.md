@@ -862,6 +862,7 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   Pogačar". The payload carries it as `riderSeasons`; `buildRiderSeasonsScript`
   embeds it as `<script type="application/json" id="rider-seasons">` before the
   client script, with `<` escaped. Each rider link carries `data-rider-key`.
+- **Tally shown:** "N wins" is `wins + stageWins` (one-day, overall and stage wins together, as PCS counts), "N podiums" is race podiums including the race wins. The index keeps the two win counts apart in case that changes.
 - **Client:** `bindRiderCards` (pointer devices only, `(hover: hover)`): 250 ms
   hover or focus opens a fixed-positioned `.rider-card` on the body (the result
   cards clip overflow), flipped above the name when it would not fit below; mouse-out

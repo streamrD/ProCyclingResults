@@ -14315,11 +14315,11 @@ function buildHtmlPage(data, view) {
           const name = entry ? entry.name : link.textContent.trim();
           const flagNode = link.previousElementSibling;
           const flag = flagNode && flagNode.classList.contains("country-flag") ? flagNode.textContent : "";
-          // "Race wins" are one-day races and overall classifications from the season
-          // tables; stage wins are counted apart, so a reader is not left adding them up
-          // or doubting the first number. Podiums include the wins.
+          // "Wins" counts every win the site holds, one-day races, overall
+          // classifications and stages alike, the way ProCyclingStats counts them.
+          // Podiums are race podiums (one-day and overall) and include the race wins.
           const tally = entry
-            ? tallyPart(entry.wins, "race win", "race wins") + tallyPart(entry.stageWins, "stage win", "stage wins") + tallyPart(entry.podiums, "podium", "podiums")
+            ? tallyPart(entry.wins + entry.stageWins, "win", "wins") + tallyPart(entry.podiums, "podium", "podiums")
             : "";
           const wikipedia = entry && entry.wikiTitle
             ? "https://en.wikipedia.org/wiki/" + encodeURIComponent(entry.wikiTitle.replace(/ /g, "_"))
