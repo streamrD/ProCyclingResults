@@ -87,6 +87,7 @@ function loadParserExports() {
       getFreshnessSensitiveRaces,
       buildRiderMarkup,
       getRiderProfileUrl,
+      buildRiderSlug,
       buildNationalChampionshipPodium,
       cleanWikiText,
       buildRaceArticleQueries,
@@ -1771,19 +1772,36 @@ test("Worlds searches name the championship and reject the week's other events",
 test("rider names link to ProCyclingStats, search by default and direct when verified", () => {
   const { buildRiderMarkup, getRiderProfileUrl, buildPodiumMarkup, buildNationalChampionshipPodium } = loadParserExports();
 
-  assert.equal(getRiderProfileUrl("Juan Ayuso"), "https://www.procyclingstats.com/search.php?term=Juan%20Ayuso");
+  const { buildRiderSlug } = loadParserExports();
+  // The slug rule, checked against PCS from a browser: accents folded, every
+  // non-letter a hyphen (so O'Connor is "o-connor"), Nordic and Polish letters mapped.
+  assert.equal(buildRiderSlug("Tadej Pogačar"), "tadej-pogacar");
+  assert.equal(buildRiderSlug("Ben O'Connor"), "ben-o-connor");
+  assert.equal(buildRiderSlug("Jørgen Nordhagen"), "jorgen-nordhagen");
+  assert.equal(buildRiderSlug("Felix Großschartner"), "felix-grossschartner");
+  assert.equal(buildRiderSlug("Michał Kwiatkowski"), "michal-kwiatkowski");
+  assert.equal(buildRiderSlug("Mathieu van der Poel"), "mathieu-van-der-poel");
+  assert.equal(buildRiderSlug("Toms Skujiņš"), "toms-skujins");
+
+  assert.equal(getRiderProfileUrl("Wout van Aert"), "https://www.procyclingstats.com/rider/wout-van-aert");
   assert.equal(getRiderProfileUrl("Tadej Pogačar"), "https://www.procyclingstats.com/rider/tadej-pogacar");
+  // A corrected address wins over the rule.
+  assert.equal(getRiderProfileUrl("Juan Ayuso"), "https://www.procyclingstats.com/rider/juan-ayuso-pesquera");
+  // A team in a team time trial, or a lone surname, has no address to guess.
+  assert.equal(getRiderProfileUrl("Visma–Lease a Bike"), "https://www.procyclingstats.com/search.php?term=Visma%E2%80%93Lease%20a%20Bike");
+  assert.equal(getRiderProfileUrl("UAE Team Emirates XRG"), "https://www.procyclingstats.com/search.php?term=UAE%20Team%20Emirates%20XRG");
+  assert.equal(getRiderProfileUrl("Bredewold"), "https://www.procyclingstats.com/search.php?term=Bredewold");
   assert.equal(getRiderProfileUrl(""), "");
 
   const markup = buildRiderMarkup({ place: "2", rider: "Juan Ayuso", countryCode: "ESP", gap: "+01:28" });
-  assert.match(markup, /<a class="rider-text rider-link" href="https:\/\/www\.procyclingstats\.com\/search\.php\?term=Juan%20Ayuso" target="_blank" rel="noreferrer" title="Juan Ayuso on ProCyclingStats">Juan Ayuso<\/a>/);
+  assert.match(markup, /<a class="rider-text rider-link" href="https:\/\/www\.procyclingstats\.com\/rider\/juan-ayuso-pesquera" target="_blank" rel="noreferrer" title="Juan Ayuso on ProCyclingStats">Juan Ayuso<\/a>/);
   assert.match(markup, /🇪🇸/);
   assert.match(markup, /standing-gap">\+01:28/);
   // Names are escaped inside the link as they were in the span.
   assert.match(buildRiderMarkup({ rider: "Ben O'Connor" }), /Ben O&#39;Connor<\/a>/);
   // A podium row and a national championship row carry the same link.
   assert.match(buildPodiumMarkup([{ place: "1", rider: "Tadej Pogačar", countryCode: "SLO" }]), /href="https:\/\/www\.procyclingstats\.com\/rider\/tadej-pogacar"/);
-  assert.match(buildNationalChampionshipPodium({ podium: [{ place: "1", rider: "Artem Shmidt" }] }), /rider-link" href="https:\/\/www\.procyclingstats\.com\/search\.php\?term=Artem%20Shmidt"/);
+  assert.match(buildNationalChampionshipPodium({ podium: [{ place: "1", rider: "Artem Shmidt" }] }), /rider-link" href="https:\/\/www\.procyclingstats\.com\/rider\/artem-shmidt"/);
 });
 
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {

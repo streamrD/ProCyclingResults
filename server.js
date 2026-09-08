@@ -478,23 +478,126 @@ const COUNTRY_NAME_ALPHA2 = {
 };
 
 // Every rider name links to the rider's ProCyclingStats page, which opens on the
-// current season's results and ranks them per season. PCS addresses are name slugs,
-// but not reliably: "juan-ayuso" is not found (his page carries a second surname).
-// The search page for the name always lands and lists the rider, so that is the
-// default; a rider whose direct address has been checked in a browser goes here.
-// We link to PCS and never fetch from it (it blocks server requests anyway).
+// current season's results and ranks them per season. PCS addresses are the name
+// as a slug (accents folded, "ben-o-connor"), which is right for most riders but not
+// all: some carry a second surname there ("juan-ayuso-pesquera"), some a spelling of
+// their own. The server cannot check (PCS blocks it), so every name on the site was
+// checked from a browser on 2026-09-07 with scripts/pcs-rider-links.browser.js and
+// the misses are corrected below. A name the slug rule cannot serve (a lone surname,
+// a team in a team time trial) goes to the PCS search page instead, which always
+// lands. We link to PCS and never fetch from it.
 const RIDER_PROFILE_URLS = {
-  "Tadej Pogačar": "https://www.procyclingstats.com/rider/tadej-pogacar",
-  "Toms Skujiņš": "https://www.procyclingstats.com/rider/toms-skujins",
-  "Magdeleine Vallieres": "https://www.procyclingstats.com/rider/magdeleine-vallieres",
+  // Direct addresses that differ from the slug rule (checked 2026-09-07).
+  "Abbiel Fleming": "https://www.procyclingstats.com/rider/abbiel-flemming",
+  "Abner González": "https://www.procyclingstats.com/rider/abner-gonzalez-rivera",
+  "Alexey Lutsenko": "https://www.procyclingstats.com/rider/aleksey-lutsenko",
+  "Alonso Gamero": "https://www.procyclingstats.com/rider/alonso-miguel-gamero-zuniga",
+  "Anaxay Milakong": "https://www.procyclingstats.com/rider/ananxay-milakong",
+  "Aviaras Mikutis": "https://www.procyclingstats.com/rider/aivaras-mikutis",
+  "Brandon Rivera": "https://www.procyclingstats.com/rider/brandon-smith-rivera-vargas",
+  "Catalina Sotos": "https://www.procyclingstats.com/rider/catalina-soto-valenzuela",
+  "Derek Gee-West": "https://www.procyclingstats.com/rider/derek-gee",
+  "Diana Peñuela": "https://www.procyclingstats.com/rider/diana-penuela-martinez",
+  "Diego Rodriguez": "https://www.procyclingstats.com/rider/diego-leonel-rodriguez",
+  "Edgar Oscar Onley": "https://www.procyclingstats.com/rider/oscar-onley",
+  "Enric Mas Nicolau": "https://www.procyclingstats.com/rider/enric-mas",
+  "Feritcan Samli": "https://www.procyclingstats.com/rider/ferit-samli",
+  "Filimon Debay": "https://www.procyclingstats.com/rider/filimon-zerabruk-debay",
+  "Fred Wright": "https://www.procyclingstats.com/rider/alfred-wright",
+  "Freddy Gonzales": "https://www.procyclingstats.com/rider/freddy-gonzales-soto",
+  "Hector Quintana": "https://www.procyclingstats.com/rider/hector-exequiel-quintana-vidal",
+  "Heidi Antikainen": "https://www.procyclingstats.com/rider/heidi-antikainen1",
+  "Hugo Forsell": "https://www.procyclingstats.com/rider/hugo-forssell",
+  "Igor Arrieta": "https://www.procyclingstats.com/rider/igor-arrieta-lizarraga",
+  "Isaac Del Toro Romero": "https://www.procyclingstats.com/rider/isaac-del-toro",
+  "Iván Sosa": "https://www.procyclingstats.com/rider/ivan-ramiro-sosa",
+  "Juan Ayuso": "https://www.procyclingstats.com/rider/juan-ayuso-pesquera",
+  "Katarzyna Niewiadoma Phinney": "https://www.procyclingstats.com/rider/katarzyna-niewiadoma",
+  "Katarzyna Niewiadoma-Phinney": "https://www.procyclingstats.com/rider/katarzyna-niewiadoma",
+  "Kevin Navas": "https://www.procyclingstats.com/rider/kevin-navas-paredes",
+  "Kimberley Le Court-Pienaar": "https://www.procyclingstats.com/rider/kim-le-court-pienaar",
+  "Larry Warbasse": "https://www.procyclingstats.com/rider/lawrence-warbasse",
+  "Laura Rojas": "https://www.procyclingstats.com/rider/laura-daniela-rojas-capera",
+  "Maggie Coles-Lyster": "https://www.procyclingstats.com/rider/maggie-coleslyster",
+  "Magnus Cort": "https://www.procyclingstats.com/rider/magnus-cort-nielsen",
+  "Marie Schreibers": "https://www.procyclingstats.com/rider/marie-schreiber",
+  "Mattéo Vercher": "https://www.procyclingstats.com/rider/matheo-vercher",
+  "Mattias Skjelmose": "https://www.procyclingstats.com/rider/mattias-skjelmose-jensen",
+  "Michael Valgren": "https://www.procyclingstats.com/rider/michael-valgren-andersen",
+  "Mohammed Almutaiwei": "https://www.procyclingstats.com/rider/mohammad-almutaiwei",
+  "Nicolás Tivani": "https://www.procyclingstats.com/rider/german-nicolas-tivani-perez",
+  "Pablo Castrillo": "https://www.procyclingstats.com/rider/pablo-castrillo-zapater",
+  "Paige Onweller": "https://www.procyclingstats.com/rider/paige-boldt",
+  "Pau Miquel": "https://www.procyclingstats.com/rider/pau-miquel-delgado",
+  "Paula Blasi Cairol": "https://www.procyclingstats.com/rider/paula-blasi",
+  "Reyhan Yakisir": "https://www.procyclingstats.com/rider/reyhan-yakisir1",
+  "Safia Al Sayegh": "https://www.procyclingstats.com/rider/safia-alsayegh",
+  "Santiago Buitrago": "https://www.procyclingstats.com/rider/santiago-buitrago-sanchez",
+  "Sara Torrico": "https://www.procyclingstats.com/rider/sara-nicole-torrico-ortiz",
+  "Stef de Bod": "https://www.procyclingstats.com/rider/stefan-de-bod",
+  "Tobias Johannessen": "https://www.procyclingstats.com/rider/tobias-halland-johannessen",
+  "Urko Berrade": "https://www.procyclingstats.com/rider/urko-berrade-fernandez",
+  "Yevrenly Fedorov": "https://www.procyclingstats.com/rider/yevgeniy-fedorov",
+  "Zsombor Takacs": "https://www.procyclingstats.com/rider/zsombor-tamas-takacs",
+  // Names PCS search could not place (small federations, source oddities, teams):
+  // the search page rather than a "Page not found".
+  "Anri Greeff": "https://www.procyclingstats.com/search.php?term=Anri%20Greeff",
+  "Ashleigh Moolman Pasio": "https://www.procyclingstats.com/search.php?term=Ashleigh%20Moolman%20Pasio",
+  "Ayustina Delia Priatna": "https://www.procyclingstats.com/search.php?term=Ayustina%20Delia%20Priatna",
+  "Betelhem Daniel Denta": "https://www.procyclingstats.com/search.php?term=Betelhem%20Daniel%20Denta",
+  "Brandon Ulises Rodríguez": "https://www.procyclingstats.com/search.php?term=Brandon%20Ulises%20Rodr%C3%ADguez",
+  "Christopher Jahir Diaz": "https://www.procyclingstats.com/search.php?term=Christopher%20Jahir%20Diaz",
+  "Decathlon CMA CGM": "https://www.procyclingstats.com/search.php?term=Decathlon%20CMA%20CGM",
+  "Ebtissam Zayed Ahmed Mohammed": "https://www.procyclingstats.com/search.php?term=Ebtissam%20Zayed%20Ahmed%20Mohammed",
+  "Gloriana Maria Quesada": "https://www.procyclingstats.com/search.php?term=Gloriana%20Maria%20Quesada",
+  "Guillermo Thomas Silva": "https://www.procyclingstats.com/search.php?term=Guillermo%20Thomas%20Silva",
+  "Jasmin Gabriela Soto": "https://www.procyclingstats.com/search.php?term=Jasmin%20Gabriela%20Soto",
+  "Kahsay Tsige Kiros": "https://www.procyclingstats.com/search.php?term=Kahsay%20Tsige%20Kiros",
+  "Liv AlUla Jayco": "https://www.procyclingstats.com/search.php?term=Liv%20AlUla%20Jayco",
+  "Luka Ivan Tomic": "https://www.procyclingstats.com/search.php?term=Luka%20Ivan%20Tomic",
+  "Negasi Haylu Abreha": "https://www.procyclingstats.com/search.php?term=Negasi%20Haylu%20Abreha",
+  "Netcompany INEOS": "https://www.procyclingstats.com/search.php?term=Netcompany%20INEOS",
+  "Nicholas Vinokourov": "https://www.procyclingstats.com/search.php?term=Nicholas%20Vinokourov",
+  "Sergio Geovani Chumil": "https://www.procyclingstats.com/search.php?term=Sergio%20Geovani%20Chumil",
+  "Wangai Evan Kimani": "https://www.procyclingstats.com/search.php?term=Wangai%20Evan%20Kimani",
+  "Wellyda Regisleyn Dos Santos Rodriguez": "https://www.procyclingstats.com/search.php?term=Wellyda%20Regisleyn%20Dos%20Santos%20Rodriguez",
+  "Yendry Dixiana Quesada": "https://www.procyclingstats.com/search.php?term=Yendry%20Dixiana%20Quesada",
+  "Yulia Biriuikova": "https://www.procyclingstats.com/search.php?term=Yulia%20Biriuikova",
 };
+
+function buildRiderSlug(name) {
+  return String(name || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ø/g, "o").replace(/Ø/g, "O").replace(/æ/g, "ae").replace(/Æ/g, "Ae").replace(/ß/g, "ss")
+    .replace(/ł/g, "l").replace(/Ł/g, "L").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/ð/g, "d").replace(/Ð/g, "D")
+    .replace(/þ/g, "th").replace(/Þ/g, "Th").replace(/ı/g, "i").replace(/œ/g, "oe").replace(/Œ/g, "Oe")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Team names reach the rider slot in a team time trial; a lone surname is a source
+// that gave only that. Neither has a rider address to guess.
+function isDirectRiderLinkCandidate(name) {
+  return (
+    /\s/.test(name) &&
+    !/–|—|\bteam\b|\bcycling\b|\bracing\b|\binsurance\b|\bunited\b|\bstage cancelled\b|\bineos\b|\bjayco\b|\bdecathlon\b|\balula\b|\bsoudal\b|\bbora\b|\bvisma\b|\bastana\b|\bemirates\b|\blidl\b|\bmovistar\b|\bcofidis\b|\bgroupama\b|\bfdj\b|\bbahrain\b|\bpicnic\b|\bpostnl\b|\bintermarch|\bwanty\b|\btudor\b|\balpecin\b|\bdeceuninck\b|\blotto\b|\bisrael\b|\bcanyon\b|\bsram\b|\bworx\b|\bfenix\b|\bjumbo\b|\buno-x\b|\bark[eé]a\b|\bq36/i.test(name)
+  );
+}
 
 function getRiderProfileUrl(name) {
   const rider = String(name || "").replace(/\s+/g, " ").trim();
   if (!rider) {
     return "";
   }
-  return RIDER_PROFILE_URLS[rider] || `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(rider)}`;
+  if (RIDER_PROFILE_URLS[rider]) {
+    return RIDER_PROFILE_URLS[rider];
+  }
+  if (isDirectRiderLinkCandidate(rider)) {
+    return `https://www.procyclingstats.com/rider/${buildRiderSlug(rider)}`;
+  }
+  return `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(rider)}`;
 }
 
 const RACE_FINISH_VIDEO_URLS = {

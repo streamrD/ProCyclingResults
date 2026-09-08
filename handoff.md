@@ -857,12 +857,19 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   `buildRiderMarkup` (podiums, stage winners, GC rows, jersey holders) and by the
   national championship podium. Direction A ("Quiet": same ink, dotted underline) was
   chosen from three comps: https://claude.ai/code/artifact/d1323357-44d7-47cf-af26-2bc18bf45ac3.
-- **Why the search page and not a slug.** PCS addresses are name slugs, but some
-  riders carry a second surname there (`/rider/juan-ayuso` is "Page not found") and
-  PCS blocks our server (Cloudflare 403), so a slug cannot be verified from code. The
-  search page for the name always lands and lists the rider; when two riders share a
-  name it lists both with birth date and team. A direct address checked in a browser
-  goes in `RIDER_PROFILE_URLS`. Phase two (a "season so far" line built from our own
+- **Direct addresses, checked from a browser.** PCS addresses are name slugs
+  (`buildRiderSlug`: accents folded, every non-letter a hyphen, so "ben-o-connor"),
+  right for about five riders in six. The rest carry a second surname there
+  ("juan-ayuso-pesquera") or a spelling of their own, and PCS blocks our server
+  (Cloudflare 403), so nothing can be verified from code. On 2026-09-07 every name on
+  the site (517) was checked from the user's Chrome with
+  `scripts/pcs-rider-links.browser.js` (paste into the console on any PCS page, call
+  `checkRiderLinks(names)`); 86 names missed or landed on a differently-titled page; 51 got a corrected direct address in `RIDER_PROFILE_URLS`, 22 that PCS search could not place (small-federation champions, source oddities, three team names) are mapped to the search page, and the rest were the same rider under a longer title. A rider new
+  to the site gets the slug guess. A miss shows PCS's own "Page not found", so when a
+  reader reports one, add the address to the map. Team names (team time trials) and
+  lone surnames go to the PCS search page (`isDirectRiderLinkCandidate`). To list
+  today's names: walk `/api/races` and `/api/homepage-data` for every `rider`,
+  `winner`, `second`, `third`, `champion` and `podium[]` string. Phase two (a "season so far" line built from our own
   cards, plus a Wikipedia link from the wikitext's rider link, which `cleanWikiText`
   currently discards) was discussed and not started.
 
