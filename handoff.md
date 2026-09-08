@@ -183,6 +183,7 @@ Major areas (anchored to symbols rather than line numbers, which drift on every 
 - Static snapshot hydration: `getStaticStageRaceSnapshot`
 - Location enrichment: `enrichLocations`, `extractLeadLocation`
 - Race bucketing and aggregation pipeline: `partitionRaceBuckets`, `buildRaceData`
+- Rider season index and name settling: `foldRiderKey`, `buildRiderSeasonIndex`, `groupRiderNameVariants`, `mergeRiderNameVariants`, `pickRiderSpelling`, `buildCanonicalRiderNames`, `applyCanonicalRiderNames`
 - Metadata and data cache loaders: `loadRaceMetadata`, `loadRaceData`, `refreshRaceDataInBackground`
 - API/debug payload builders: `buildRaceDataDebugPayload`, `buildHomepageDataPayload`
 - Race cards, standings, and rendering: `buildRaceCard`, `buildStageRaceCard`
@@ -881,6 +882,54 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   a Wikipedia-sourced row.
 - **Not built:** the race list under the tally (the "full" comp).
 
+### Added 2026-09-08 (one spelling per rider)
+
+- **The problem the card exposed.** The Vuelta's general classification comes from
+  the organiser's rankings provider and its stage tables from Wikipedia, and the two
+  name a rider differently. `foldRiderKey` folds accents but not surnames, so
+  "Enric Mas Nicolau" (GC) and "Enric Mas" (stage results) were two entries in
+  `riderSeasons`. The GC row's `data-rider-key` pointed at the empty one, and the
+  hover card told the race leader he had no win or podium this season while the same
+  page had him winning stage 9. Seven riders were split that way in the 2026-09-08
+  payload; the worst, Isaac del Toro, was hiding 6 wins and 11 podiums.
+- **`mergeRiderNameVariants`** joins keys that are the same first name plus exactly
+  one extra surname, matched as a subsequence, so `enric mas` ⊂ `enric mas nicolau`
+  and `tobias johannessen` ⊂ `tobias halland johannessen` both catch. Grouping is
+  union-find (`groupRiderNameVariants`) so a three-spelling chain lands in one group.
+  The merged tally is written back under **every** spelling, which keeps the client
+  lookup a plain key hit and means a page cached before the fix still resolves. The
+  rule needs at least two tokens and a matching first name, so "Juan García" and
+  "Juan" never join.
+- **`pickRiderSpelling` + `applyCanonicalRiderNames`** settle what the page prints.
+  `buildRiderSeasonIndex` now counts every spelling it meets per key and picks one:
+  the Wikipedia article title, then the spelling that kept its accents, then the one
+  the page prints most. `applyCanonicalRiderNames` runs in `buildRaceData` before
+  anything renders and rewrites the rows the race itself named — stage standings and
+  `stage.winner`, `generalClassification.standings` and `.leader`,
+  `classificationLeaders.entries`, `route[].winner`, `resultStandings`. Season rows
+  are deliberately untouched: Wikipedia wrote them and they are the spelling this
+  settles on. 74 rows changed on the day it shipped, leaving 0 riders of 280 spelled
+  two ways.
+- **What the article-title rule decides.** It cuts both ways and that is the point:
+  Wikipedia keeps "Tobias Halland Johannessen" and "Derek Gee-West" (the longer
+  names) and keeps "Enric Mas", "Isaac del Toro", "Magnus Cort", "Paula Blasi" and
+  "Katarzyna Niewiadoma" (the shorter ones). A "prefer the shortest" heuristic would
+  have got Gee-West and Johannessen wrong. Note that Niewiadoma races as
+  Niewiadoma-Phinney; the article title we hold wins over the racing name, which is a
+  choice, not a fact. A disambiguated title ("Ben Healy (cyclist)") matches no row and
+  falls through to the next rule.
+- **Also settled by the same pass:** six riders split by accent or casing alone, where
+  the provider flattens what Wikipedia keeps — Tadej Pogacar, Primoz Roglic, Anna Van
+  Der Breggen, Niamh Fisher-black, Kim Le Court Pienaar. Folding made those one entry
+  in the index already; it never made them one name on the page.
+- **Left alone on purpose:** teams in a team time trial row and a route table's
+  "Stage cancelled" cell are not riders, never enter the index, and so are never
+  renamed. Both are asserted in the tests.
+- Tests: "a rider spelled with an extra surname in the GC keeps one tally" and "one
+  spelling of a rider's name reaches every table on the card", both in
+  `test/parser-regressions.test.js`, with `buildCanonicalRiderNames` and
+  `applyCanonicalRiderNames` exported through the harness.
+
 ### Added 2026-09-07, later (cancelled stages)
 
 - **A cancelled stage in the route table** ("Stage cancelled{{efn|...}}" in the winner
@@ -1478,11 +1527,57 @@ Cross-Reference"; this section is about how the work went.
   Wikipedia "Tadej Pogačar". Anything keyed by rider name must fold accents
   (`foldRiderKey`), or a rider's season splits in two. The rider index does; the finish
   video map and `RIDER_PROFILE_URLS` are keyed by the name as rendered, on purpose.
+  (Half the rule, as 2026-09-08 found out: folding accents does not fold a second
+  surname, and folding fixes lookup but never what the page prints.)
 - **Verification loop, unchanged and worth repeating:** commit, `git pull --rebase`,
   push, poll `/api/build-info` for the SHA, wait for the page past warm-up, then grep
   the live HTML or JSON for the exact thing that changed. Every push today went through
   it; the one time a check script looked for the wrong string, a direct `curl | grep`
   settled it.
+
+## Process Lessons From The 2026-09-08 Session
+
+One question — "can you confirm our Vuelta leader really has no wins or podiums, as the
+hover card says?" — and three pushes. The answer was no, and the detail is under
+"Open Threads › Added 2026-09-08" above. This section is about how the work went.
+
+- **Answer a "can you confirm" by going to the payload, not the code.** Reading
+  `buildRiderSeasonIndex` would have shown a correct-looking function. Curling
+  `/api/homepage-data` for the GC leader's name, then pulling the `rider-seasons`
+  JSON out of the live HTML and looking him up, showed two entries for one rider in
+  about four minutes. Production first, again; that is now three sessions running.
+- **The reported symptom is one instance, not the shape.** The first sweep looked for
+  index entries with a zero tally, because a zero was what the user saw — five riders.
+  The real rule was "two keys, one rider", and re-running the search that way found
+  seven: Niewiadoma and Gee-West had results on both sides, so each card showed a real
+  but partial count. An undercount nobody would ever report is the same bug, and it
+  only surfaced because the second search asked the general question.
+- **Fix the lookup and the display separately, and say so.** Merging the keys made the
+  tally right while the card still read "Enric Mas Nicolau" over a stage table saying
+  "Enric Mas". Flagging that as a display question left over, in one line, got a
+  one-word go-ahead. Shipping it silently inside the first fix would have widened a
+  narrow, verifiable change into one that touched every rendered name.
+- **But do not ship half a normalization.** Once "settle the spelling" was the task,
+  stopping at surnames would have left the same Vuelta card calling third place
+  "Primoz Roglic" in the GC and "Primož Roglič" in the stage table — the identical
+  defect from the identical cause, one row apart. Measuring first (six more riders
+  split by accent or casing, listed before writing any code) is what made that call
+  cheap rather than speculative.
+- **A canonical name needs an authority, not a heuristic.** "Prefer the shortest
+  spelling" is the obvious rule and it is wrong for Derek Gee-West and Tobias Halland
+  Johannessen; "prefer the longest" is wrong for Enric Mas and Magnus Cort. The
+  Wikipedia article title is the only thing in the payload with a claim to be right,
+  and it happens to be where the rest of the site's names come from. When two
+  heuristics disagree in both directions, neither is the rule — find the source.
+- **Keep the old key answering.** The merged tally is published under every spelling
+  rather than collapsed to one, so a browser holding a page rendered before the deploy
+  still finds the rider it asks for. Cheap insurance whenever a key that a client
+  already holds changes shape.
+- **Verify by asking the payload the question the bug asked.** Not "did the SHA
+  deploy" but "how many riders does production now spell two ways?" — a sweep over
+  every name-bearing field, before and after, printing the count. It came back 0 of
+  280, and the same script had printed the six splits that justified the second half
+  of the work.
 
 ## Suggested First Checks For A New Agent
 
