@@ -608,11 +608,8 @@ function isRiderNameVariant(shortTokens, longTokens) {
   return matched === shortTokens.length;
 }
 
-// One tally per rider, published under every spelling the page uses, so a lookup
-// by either key finds it. Each key keeps its own name so the card's heading still
-// reads the way the row the reader hovered does.
-function mergeRiderNameVariants(index) {
-  const keys = [...index.keys()];
+// The folded keys that name one rider, as groups of two or more.
+function groupRiderNameVariants(keys) {
   const tokens = new Map(keys.map((key) => [key, key.split(" ")]));
   const parent = new Map(keys.map((key) => [key, key]));
   const find = (key) => {
@@ -655,10 +652,14 @@ function mergeRiderNameVariants(index) {
     groups.get(root).push(key);
   });
 
-  groups.forEach((members) => {
-    if (members.length < 2) {
-      return;
-    }
+  return [...groups.values()].filter((members) => members.length > 1);
+}
+
+// One tally per rider, published under every spelling the page uses, so a lookup
+// by either key finds it. Each key keeps its own name so a card opened from a row
+// this pass did not reach still reads the way that row does.
+function mergeRiderNameVariants(index) {
+  groupRiderNameVariants([...index.keys()]).forEach((members) => {
     const entries = members.map((key) => index.get(key));
     const totals = {
       wins: entries.reduce((sum, entry) => sum + entry.wins, 0),
@@ -677,12 +678,94 @@ function mergeRiderNameVariants(index) {
   return index;
 }
 
+// Providers strip a rider's accents and mis-case the particles in their name
+// ("Tadej Pogacar", "Anna Van Der Breggen") where Wikipedia has both right. Of
+// the spellings the page holds under one key, prefer the article title, then the
+// one that kept its accents, then the one the page prints most often.
+function pickRiderSpelling(counts, wikiTitle) {
+  const spellings = [...(counts || new Map()).entries()];
+  if (!spellings.length) {
+    return "";
+  }
+  const accents = (name) => [...name].filter((character) => character.charCodeAt(0) > 127).length;
+  return spellings.sort(
+    ([leftName, leftCount], [rightName, rightCount]) =>
+      Number(rightName === wikiTitle) - Number(leftName === wikiTitle) ||
+      accents(rightName) - accents(leftName) ||
+      rightCount - leftCount,
+  )[0][0];
+}
+
+// One spelling per rider for the page to print. Providers and Wikipedia disagree
+// — the Vuelta's general classification said "Enric Mas Nicolau" over a stage
+// table that said "Enric Mas", in the same card — so pick the spelling Wikipedia
+// linked, which is where the rest of the site's names come from, and fall back to
+// the shortest when the article title is a disambiguated one like
+// "Ben Healy (cyclist)" that no row actually spells.
+function buildCanonicalRiderNames(riderSeasons) {
+  const index = riderSeasons instanceof Map ? riderSeasons : new Map(Object.entries(riderSeasons || {}));
+  const canonical = new Map();
+  index.forEach((entry, key) => {
+    if (entry?.name) {
+      canonical.set(key, entry.name);
+    }
+  });
+  groupRiderNameVariants([...index.keys()]).forEach((members) => {
+    const wikiTitle = (index.get(members[0]) || {}).wikiTitle || "";
+    const linked = wikiTitle ? members.find((key) => key === foldRiderKey(wikiTitle)) : undefined;
+    const shortest = members
+      .slice()
+      .sort((left, right) => left.split(" ").length - right.split(" ").length || left.length - right.length)[0];
+    const name = (index.get(linked || shortest) || {}).name || "";
+    if (name) {
+      members.forEach((key) => canonical.set(key, name));
+    }
+  });
+  return canonical;
+}
+
+// Print that one spelling everywhere the race itself named a rider: the stage
+// tables, the general classification and its leader, the jersey holders and the
+// route's winner column. The season rows are left alone — Wikipedia wrote those,
+// and they are the spelling this pass settles on.
+function applyCanonicalRiderNames(riderSeasons, stageRaces) {
+  const canonical = buildCanonicalRiderNames(riderSeasons);
+  if (!canonical.size) {
+    return 0;
+  }
+  let renamed = 0;
+  const rename = (holder, field) => {
+    const name = holder && typeof holder[field] === "string" ? canonical.get(foldRiderKey(holder[field])) : "";
+    if (name && name !== holder[field]) {
+      holder[field] = name;
+      renamed += 1;
+    }
+  };
+
+  (stageRaces || []).forEach((race) => {
+    (race?.resultStandings || []).forEach((standing) => rename(standing, "rider"));
+    const stageRace = race?.stageRace;
+    (stageRace?.stages || []).forEach((stage) => {
+      rename(stage, "winner");
+      (stage?.standings || []).forEach((standing) => rename(standing, "rider"));
+    });
+    (stageRace?.route || []).forEach((stage) => rename(stage, "winner"));
+    (stageRace?.overallResult || []).forEach((standing) => rename(standing, "rider"));
+    rename(stageRace?.generalClassification, "leader");
+    (stageRace?.generalClassification?.standings || []).forEach((standing) => rename(standing, "rider"));
+    (stageRace?.classificationLeaders?.entries || []).forEach((entry) => rename(entry, "rider"));
+  });
+
+  return renamed;
+}
+
 // What the site itself knows about each rider this season: podiums from the season
 // tables (every race, so complete for the year) and stage wins from the stage
 // histories on the page (only the races whose history the page holds). The card
 // says "on this site" for that reason. Nothing is fetched for it.
 function buildRiderSeasonIndex(allRaces, stageRaces) {
   const index = new Map();
+  const spellings = new Map();
   const touch = (name, countryCode, pageTitle) => {
     const rider = String(name || "").replace(/\s+/g, " ").trim();
     if (!rider || !isDirectRiderLinkCandidate(rider)) {
@@ -691,7 +774,10 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     const key = foldRiderKey(rider);
     if (!index.has(key)) {
       index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0, stagePodiums: 0, wikiTitle: "" });
+      spellings.set(key, new Map());
     }
+    const counts = spellings.get(key);
+    counts.set(rider, (counts.get(rider) || 0) + 1);
     const entry = index.get(key);
     if (!entry.countryCode && countryCode) {
       entry.countryCode = normalizeCountryCode(countryCode);
@@ -747,6 +833,11 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     });
   });
 
+  // Settle each key's spelling before the merge, so a variant group chooses
+  // between names the page has already agreed on.
+  index.forEach((entry, key) => {
+    entry.name = pickRiderSpelling(spellings.get(key), entry.wikiTitle) || entry.name;
+  });
   mergeRiderNameVariants(index);
 
   return Object.fromEntries([...index.entries()].sort(([left], [right]) => left.localeCompare(right)));
@@ -7314,6 +7405,12 @@ async function buildRaceData(metadata, options = {}) {
   // still in flight rather than re-requested.
   applyLateOfficialSnapshots(lateOfficialLookups);
 
+  // Settle a rider's spelling before anything renders, so a card cannot show its
+  // general classification and its stage table calling the same rider two names.
+  const riderStageRaces = [...liveStageRaces, ...finalizedStageRaces, ...recentResults];
+  const riderSeasons = buildRiderSeasonIndex(allRaces, riderStageRaces);
+  applyCanonicalRiderNames(riderSeasons, riderStageRaces);
+
   return {
     fetchedAt: new Date().toISOString(),
     metadataFetchedAt: metadata?.fetchedAt || "",
@@ -7326,7 +7423,7 @@ async function buildRaceData(metadata, options = {}) {
     europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
     nationalChampionships,
     seasonCalendar: buildSeasonCalendar(allRaces.filter(isWorldTourRace), todayUtc),
-    riderSeasons: buildRiderSeasonIndex(allRaces, [...liveStageRaces, ...finalizedStageRaces, ...recentResults]),
+    riderSeasons,
     buildTimings: {
       totalMs: Date.now() - startedAt,
       recentStandingsMs,

@@ -87,6 +87,8 @@ function loadParserExports() {
       getFreshnessSensitiveRaces,
       buildRiderSeasonIndex,
       buildRiderSeasonsScript,
+      buildCanonicalRiderNames,
+      applyCanonicalRiderNames,
       foldRiderKey,
       extractRiderPageTitle,
       buildStandingEntry,
@@ -1911,6 +1913,63 @@ test("a rider spelled with an extra surname in the GC keeps one tally", () => {
   assert.equal("magnus cort nielsen" in index, false);
   assert.equal(index["oscar onley"].stagePodiums, 1);
   assert.equal(index["tadej pogacar"].stageWins, 1);
+});
+
+test("one spelling of a rider's name reaches every table on the card", () => {
+  const { buildRiderSeasonIndex, buildCanonicalRiderNames, applyCanonicalRiderNames, foldRiderKey } = loadParserExports();
+
+  const vuelta = {
+    pageTitle: "2026 Vuelta a España",
+    stageRace: {
+      stages: [
+        { label: "Stage 9", winner: "Enric Mas", standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP", pageTitle: "Enric Mas" }, { place: "2", rider: "Oscar Onley", countryCode: "GBR" }, { place: "3", rider: "Tadej Pogačar", countryCode: "SLO", pageTitle: "Tadej Pogačar" }] },
+      ],
+      route: [{ number: 3, winner: "Stage cancelled", cancelled: true }, { number: 9, winner: "Enric Mas" }],
+      generalClassification: {
+        leader: "Enric Mas Nicolau",
+        standings: [
+          { place: "1", rider: "Enric Mas Nicolau", countryCode: "ESP" },
+          { place: "2", rider: "Tobias Johannessen", countryCode: "NOR", pageTitle: "Tobias Halland Johannessen" },
+          // The official provider strips the accents that Wikipedia keeps.
+          { place: "3", rider: "Tadej Pogacar", countryCode: "SLO" },
+        ],
+      },
+      classificationLeaders: { entries: [{ key: "general", rider: "Enric Mas Nicolau", countryCode: "ESP" }, { key: "team", rider: "Decathlon CMA CGM" }] },
+    },
+  };
+  const races = [vuelta, { pageTitle: "2026 Tour de France", stageRace: { stages: [{ standings: [{ place: "1", rider: "Tobias Halland Johannessen", countryCode: "NOR" }] }] } }];
+  const index = buildRiderSeasonIndex([], races);
+
+  // The article title decides, so the longer spelling wins where that is the name
+  // Wikipedia carries and loses where it is not.
+  const canonical = buildCanonicalRiderNames(index);
+  assert.equal(canonical.get("enric mas nicolau"), "Enric Mas");
+  assert.equal(canonical.get("enric mas"), "Enric Mas");
+  assert.equal(canonical.get("tobias johannessen"), "Tobias Halland Johannessen");
+  assert.equal(canonical.get("tadej pogacar"), "Tadej Pogačar");
+  // A rider the page spells one way is in the map reading the way he already does.
+  assert.equal(canonical.get("oscar onley"), "Oscar Onley");
+
+  assert.equal(applyCanonicalRiderNames(index, races), 5);
+  const { stageRace } = vuelta;
+  assert.equal(stageRace.generalClassification.leader, "Enric Mas");
+  assert.equal(stageRace.generalClassification.standings[0].rider, "Enric Mas");
+  assert.equal(stageRace.generalClassification.standings[1].rider, "Tobias Halland Johannessen");
+  assert.equal(stageRace.classificationLeaders.entries[0].rider, "Enric Mas");
+  assert.equal(stageRace.generalClassification.standings[2].rider, "Tadej Pogačar");
+  // Rows that already read the settled way, a team, and a cancelled stage's winner
+  // cell are all left as they are.
+  assert.equal(stageRace.stages[0].winner, "Enric Mas");
+  assert.equal(stageRace.stages[0].standings[1].rider, "Oscar Onley");
+  assert.equal(stageRace.classificationLeaders.entries[1].rider, "Decathlon CMA CGM");
+  assert.equal(stageRace.route[0].winner, "Stage cancelled");
+  assert.equal(stageRace.route[1].winner, "Enric Mas");
+
+  // Both keys still answer, so a card opened from a page rendered before the
+  // rename still finds the tally.
+  assert.equal(foldRiderKey(stageRace.generalClassification.leader), "enric mas");
+  assert.equal(index["enric mas nicolau"].stageWins, 1);
+  assert.equal(applyCanonicalRiderNames(index, races), 0);
 });
 
 test("the rider's Wikipedia article title travels from the wikitext to the rider index", () => {

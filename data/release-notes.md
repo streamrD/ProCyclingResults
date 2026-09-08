@@ -4,6 +4,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 - **The rider card no longer loses a rider to their second surname.** The Vuelta's general classification calls the race leader "Enric Mas Nicolau" where its stage results call him "Enric Mas", and the card treated the two as different people: hovering the leader said he had no win or podium this season, when the site itself had him winning stage 9. Both spellings now share one tally. The same fix reaches Isaac del Toro, Magnus Cort, Paula Blasi, Tobias Halland Johannessen, Derek Gee and Katarzyna Niewiadoma.
 
+- **One spelling of a rider's name per card.** A live race card took its general classification from the organiser's own site and its stage results from Wikipedia, and the two disagreed: the same rider was "Enric Mas Nicolau" in one table and "Enric Mas" in the next, "Primoz Roglic" in one and "Primož Roglič" in the next, "Anna Van Der Breggen" and "Anna van der Breggen". Every table now prints the name Wikipedia gives, accents and all.
+
 ## 7 September 2026
 
 - **A rider card on hover.** On a computer, rest the pointer on a rider's name and a small card opens: flag, name, their wins and podiums this season as this site holds them (one-day races, overall classifications and stages counted together), and links to their ProCyclingStats page and exact Wikipedia article. Escape or moving away closes it. Phones are unchanged.
