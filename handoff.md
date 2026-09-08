@@ -851,6 +851,27 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   above; the scope line in `AGENTS.md`; two entries in `data/release-notes.md`; two
   review-log lines in `DATA-SOURCES.md`.
 
+### Added 2026-09-07, later (rider hover card)
+
+- **Phase two of rider links, compact form** (chosen from comps:
+  https://claude.ai/code/artifact/78d3c7d0-757b-48e8-b1e9-883c6da2ad51). `buildRiderSeasonIndex`
+  runs in `buildRaceData` over `allRaces` (season-table podiums, complete for the
+  year, Worlds included) and the stage histories of the races in the payload (stage
+  wins, so only what the page holds), keyed on `foldRiderKey` (accent-folded,
+  lower-case) because the ASO provider writes "Tadej Pogacar" and Wikipedia "Tadej
+  Pogačar". The payload carries it as `riderSeasons`; `buildRiderSeasonsScript`
+  embeds it as `<script type="application/json" id="rider-seasons">` before the
+  client script, with `<` escaped. Each rider link carries `data-rider-key`.
+- **Client:** `bindRiderCards` (pointer devices only, `(hover: hover)`): 250 ms
+  hover or focus opens a fixed-positioned `.rider-card` on the body (the result
+  cards clip overflow), flipped above the name when it would not fit below; mouse-out
+  from link and card, Escape, scroll and resize close it. The card's PCS link is the
+  name's own href; Wikipedia is the go-to-title search for the name. Rider names with
+  no entry get "No WorldTour podium on this site this season." The client script must
+  stay free of `${` (smoke test), hence the string concatenation.
+- **Not built:** the race list under the tally (the "full" comp), and the precise
+  Wikipedia link from the wikitext's rider link target.
+
 ### Added 2026-09-07, later (cancelled stages)
 
 - **A cancelled stage in the route table** ("Stage cancelled{{efn|...}}" in the winner

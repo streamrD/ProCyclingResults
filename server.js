@@ -586,6 +586,75 @@ function isDirectRiderLinkCandidate(name) {
   );
 }
 
+function foldRiderKey(name) {
+  return buildRiderSlug(name).replace(/-/g, " ");
+}
+
+// What the site itself knows about each rider this season: podiums from the season
+// tables (every race, so complete for the year) and stage wins from the stage
+// histories on the page (only the races whose history the page holds). The card
+// says "on this site" for that reason. Nothing is fetched for it.
+function buildRiderSeasonIndex(allRaces, stageRaces) {
+  const index = new Map();
+  const touch = (name, countryCode) => {
+    const rider = String(name || "").replace(/\s+/g, " ").trim();
+    if (!rider || !isDirectRiderLinkCandidate(rider)) {
+      return null;
+    }
+    const key = foldRiderKey(rider);
+    if (!index.has(key)) {
+      index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0 });
+    }
+    const entry = index.get(key);
+    if (!entry.countryCode && countryCode) {
+      entry.countryCode = normalizeCountryCode(countryCode);
+    }
+    return entry;
+  };
+
+  (allRaces || []).forEach((race) => {
+    if (!race?.winner) {
+      return;
+    }
+    [
+      [race.winner, race.winnerCountryCode, true],
+      [race.second, race.secondCountryCode, false],
+      [race.third, race.thirdCountryCode, false],
+    ].forEach(([name, code, isWin]) => {
+      const entry = touch(name, code);
+      if (entry) {
+        entry.podiums += 1;
+        if (isWin) {
+          entry.wins += 1;
+        }
+      }
+    });
+  });
+
+  const seenRaces = new Set();
+  (stageRaces || []).forEach((race) => {
+    const raceId = getRaceId(race);
+    if (!raceId || seenRaces.has(raceId)) {
+      return;
+    }
+    seenRaces.add(raceId);
+    (race?.stageRace?.stages || []).forEach((stage) => {
+      const winner = stage?.standings?.[0];
+      const entry = winner?.rider ? touch(winner.rider, winner.countryCode) : null;
+      if (entry) {
+        entry.stageWins += 1;
+      }
+    });
+  });
+
+  return Object.fromEntries([...index.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function buildRiderSeasonsScript(riderSeasons) {
+  const json = JSON.stringify(riderSeasons || {}).replace(/</g, "\\u003c");
+  return `<script type="application/json" id="rider-seasons">${json}</script>`;
+}
+
 function getRiderProfileUrl(name) {
   const rider = String(name || "").replace(/\s+/g, " ").trim();
   if (!rider) {
@@ -7139,6 +7208,7 @@ async function buildRaceData(metadata, options = {}) {
     europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
     nationalChampionships,
     seasonCalendar: buildSeasonCalendar(allRaces.filter(isWorldTourRace), todayUtc),
+    riderSeasons: buildRiderSeasonIndex(allRaces, [...liveStageRaces, ...finalizedStageRaces, ...recentResults]),
     buildTimings: {
       totalMs: Date.now() - startedAt,
       recentStandingsMs,
@@ -9369,7 +9439,7 @@ function buildRiderLinkMarkup(rider) {
   if (!url) {
     return `<span class="rider-text">${escapeHtml(rider)}</span>`;
   }
-  return `<a class="rider-text rider-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${escapeHtml(rider)} on ProCyclingStats">${escapeHtml(rider)}</a>`;
+  return `<a class="rider-text rider-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${escapeHtml(rider)} on ProCyclingStats" data-rider-key="${escapeHtml(foldRiderKey(rider))}">${escapeHtml(rider)}</a>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -12413,6 +12483,101 @@ function buildHtmlPage(data, view) {
         text-decoration-thickness: 1.5px;
       }
 
+      .rider-card {
+        position: fixed;
+        z-index: 60;
+        width: 330px;
+        max-width: calc(100vw - 16px);
+        padding: 0.85rem 1rem 0.9rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        background: white;
+        box-shadow: var(--shadow-strong);
+        font-weight: 400;
+        --rider-card-arrow: 1.4rem;
+      }
+
+      .rider-card::before {
+        content: "";
+        position: absolute;
+        left: var(--rider-card-arrow);
+        top: -7px;
+        width: 12px;
+        height: 12px;
+        background: white;
+        border-left: 1px solid var(--line-strong);
+        border-top: 1px solid var(--line-strong);
+        transform: rotate(45deg);
+      }
+
+      .rider-card.is-above::before {
+        top: auto;
+        bottom: -7px;
+        transform: rotate(225deg);
+      }
+
+      .rider-card-head {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .rider-card-name {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .rider-card-kicker {
+        margin: 0.55rem 0 0.2rem;
+        color: var(--uci-blue-bright);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .rider-card-tally {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.9rem;
+        margin: 0.15rem 0 0.4rem;
+        color: var(--ink);
+        font-size: 0.95rem;
+      }
+
+      .rider-card-tally strong {
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin-right: 0.25rem;
+      }
+
+      .rider-card-empty {
+        margin: 0.2rem 0 0.4rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .rider-card-links {
+        display: flex;
+        gap: 0.9rem;
+        margin: 0.5rem 0 0;
+        padding-top: 0.6rem;
+        border-top: 1px solid var(--line);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .rider-card-links a {
+        color: var(--uci-blue-bright);
+        text-decoration: none;
+      }
+
+      .rider-card-links a:hover,
+      .rider-card-links a:focus-visible {
+        text-decoration: underline;
+      }
+
       .stage-panel-meta {
         margin: 0.3rem 0 0;
         color: rgba(9, 33, 76, 0.66);
@@ -13234,6 +13399,7 @@ function buildHtmlPage(data, view) {
       <p class="footer-note">WorldTour data refreshes from live season pages when the server cache expires. National champions update from the current championship index.</p>
       ${buildSiteFooterLinks("/")}
     </main>
+    ${buildRiderSeasonsScript(data.riderSeasons)}
     <script>
       const deferredSectionState = new Map();
       const deferredGroups = ${deferredGroupClientPayload};
@@ -14085,8 +14251,143 @@ function buildHtmlPage(data, view) {
       applyProfileView(readProfileView());
       narrowViewport.addEventListener("change", () => applyProfileView(readProfileView()));
 
+      // A small card under a rider's name on hover or focus: what this site holds about
+      // their season, and the two outward links. Pointer devices only; a phone keeps the
+      // plain link. The card is fixed-positioned on the body so a card's overflow clip
+      // cannot cut it off.
+      function bindRiderCards() {
+        if (!window.matchMedia || !window.matchMedia("(hover: hover)").matches) {
+          return;
+        }
+        let index = {};
+        try {
+          const node = document.getElementById("rider-seasons");
+          index = (node && JSON.parse(node.textContent)) || {};
+        } catch (error) {
+          index = {};
+        }
+        let card = null;
+        let openFor = null;
+        let showTimer = null;
+        let hideTimer = null;
+
+        function escapeText(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function tallyPart(count, singular, plural) {
+          return count > 0 ? "<span><strong>" + count + "</strong>" + (count === 1 ? singular : plural) + "</span>" : "";
+        }
+
+        function buildCardMarkup(link) {
+          const key = link.getAttribute("data-rider-key") || "";
+          const entry = index[key] || null;
+          const name = entry ? entry.name : link.textContent.trim();
+          const flagNode = link.previousElementSibling;
+          const flag = flagNode && flagNode.classList.contains("country-flag") ? flagNode.textContent : "";
+          const tally = entry
+            ? tallyPart(entry.wins, "win", "wins") + tallyPart(entry.podiums, "podium", "podiums") + tallyPart(entry.stageWins, "stage win", "stage wins")
+            : "";
+          const wikipedia = "https://en.wikipedia.org/w/index.php?search=" + encodeURIComponent(name) + "&go=Go";
+          return (
+            '<div class="rider-card-head">' +
+            (flag ? '<span class="country-flag" aria-hidden="true">' + escapeText(flag) + "</span>" : "") +
+            '<span class="rider-card-name">' + escapeText(name) + "</span></div>" +
+            '<div class="rider-card-kicker">This season on this site</div>' +
+            (tally
+              ? '<div class="rider-card-tally">' + tally + "</div>"
+              : '<p class="rider-card-empty">No WorldTour podium on this site this season.</p>') +
+            '<div class="rider-card-links">' +
+            '<a href="' + escapeText(link.href) + '" target="_blank" rel="noreferrer">ProCyclingStats \u2197</a>' +
+            '<a href="' + escapeText(wikipedia) + '" target="_blank" rel="noreferrer">Wikipedia \u2197</a>' +
+            "</div>"
+          );
+        }
+
+        function hideCard() {
+          clearTimeout(showTimer);
+          clearTimeout(hideTimer);
+          if (card) {
+            card.remove();
+            card = null;
+          }
+          openFor = null;
+        }
+
+        function showCard(link) {
+          if (openFor === link) {
+            return;
+          }
+          hideCard();
+          card = document.createElement("div");
+          card.className = "rider-card";
+          card.setAttribute("role", "tooltip");
+          card.innerHTML = buildCardMarkup(link);
+          document.body.appendChild(card);
+          const rect = link.getBoundingClientRect();
+          const width = card.offsetWidth;
+          const height = card.offsetHeight;
+          const left = Math.max(8, Math.min(rect.left - 16, window.innerWidth - width - 8));
+          const below = rect.bottom + 10;
+          const above = rect.top - height - 10;
+          const fitsBelow = below + height <= window.innerHeight - 8 || above < 8;
+          card.style.left = left + "px";
+          card.style.top = (fitsBelow ? below : above) + "px";
+          card.style.setProperty("--rider-card-arrow", Math.max(12, rect.left - left + 8) + "px");
+          card.classList.toggle("is-above", !fitsBelow);
+          openFor = link;
+        }
+
+        function scheduleHide() {
+          clearTimeout(hideTimer);
+          hideTimer = setTimeout(hideCard, 180);
+        }
+
+        document.addEventListener("mouseover", (event) => {
+          const link = event.target.closest(".rider-link");
+          if (link) {
+            clearTimeout(hideTimer);
+            if (openFor !== link) {
+              clearTimeout(showTimer);
+              showTimer = setTimeout(() => showCard(link), 250);
+            }
+            return;
+          }
+          if (card && card.contains(event.target)) {
+            clearTimeout(hideTimer);
+          }
+        });
+        document.addEventListener("mouseout", (event) => {
+          const link = event.target.closest(".rider-link");
+          if (link || (card && card.contains(event.target))) {
+            clearTimeout(showTimer);
+            scheduleHide();
+          }
+        });
+        document.addEventListener("focusin", (event) => {
+          const link = event.target.closest(".rider-link");
+          if (link) {
+            showCard(link);
+          } else if (!(card && card.contains(event.target))) {
+            hideCard();
+          }
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            hideCard();
+          }
+        });
+        window.addEventListener("scroll", hideCard, { passive: true });
+        window.addEventListener("resize", hideCard);
+      }
+
       bindLoadMoreRaces();
       bindRaceNews();
+      bindRiderCards();
       bindNationalChampionshipFilters();
       bindNationalChampionshipMap();
       bindSeasonCalendar();

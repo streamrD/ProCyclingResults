@@ -85,6 +85,9 @@ function loadParserExports() {
       buildFinishVideoQuery,
       isLikelyFinishVideo,
       getFreshnessSensitiveRaces,
+      buildRiderSeasonIndex,
+      buildRiderSeasonsScript,
+      foldRiderKey,
       buildRiderMarkup,
       getRiderProfileUrl,
       buildRiderSlug,
@@ -1796,7 +1799,7 @@ test("rider names link to ProCyclingStats, search by default and direct when ver
   assert.equal(getRiderProfileUrl(""), "");
 
   const markup = buildRiderMarkup({ place: "2", rider: "Juan Ayuso", countryCode: "ESP", gap: "+01:28" });
-  assert.match(markup, /<a class="rider-text rider-link" href="https:\/\/www\.procyclingstats\.com\/rider\/juan-ayuso-pesquera" target="_blank" rel="noreferrer" title="Juan Ayuso on ProCyclingStats">Juan Ayuso<\/a>/);
+  assert.match(markup, /<a class="rider-text rider-link" href="https:\/\/www\.procyclingstats\.com\/rider\/juan-ayuso-pesquera" target="_blank" rel="noreferrer" title="Juan Ayuso on ProCyclingStats" data-rider-key="juan ayuso">Juan Ayuso<\/a>/);
   assert.match(markup, /🇪🇸/);
   assert.match(markup, /standing-gap">\+01:28/);
   // Names are escaped inside the link as they were in the span.
@@ -1830,6 +1833,37 @@ test("a cancelled stage in the route table is not a rider", () => {
   // Had stage 2 been the last one raced, the next stage would be 4, not the cancelled 3.
   const afterStage2 = { stageRace: { stages: snapshot.stages.filter((stage) => stage.number <= 2), route: snapshot.route } };
   assert.equal(getNextRouteStage(afterStage2).number, 4);
+});
+
+test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-folded key", () => {
+  const { buildRiderSeasonIndex, buildRiderSeasonsScript, foldRiderKey, buildRiderMarkup } = loadParserExports();
+  const allRaces = [
+    { winner: "Tadej Pogačar", winnerCountryCode: "SLO", second: "Remco Evenepoel", secondCountryCode: "BEL", third: "Ben Healy", thirdCountryCode: "IRL" },
+    { winner: "Tadej Pogačar", winnerCountryCode: "SLO", second: "Jonas Vingegaard", secondCountryCode: "DEN", third: "", thirdCountryCode: "" },
+    { winner: "", second: "", third: "" },
+  ];
+  const stageRaces = [
+    {
+      pageTitle: "2026 Tour de France",
+      stageRace: { stages: [{ standings: [{ rider: "Tadej Pogacar", countryCode: "SLO" }] }, { standings: [{ rider: "Visma–Lease a Bike" }] }, { standings: [] }] },
+    },
+    { pageTitle: "2026 Tour de France", stageRace: { stages: [{ standings: [{ rider: "Tadej Pogacar" }] }] } },
+  ];
+  const index = buildRiderSeasonIndex(allRaces, stageRaces);
+
+  assert.equal(foldRiderKey("Tadej Pogačar"), "tadej pogacar");
+  assert.equal(foldRiderKey("Tadej Pogacar"), foldRiderKey("Tadej Pogačar"));
+  assert.deepEqual(JSON.parse(JSON.stringify(index["tadej pogacar"])), { name: "Tadej Pogačar", countryCode: "SLO", wins: 2, podiums: 2, stageWins: 1 });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["remco evenepoel"])), { name: "Remco Evenepoel", countryCode: "BEL", wins: 0, podiums: 1, stageWins: 0 });
+  // A team in a team time trial row is not a rider, and a race is counted once.
+  assert.equal(Object.keys(index).some((key) => /visma/.test(key)), false);
+
+  const script = buildRiderSeasonsScript({ "a b": { name: "A </script> B", wins: 1 } });
+  assert.match(script, /^<script type="application\/json" id="rider-seasons">/);
+  assert.doesNotMatch(script.slice(50), /<\/script>[\s\S]+<\/script>/);
+  assert.match(script, /\\u003c\/script> B/);
+
+  assert.match(buildRiderMarkup({ rider: "Tadej Pogačar", countryCode: "SLO" }), /data-rider-key="tadej pogacar"/);
 });
 
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
