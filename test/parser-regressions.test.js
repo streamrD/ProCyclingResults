@@ -88,6 +88,9 @@ function loadParserExports() {
       buildRiderSeasonIndex,
       buildRiderSeasonsScript,
       foldRiderKey,
+      extractRiderPageTitle,
+      buildStandingEntry,
+      parseSeasonRows,
       buildRiderMarkup,
       getRiderProfileUrl,
       buildRiderSlug,
@@ -194,6 +197,12 @@ function loadParserExports() {
   return sandbox.__PCR_TEST__;
 }
 
+// Wikipedia-sourced rows now carry the rider's article title; the older expectations
+// below describe the rest of the row and leave that field out.
+function stripPageTitles(value) {
+  return JSON.parse(JSON.stringify(value, (key, entry) => (key === "pageTitle" ? undefined : entry)));
+}
+
 test("extractStageRaceSnapshot reads stage and GC fallbacks from La Vuelta Femenina tables", () => {
   const { extractStageRaceSnapshot } = loadParserExports();
   const fixturePath = path.join(__dirname, "fixtures", "la-vuelta-femenina-stage1.wikitext");
@@ -203,14 +212,14 @@ test("extractStageRaceSnapshot reads stage and GC fallbacks from La Vuelta Femen
 
   assert.equal(snapshot.totalStages, 7);
   assert.equal(snapshot.completedStages, 1);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 1,
     label: "Stage 1",
     standings: [{ place: "1", rider: "Noemi Rüegg", countryCode: "SUI" }],
     winner: "Noemi Rüegg",
     winnerCountryCode: "SUI",
   });
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 1,
     standings: [{ place: "1", rider: "Noemi Rüegg", countryCode: "SUI" }],
     leader: "Noemi Rüegg",
@@ -373,7 +382,7 @@ test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage an
 
   assert.equal(snapshot.totalStages, 7);
   assert.equal(snapshot.completedStages, 4);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 4,
     label: "Stage 4",
     standings: [
@@ -386,7 +395,7 @@ test("buildLaVueltaFemeninaOfficialSnapshot parses the current official stage an
     winner: "Lotte Kopecky",
     winnerCountryCode: "BEL",
   });
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 4,
     standings: [
       { place: "1", rider: "Lotte Kopecky", countryCode: "BEL" },
@@ -925,7 +934,7 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
   );
 
   assert.equal(snapshot.completedStages, 4);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 4,
     label: "Stage 4",
     standings: [
@@ -939,7 +948,7 @@ test("fetchGiroDItaliaWomenOfficialSnapshot parses the current official rankings
     winner: "Anna Van Der Breggen",
     winnerCountryCode: "NED",
   });
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 4,
     standings: [
       { place: "1", rider: "Anna Van Der Breggen", countryCode: "NED" },
@@ -1075,7 +1084,7 @@ test("fetchGiroDItaliaWomenOfficialSnapshot ignores stale stage-page content ser
 
   assert.equal(snapshot.completedStages, 5);
   assert.equal(snapshot.latestStage, null);
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 5,
     standings: [
       { place: "1", rider: "Anna Van Der Breggen", countryCode: "NED" },
@@ -1262,7 +1271,7 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
   );
 
   assert.equal(snapshot.completedStages, 3);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 3,
     label: "Stage 3",
     standings: [
@@ -1614,7 +1623,7 @@ test("parseWorldChampionshipEventResult reads a road race podium and top five wi
   const { parseWorldChampionshipEventResult } = loadParserExports();
   const result = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2025-mens-road-race.wikitext"));
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result.podium)), [
+  assert.deepEqual(stripPageTitles(result.podium), [
     { rider: "Tadej Pogačar", countryCode: "SLO" },
     { rider: "Remco Evenepoel", countryCode: "BEL" },
     { rider: "Ben Healy", countryCode: "IRL" },
@@ -1853,8 +1862,8 @@ test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-fold
 
   assert.equal(foldRiderKey("Tadej Pogačar"), "tadej pogacar");
   assert.equal(foldRiderKey("Tadej Pogacar"), foldRiderKey("Tadej Pogačar"));
-  assert.deepEqual(JSON.parse(JSON.stringify(index["tadej pogacar"])), { name: "Tadej Pogačar", countryCode: "SLO", wins: 2, podiums: 2, stageWins: 1 });
-  assert.deepEqual(JSON.parse(JSON.stringify(index["remco evenepoel"])), { name: "Remco Evenepoel", countryCode: "BEL", wins: 0, podiums: 1, stageWins: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["tadej pogacar"])), { name: "Tadej Pogačar", countryCode: "SLO", wins: 2, podiums: 2, stageWins: 1, wikiTitle: "" });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["remco evenepoel"])), { name: "Remco Evenepoel", countryCode: "BEL", wins: 0, podiums: 1, stageWins: 0, wikiTitle: "" });
   // A team in a team time trial row is not a rider, and a race is counted once.
   assert.equal(Object.keys(index).some((key) => /visma/.test(key)), false);
 
@@ -1864,6 +1873,50 @@ test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-fold
   assert.match(script, /\\u003c\/script> B/);
 
   assert.match(buildRiderMarkup({ rider: "Tadej Pogačar", countryCode: "SLO" }), /data-rider-key="tadej pogacar"/);
+});
+
+test("the rider's Wikipedia article title travels from the wikitext to the rider index", () => {
+  const { parseAthleteDetails, extractRiderPageTitle, buildStandingEntry, parseSeasonRows, buildRiderSeasonIndex, parseWorldChampionshipEventResult } =
+    loadParserExports();
+
+  assert.equal(parseAthleteDetails("{{flagathlete|[[Ben Healy (cyclist)|Ben Healy]]|IRL}}").pageTitle, "Ben Healy (cyclist)");
+  assert.equal(parseAthleteDetails("{{flagathlete|[[Tadej Pogačar]]|SLO}}").pageTitle, "Tadej Pogačar");
+  assert.equal(parseAthleteDetails("Tadej Pogacar").pageTitle, "");
+  assert.equal(extractRiderPageTitle("[[File:Flag.svg|20px]] [[Wout van Aert|W. van Aert]]"), "Wout van Aert");
+  assert.equal(extractRiderPageTitle("[[2026 Tour de France&nbsp;– Stage 1#Result|1]]"), "2026 Tour de France – Stage 1");
+
+  const entry = buildStandingEntry(2, { rider: "Ben Healy", countryCode: "IRL", pageTitle: "Ben Healy (cyclist)", gap: "+ 1' 28\"" });
+  assert.equal(entry.pageTitle, "Ben Healy (cyclist)");
+  assert.equal("pageTitle" in buildStandingEntry(1, "Tadej Pogačar", "SLO"), false);
+
+  const seasonTable = [
+    '{| class="wikitable plainrowheaders"',
+    "|-",
+    "! Race !! Date !! Winner !! Second !! Third",
+    "|-",
+    "! scope=\"row\" |{{Flagicon|BEL}} [[2026 Liège–Bastogne–Liège|Liège–Bastogne–Liège]]",
+    "| 26 April",
+    "| {{flagathlete|[[Tadej Pogačar]]|SLO}}",
+    "| {{flagathlete|[[Ben Healy (cyclist)|Ben Healy]]|IRL}}",
+    "| {{flagathlete|[[Tom Pidcock]]|GBR}}",
+    "|}",
+  ].join("\n");
+  const [race] = parseSeasonRows(seasonTable, { pageTitle: "2026_UCI_World_Tour", label: "Men's WorldTour", winnerMode: "podium", dateIndex: 1, winnerIndex: 2, secondIndex: 3, thirdIndex: 4, statusStartIndex: 2 }, 2026);
+  assert.equal(race.second, "Ben Healy");
+  assert.equal(race.secondPageTitle, "Ben Healy (cyclist)");
+  assert.equal(race.winnerPageTitle, "Tadej Pogačar");
+
+  const index = buildRiderSeasonIndex([race], [
+    { pageTitle: "2026 Tour de France", resultStandings: [{ place: "4", rider: "Paul Seixas", countryCode: "FRA", pageTitle: "Paul Seixas" }] },
+  ]);
+  assert.equal(index["ben healy"].wikiTitle, "Ben Healy (cyclist)");
+  assert.equal(index["ben healy"].podiums, 1);
+  // A rider seen only in a top five gets a title and no tally.
+  assert.deepEqual(JSON.parse(JSON.stringify(index["paul seixas"])), { name: "Paul Seixas", countryCode: "FRA", wins: 0, podiums: 0, stageWins: 0, wikiTitle: "Paul Seixas" });
+
+  const worlds = parseWorldChampionshipEventResult(fs.readFileSync(path.join(__dirname, "fixtures", "uci-road-world-championships-2025-mens-road-race.wikitext"), "utf8"));
+  assert.equal(worlds.podium[2].pageTitle, "Ben Healy (cyclist)");
+  assert.equal(worlds.standings[2].pageTitle, "Ben Healy (cyclist)");
 });
 
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
@@ -1895,7 +1948,7 @@ test("extractStageRaceSnapshot reads a live Tour de France Femmes stage and GC f
   assert.equal(snapshot.generalClassification.stageNumber, 6);
   assert.equal(snapshot.generalClassification.leader, "Marlen Reusser");
   assert.equal(snapshot.generalClassification.leaderCountryCode, "SUI");
-  assert.deepEqual(snapshot.generalClassification.standings.slice(0, 3), [
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification.standings.slice(0, 3)), [
     { place: "1", rider: "Marlen Reusser", countryCode: "SUI", time: "19:43:34" },
     { place: "2", rider: "Demi Vollering", countryCode: "NED", gap: "+00:12" },
     { place: "3", rider: "Katarzyna Niewiadoma-Phinney", countryCode: "POL", gap: "+01:17" },
@@ -2703,7 +2756,7 @@ test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallbac
 
   assert.equal(snapshot.totalStages, 3);
   assert.equal(snapshot.completedStages, 3);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 3,
     label: "Stage 3",
     standings: [
@@ -2715,7 +2768,7 @@ test("getStaticStageRaceSnapshot returns the 2026 Grande Premio Anicolor fallbac
     ],
     winner: "Alexis Guérin",
   });
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 3,
     standings: [
       { place: "1", rider: "Alexis Guérin" },
@@ -2745,13 +2798,13 @@ test("getStaticStageRaceSnapshot returns the 2026 Flèche du Sud fallback", () =
 
   assert.equal(snapshot.totalStages, 5);
   assert.equal(snapshot.completedStages, 5);
-  assert.deepEqual(snapshot.latestStage, {
+  assert.deepEqual(stripPageTitles(snapshot.latestStage), {
     number: 5,
     label: "Stage 5",
     standings: [{ place: "1", rider: "Matthew Brennan" }],
     winner: "Matthew Brennan",
   });
-  assert.deepEqual(snapshot.generalClassification, {
+  assert.deepEqual(stripPageTitles(snapshot.generalClassification), {
     stageNumber: 5,
     standings: [
       { place: "1", rider: "Matisse Van Kerckhove" },
@@ -3922,7 +3975,7 @@ test("extractStageRaceSnapshot builds a stage history from companion stage artic
   // whole point of reading the companion article.
   assert.equal(extractStageRaceSnapshot(rawText).stages[1].standings.length, 1);
   assert.equal(snapshot.latestStage.number, 2);
-  assert.deepEqual(snapshot.latestStage.standings[1], { place: "2", rider: "Pau Miquel", countryCode: "ESP" });
+  assert.deepEqual(stripPageTitles(snapshot.latestStage.standings[1]), { place: "2", rider: "Pau Miquel", countryCode: "ESP" });
 });
 
 test("extractStageRaceSnapshot keeps the main article's general classification over a companion copy", () => {
@@ -3953,7 +4006,7 @@ test("parseCyclingResultLine reads the positional country and time arguments", (
 
   const [stageOne] = JSON.parse(JSON.stringify(extractStageRaceSnapshot("", [companionText]))).stages;
 
-  assert.deepEqual(stageOne.standings, [
+  assert.deepEqual(stripPageTitles(stageOne.standings), [
     { place: "1", rider: "Tadej Pogačar", countryCode: "SLO", time: "10:57" },
     { place: "2", rider: "Ethan Hayter", countryCode: "GBR" },
     { place: "3", rider: "Joshua Tarling", countryCode: "GBR", gap: "+00:04" },

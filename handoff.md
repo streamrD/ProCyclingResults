@@ -869,8 +869,16 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   name's own href; Wikipedia is the go-to-title search for the name. Rider names with
   no entry get "No WorldTour podium on this site this season." The client script must
   stay free of `${` (smoke test), hence the string concatenation.
-- **Not built:** the race list under the tally (the "full" comp), and the precise
-  Wikipedia link from the wikitext's rider link target.
+- **Wikipedia link:** `parseAthleteDetails` now returns `pageTitle`, the cell's own
+  link target ("Ben Healy (cyclist)"), and `buildStandingEntry` keeps it on the entry;
+  season rows carry `winnerPageTitle`/`secondPageTitle`/`thirdPageTitle`, the Worlds
+  parsers carry it too. `buildRiderSeasonIndex` records the first title it meets as
+  `wikiTitle` (podiums, stage rows, top fives and GC rows all count; a top-five-only
+  rider gets a title and a zero tally). The card links to the article when a title is
+  known and to Wikipedia's go-to-title search otherwise, which is the case for rows
+  that arrive from an official provider (plain names) for riders who never appear in
+  a Wikipedia-sourced row.
+- **Not built:** the race list under the tally (the "full" comp).
 
 ### Added 2026-09-07, later (cancelled stages)
 

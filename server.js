@@ -596,18 +596,21 @@ function foldRiderKey(name) {
 // says "on this site" for that reason. Nothing is fetched for it.
 function buildRiderSeasonIndex(allRaces, stageRaces) {
   const index = new Map();
-  const touch = (name, countryCode) => {
+  const touch = (name, countryCode, pageTitle) => {
     const rider = String(name || "").replace(/\s+/g, " ").trim();
     if (!rider || !isDirectRiderLinkCandidate(rider)) {
       return null;
     }
     const key = foldRiderKey(rider);
     if (!index.has(key)) {
-      index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0 });
+      index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0, wikiTitle: "" });
     }
     const entry = index.get(key);
     if (!entry.countryCode && countryCode) {
       entry.countryCode = normalizeCountryCode(countryCode);
+    }
+    if (!entry.wikiTitle && pageTitle) {
+      entry.wikiTitle = String(pageTitle).trim();
     }
     return entry;
   };
@@ -617,11 +620,11 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
       return;
     }
     [
-      [race.winner, race.winnerCountryCode, true],
-      [race.second, race.secondCountryCode, false],
-      [race.third, race.thirdCountryCode, false],
-    ].forEach(([name, code, isWin]) => {
-      const entry = touch(name, code);
+      [race.winner, race.winnerCountryCode, race.winnerPageTitle, true],
+      [race.second, race.secondCountryCode, race.secondPageTitle, false],
+      [race.third, race.thirdCountryCode, race.thirdPageTitle, false],
+    ].forEach(([name, code, pageTitle, isWin]) => {
+      const entry = touch(name, code, pageTitle);
       if (entry) {
         entry.podiums += 1;
         if (isWin) {
@@ -639,10 +642,17 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     }
     seenRaces.add(raceId);
     (race?.stageRace?.stages || []).forEach((stage) => {
-      const winner = stage?.standings?.[0];
-      const entry = winner?.rider ? touch(winner.rider, winner.countryCode) : null;
-      if (entry) {
-        entry.stageWins += 1;
+      (stage?.standings || []).forEach((standing, position) => {
+        const entry = standing?.rider ? touch(standing.rider, standing.countryCode, standing.pageTitle) : null;
+        if (entry && position === 0) {
+          entry.stageWins += 1;
+        }
+      });
+    });
+    // Top fives and GC rows add no tally, but they can carry a rider's article title.
+    [...(race?.resultStandings || []), ...(race?.stageRace?.generalClassification?.standings || [])].forEach((standing) => {
+      if (standing?.rider) {
+        touch(standing.rider, standing.countryCode, standing.pageTitle);
       }
     });
   });
@@ -1153,7 +1163,16 @@ function parseAthleteDetails(cell) {
   return {
     rider: cleanWikiText(templateArgs[1] || cell),
     countryCode,
+    pageTitle: extractRiderPageTitle(templateArgs[1] || cell),
   };
+}
+
+// "[[Ben Healy (cyclist)|Ben Healy]]" links the rider's exact article; the display
+// name alone would send a reader to a disambiguation page. The first link that is
+// not a file is the rider's.
+function extractRiderPageTitle(cell) {
+  const match = String(cell || "").match(/\[\[(?!(?:File|Image):)([^|\]#]+)(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]/i);
+  return match ? match[1].replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim() : "";
 }
 
 function parseAthlete(cell) {
@@ -1479,6 +1498,9 @@ function parseSeasonRows(rawText, season, year) {
         secondCountryCode: second.countryCode || getRiderCountryCode(second.rider),
         third: third.rider,
         thirdCountryCode: third.countryCode || getRiderCountryCode(third.rider),
+        winnerPageTitle: winner.pageTitle || "",
+        secondPageTitle: second.pageTitle || "",
+        thirdPageTitle: third.pageTitle || "",
         startDate: dateRange.start,
         endDate: dateRange.end,
         isCancelled: /\bcancelled\b/i.test(statusText),
@@ -1616,6 +1638,7 @@ function parseWorldChampionshipInfoboxPodium(rawText) {
     return {
       rider: athlete.rider,
       countryCode: normalizeCountryCode(athlete.countryCode || getRiderCountryCode(athlete.rider)),
+      pageTitle: athlete.pageTitle || "",
     };
   });
 }
@@ -1686,7 +1709,7 @@ function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDER
         const timeText = cleanWikiText(row[timeIndex]?.content);
         const diffText = diffIndex >= 0 ? cleanWikiText(row[diffIndex]?.content) : "";
         const timeIsGap = /^\+/.test(timeText) || /^s\.?t\.?$/i.test(timeText);
-        const entry = buildStandingEntry(place, rider, countryCode);
+        const entry = buildStandingEntry(place, { rider, countryCode, pageTitle: extractRiderPageTitle(row[riderIndex]?.content) });
         entry.time = timeIsGap ? "" : formatWorldChampionshipTime(timeText);
         entry.gap = formatWorldChampionshipGap(timeIsGap ? timeText : diffText);
         standings.push(entry);
@@ -1751,6 +1774,7 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
       [race.winner, race.winnerCountryCode] = [podium[0].rider, podium[0].countryCode || ""];
       [race.second, race.secondCountryCode] = [podium[1]?.rider || "", podium[1]?.countryCode || ""];
       [race.third, race.thirdCountryCode] = [podium[2]?.rider || "", podium[2]?.countryCode || ""];
+      [race.winnerPageTitle, race.secondPageTitle, race.thirdPageTitle] = podium.slice(0, 3).map((entry) => entry?.pageTitle || "").concat(["", "", ""]).slice(0, 3);
       if (result.standings.length > 0) {
         race.resultStandings = result.standings;
       }
@@ -4755,6 +4779,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "")
           countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
           gap: normalizeStandingGap(rider.gap || ""),
           time: normalizeStandingTime(rider.time || ""),
+          pageTitle: String(rider.pageTitle || "").trim(),
         }
       : {
           rider: String(rider || "").trim(),
@@ -4770,6 +4795,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "")
         ...(details.countryCode ? { countryCode: details.countryCode } : {}),
         ...(details.gap ? { gap: details.gap } : {}),
         ...(details.time ? { time: details.time } : {}),
+        ...(details.pageTitle ? { pageTitle: details.pageTitle } : {}),
       }
     : null;
 }
@@ -14292,7 +14318,9 @@ function buildHtmlPage(data, view) {
           const tally = entry
             ? tallyPart(entry.wins, "win", "wins") + tallyPart(entry.podiums, "podium", "podiums") + tallyPart(entry.stageWins, "stage win", "stage wins")
             : "";
-          const wikipedia = "https://en.wikipedia.org/w/index.php?search=" + encodeURIComponent(name) + "&go=Go";
+          const wikipedia = entry && entry.wikiTitle
+            ? "https://en.wikipedia.org/wiki/" + encodeURIComponent(entry.wikiTitle.replace(/ /g, "_"))
+            : "https://en.wikipedia.org/w/index.php?search=" + encodeURIComponent(name) + "&go=Go";
           return (
             '<div class="rider-card-head">' +
             (flag ? '<span class="country-flag" aria-hidden="true">' + escapeText(flag) + "</span>" : "") +
