@@ -1854,7 +1854,7 @@ test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-fold
   const stageRaces = [
     {
       pageTitle: "2026 Tour de France",
-      stageRace: { stages: [{ standings: [{ rider: "Tadej Pogacar", countryCode: "SLO" }] }, { standings: [{ rider: "Visma–Lease a Bike" }] }, { standings: [] }] },
+      stageRace: { stages: [{ standings: [{ place: "1", rider: "Tadej Pogacar", countryCode: "SLO" }, { place: "2", rider: "Alessandro Romele", countryCode: "ITA" }] }, { standings: [{ rider: "Visma–Lease a Bike" }] }, { standings: [] }] },
     },
     { pageTitle: "2026 Tour de France", stageRace: { stages: [{ standings: [{ rider: "Tadej Pogacar" }] }] } },
   ];
@@ -1862,8 +1862,10 @@ test("buildRiderSeasonIndex tallies podiums and stage wins under one accent-fold
 
   assert.equal(foldRiderKey("Tadej Pogačar"), "tadej pogacar");
   assert.equal(foldRiderKey("Tadej Pogacar"), foldRiderKey("Tadej Pogačar"));
-  assert.deepEqual(JSON.parse(JSON.stringify(index["tadej pogacar"])), { name: "Tadej Pogačar", countryCode: "SLO", wins: 2, podiums: 2, stageWins: 1, wikiTitle: "" });
-  assert.deepEqual(JSON.parse(JSON.stringify(index["remco evenepoel"])), { name: "Remco Evenepoel", countryCode: "BEL", wins: 0, podiums: 1, stageWins: 0, wikiTitle: "" });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["tadej pogacar"])), { name: "Tadej Pogačar", countryCode: "SLO", wins: 2, podiums: 2, stageWins: 1, stagePodiums: 1, wikiTitle: "" });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["remco evenepoel"])), { name: "Remco Evenepoel", countryCode: "BEL", wins: 0, podiums: 1, stageWins: 0, stagePodiums: 0, wikiTitle: "" });
+  // A stage second place is a podium with no win.
+  assert.deepEqual(JSON.parse(JSON.stringify(index["alessandro romele"])), { name: "Alessandro Romele", countryCode: "ITA", wins: 0, podiums: 0, stageWins: 0, stagePodiums: 1, wikiTitle: "" });
   // A team in a team time trial row is not a rider, and a race is counted once.
   assert.equal(Object.keys(index).some((key) => /visma/.test(key)), false);
 
@@ -1912,7 +1914,7 @@ test("the rider's Wikipedia article title travels from the wikitext to the rider
   assert.equal(index["ben healy"].wikiTitle, "Ben Healy (cyclist)");
   assert.equal(index["ben healy"].podiums, 1);
   // A rider seen only in a top five gets a title and no tally.
-  assert.deepEqual(JSON.parse(JSON.stringify(index["paul seixas"])), { name: "Paul Seixas", countryCode: "FRA", wins: 0, podiums: 0, stageWins: 0, wikiTitle: "Paul Seixas" });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["paul seixas"])), { name: "Paul Seixas", countryCode: "FRA", wins: 0, podiums: 0, stageWins: 0, stagePodiums: 0, wikiTitle: "Paul Seixas" });
 
   const worlds = parseWorldChampionshipEventResult(fs.readFileSync(path.join(__dirname, "fixtures", "uci-road-world-championships-2025-mens-road-race.wikitext"), "utf8"));
   assert.equal(worlds.podium[2].pageTitle, "Ben Healy (cyclist)");

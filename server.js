@@ -603,7 +603,7 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     }
     const key = foldRiderKey(rider);
     if (!index.has(key)) {
-      index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0, wikiTitle: "" });
+      index.set(key, { name: rider, countryCode: "", wins: 0, podiums: 0, stageWins: 0, stagePodiums: 0, wikiTitle: "" });
     }
     const entry = index.get(key);
     if (!entry.countryCode && countryCode) {
@@ -646,6 +646,9 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
         const entry = standing?.rider ? touch(standing.rider, standing.countryCode, standing.pageTitle) : null;
         if (entry && position === 0) {
           entry.stageWins += 1;
+        }
+        if (entry && position <= 2 && Number(standing.place) <= 3) {
+          entry.stagePodiums += 1;
         }
       });
     });
@@ -14315,11 +14318,10 @@ function buildHtmlPage(data, view) {
           const name = entry ? entry.name : link.textContent.trim();
           const flagNode = link.previousElementSibling;
           const flag = flagNode && flagNode.classList.contains("country-flag") ? flagNode.textContent : "";
-          // "Wins" counts every win the site holds, one-day races, overall
-          // classifications and stages alike, the way ProCyclingStats counts them.
-          // Podiums are race podiums (one-day and overall) and include the race wins.
+          // "Wins" and "podiums" each count one-day races, overall classifications and
+          // stages alike, the way ProCyclingStats counts them; podiums include the wins.
           const tally = entry
-            ? tallyPart(entry.wins + entry.stageWins, "win", "wins") + tallyPart(entry.podiums, "podium", "podiums")
+            ? tallyPart(entry.wins + entry.stageWins, "win", "wins") + tallyPart(entry.podiums + entry.stagePodiums, "podium", "podiums")
             : "";
           const wikipedia = entry && entry.wikiTitle
             ? "https://en.wikipedia.org/wiki/" + encodeURIComponent(entry.wikiTitle.replace(/ /g, "_"))
@@ -14331,7 +14333,7 @@ function buildHtmlPage(data, view) {
             '<div class="rider-card-kicker">This season on this site</div>' +
             (tally
               ? '<div class="rider-card-tally">' + tally + "</div>"
-              : '<p class="rider-card-empty">No WorldTour podium on this site this season.</p>') +
+              : '<p class="rider-card-empty">No win or podium on this site this season.</p>') +
             '<div class="rider-card-links">' +
             '<a href="' + escapeText(link.href) + '" target="_blank" rel="noreferrer">ProCyclingStats \u2197</a>' +
             '<a href="' + escapeText(wikipedia) + '" target="_blank" rel="noreferrer">Wikipedia \u2197</a>' +
