@@ -1804,6 +1804,32 @@ test("rider names link to ProCyclingStats, search by default and direct when ver
   assert.match(buildNationalChampionshipPodium({ podium: [{ place: "1", rider: "Artem Shmidt" }] }), /rider-link" href="https:\/\/www\.procyclingstats\.com\/rider\/artem-shmidt"/);
 });
 
+test("a cancelled stage in the route table is not a rider", () => {
+  const { extractRouteStages, extractStageRaceSnapshot, buildStageSwitcherMarkup, getNextRouteStage } = loadParserExports();
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "vuelta-a-espana-route-cancelled-stage3.wikitext"), "utf8");
+  const route = extractRouteStages(raw);
+  const stage3 = route.find((entry) => entry.stageNumber === 3);
+  assert.equal(stage3.winner, null);
+  assert.equal(stage3.cancelled, true);
+  assert.match(stage3.cancellationNote, /^The stage was cancelled due to the weather conditions/);
+  assert.equal(route.find((entry) => entry.stageNumber === 4).winner.rider, "Tadej Pogačar");
+
+  const snapshot = extractStageRaceSnapshot(raw);
+  assert.ok(!snapshot.stages.some((stage) => stage.number === 3));
+  assert.ok(!JSON.stringify(snapshot.stages).includes("Stage cancelled"));
+  assert.equal(snapshot.route.find((entry) => entry.number === 3).cancelled, true);
+  assert.ok(snapshot.completedStages >= 4);
+
+  const race = { id: "2026 Vuelta a España", title: "Vuelta a España", stageRace: snapshot };
+  const markup = buildStageSwitcherMarkup(race, { live: true });
+  assert.match(markup, /<span class="stage-chip is-cancelled" title="Stage 3 cancelled: The stage was cancelled due to the weather[^"]*"><s>3<\/s><\/span>/);
+  assert.doesNotMatch(markup, /Stage cancelled<\/a>/);
+
+  // Had stage 2 been the last one raced, the next stage would be 4, not the cancelled 3.
+  const afterStage2 = { stageRace: { stages: snapshot.stages.filter((stage) => stage.number <= 2), route: snapshot.route } };
+  assert.equal(getNextRouteStage(afterStage2).number, 4);
+});
+
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
   const { parseAthleteDetails } = loadParserExports();
 

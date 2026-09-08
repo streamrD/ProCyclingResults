@@ -2453,7 +2453,7 @@ function extractWikiTableByCaption(rawText, captionPattern) {
 // a fake stage winner.
 function isPlausibleRiderName(rider) {
   const value = String(rider || "").trim();
-  return value.length > 0 && !/[=|{}]|colspan|rowspan/i.test(value);
+  return value.length > 0 && !/[=|{}]|colspan|rowspan/i.test(value) && !ROUTE_STAGE_CANCELLED_CELL.test(value);
 }
 
 const STAGE_TYPE_LABELS = {
@@ -2552,7 +2552,11 @@ function extractRouteStages(rawText, teamNames = new Map()) {
       }
 
       const winnerCell = cells[cells.length - 1];
-      const teamReference = parseTeamReference(winnerCell);
+      // A stage that was called off has words where the winner would be ("Stage
+      // cancelled", with a footnote saying why). That is not a rider, and the reason
+      // is worth carrying to the card.
+      const cancellation = parseRouteStageCancellation(winnerCell);
+      const teamReference = cancellation ? null : parseTeamReference(winnerCell);
       const teamName = teamReference ? teamNames.get(getTeamReferenceKey(teamReference)) : "";
       // A team time trial's winner cell holds a team code rather than a rider, and
       // parseAthleteDetails cleans it away to an empty string.
@@ -2575,10 +2579,26 @@ function extractRouteStages(rawText, teamNames = new Map()) {
         course,
         ...(distanceKm ? { distanceKm } : {}),
         ...(stageType ? { stageType } : {}),
-        winner: isPlausibleRiderName(winner.rider) ? winner : null,
+        ...(cancellation ? { cancelled: true, cancellationNote: cancellation.note } : {}),
+        winner: !cancellation && isPlausibleRiderName(winner.rider) ? winner : null,
       };
     })
     .filter(Boolean);
+}
+
+// "Stage cancelled{{efn|name=stage 3|The stage was cancelled due to ...}}" in the
+// winner column of the route table (2026 Vuelta, stage 3). The footnote's last
+// argument is the reason.
+const ROUTE_STAGE_CANCELLED_CELL = /^(?:stage\s+)?(?:cancell?ed|neutrali[sz]ed|abandoned|not held|not raced)$/i;
+
+function parseRouteStageCancellation(winnerCell) {
+  const text = cleanWikiText(stripWikiFootnoteTemplates(String(winnerCell || "").replace(/<ref[\s\S]*?(?:<\/ref>|\/>)/gi, "")));
+  if (!ROUTE_STAGE_CANCELLED_CELL.test(text)) {
+    return null;
+  }
+  const footnote = String(winnerCell || "").match(/\{\{efn\|([^{}]*)\}\}/i)?.[1] || "";
+  const note = cleanWikiText(footnote.split("|").pop() || "");
+  return { note };
 }
 
 function extractRouteStageWinners(rawText, teamNames = new Map()) {
@@ -2597,6 +2617,7 @@ function buildRouteDetails(routeStages) {
     ...(entry.course ? { course: entry.course } : {}),
     ...(entry.distanceKm ? { distanceKm: entry.distanceKm } : {}),
     ...(entry.stageType ? { stageType: entry.stageType } : {}),
+    ...(entry.cancelled ? { cancelled: true, cancellationNote: entry.cancellationNote || "" } : {}),
   }));
 }
 
@@ -8233,8 +8254,13 @@ function getNextRouteStage(race) {
   if (stages.length === 0) {
     return null;
   }
-  const nextNumber = stages[stages.length - 1].number + 1;
-  return (race.stageRace?.route || []).find((entry) => Number(entry?.number) === nextNumber) || null;
+  const route = race.stageRace?.route || [];
+  let nextNumber = stages[stages.length - 1].number + 1;
+  // A cancelled stage is not up next; the one after it is.
+  while (route.find((entry) => Number(entry?.number) === nextNumber)?.cancelled) {
+    nextNumber += 1;
+  }
+  return route.find((entry) => Number(entry?.number) === nextNumber) || null;
 }
 
 // Which kind of day it is for a live race, read from the route table's dates against
@@ -8894,6 +8920,11 @@ function buildStageSwitcherMarkup(race, options = {}) {
       }
 
       if (!racedNumbers.has(stageNumber)) {
+        const routeEntry = (race.stageRace?.route || []).find((entry) => Number(entry?.number) === stageNumber);
+        if (routeEntry?.cancelled) {
+          const reason = routeEntry.cancellationNote ? `: ${routeEntry.cancellationNote}` : "";
+          return `<span class="stage-chip is-cancelled" title="${escapeHtml(`Stage ${stageNumber} cancelled${reason}`)}"><s>${escapeHtml(chipLabel)}</s></span>`;
+        }
         // A gap below the current stage is a stage we have no rider result for — a
         // team time trial, say — not a stage that has yet to happen. Both are
         // unselectable, but they should not claim to mean the same thing.
@@ -12364,6 +12395,18 @@ function buildHtmlPage(data, view) {
         background: transparent;
         color: rgba(9, 33, 76, 0.32);
         cursor: default;
+      }
+
+      .stage-chip.is-cancelled {
+        border-style: dashed;
+        border-color: var(--line);
+        background: transparent;
+        color: rgba(9, 33, 76, 0.45);
+        cursor: help;
+      }
+
+      .stage-chip.is-cancelled s {
+        text-decoration-thickness: 1.5px;
       }
 
       .stage-panel-meta {

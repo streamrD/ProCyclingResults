@@ -851,6 +851,18 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   above; the scope line in `AGENTS.md`; two entries in `data/release-notes.md`; two
   review-log lines in `DATA-SOURCES.md`.
 
+### Added 2026-09-07, later (cancelled stages)
+
+- **A cancelled stage in the route table** ("Stage cancelled{{efn|...}}" in the winner
+  column, 2026 Vuelta stage 3) was read as a rider called "Stage cancelled" and, once
+  rider links shipped, linked to a PCS search for the phrase. `extractRouteStages`
+  now returns `winner: null, cancelled: true, cancellationNote` for such a row
+  (`parseRouteStageCancellation`, `ROUTE_STAGE_CANCELLED_CELL`), the route entry
+  carries both, the strip draws a struck-through chip with the reason as its title,
+  and `getNextRouteStage` skips it. `isPlausibleRiderName` rejects the phrase too,
+  so the same words from any other source never become a rider. Fixture:
+  `test/fixtures/vuelta-a-espana-route-cancelled-stage3.wikitext`.
+
 ### Added 2026-09-07, later (rider links)
 
 - **Rider names link to ProCyclingStats** through `buildRiderLinkMarkup`, used by
