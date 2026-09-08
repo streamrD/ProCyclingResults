@@ -874,9 +874,10 @@ Live as of 2026-08-23. Verify against production before acting — these move.
 - **Wikipedia link:** `parseAthleteDetails` now returns `pageTitle`, the cell's own
   link target ("Ben Healy (cyclist)"), and `buildStandingEntry` keeps it on the entry;
   season rows carry `winnerPageTitle`/`secondPageTitle`/`thirdPageTitle`, the Worlds
-  parsers carry it too. `buildRiderSeasonIndex` records the first title it meets as
-  `wikiTitle` (podiums, stage rows, top fives and GC rows all count; a top-five-only
-  rider gets a title and a zero tally). The card links to the article when a title is
+  parsers carry it too. `buildRiderSeasonIndex` records a `wikiTitle`
+  (podiums, stage rows, top fives and GC rows all count; a top-five-only rider gets a
+  title and a zero tally) — the first title it met, until 2026-09-08 made it the one
+  the page links most, which is not the same thing for a rider Wikipedia has renamed. The card links to the article when a title is
   known and to Wikipedia's go-to-title search otherwise, which is the case for rows
   that arrive from an official provider (plain names) for riders who never appear in
   a Wikipedia-sourced row.
@@ -892,10 +893,12 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   hover card told the race leader he had no win or podium this season while the same
   page had him winning stage 9. Seven riders were split that way in the 2026-09-08
   payload; the worst, Isaac del Toro, was hiding 6 wins and 11 podiums.
-- **`mergeRiderNameVariants`** joins keys that are the same first name plus exactly
-  one extra surname, matched as a subsequence, so `enric mas` ⊂ `enric mas nicolau`
-  and `tobias johannessen` ⊂ `tobias halland johannessen` both catch. Grouping is
-  union-find (`groupRiderNameVariants`) so a three-spelling chain lands in one group.
+- **`mergeRiderNameVariants`** joins keys that are one name plus a single extra name,
+  matched as a subsequence sharing a first or last token, so `enric mas` ⊂ `enric mas
+  nicolau` and `oscar onley` ⊂ `edgar oscar onley` both catch (the second position was
+  added by the evening's pass below, along with joining on a shared article title).
+  Grouping is union-find (`groupRiderNameVariants`) so a three-spelling chain lands in
+  one group.
   The merged tally is written back under **every** spelling, which keeps the client
   lookup a plain key hit and means a page cached before the fix still resolves. The
   rule needs at least two tokens and a matching first name, so "Juan García" and
