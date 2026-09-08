@@ -477,6 +477,26 @@ const COUNTRY_NAME_ALPHA2 = {
   uruguay: "UY", uzbekistan: "UZ", venezuela: "VE", zimbabwe: "ZW",
 };
 
+// Every rider name links to the rider's ProCyclingStats page, which opens on the
+// current season's results and ranks them per season. PCS addresses are name slugs,
+// but not reliably: "juan-ayuso" is not found (his page carries a second surname).
+// The search page for the name always lands and lists the rider, so that is the
+// default; a rider whose direct address has been checked in a browser goes here.
+// We link to PCS and never fetch from it (it blocks server requests anyway).
+const RIDER_PROFILE_URLS = {
+  "Tadej Pogačar": "https://www.procyclingstats.com/rider/tadej-pogacar",
+  "Toms Skujiņš": "https://www.procyclingstats.com/rider/toms-skujins",
+  "Magdeleine Vallieres": "https://www.procyclingstats.com/rider/magdeleine-vallieres",
+};
+
+function getRiderProfileUrl(name) {
+  const rider = String(name || "").replace(/\s+/g, " ").trim();
+  if (!rider) {
+    return "";
+  }
+  return RIDER_PROFILE_URLS[rider] || `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(rider)}`;
+}
+
 const RACE_FINISH_VIDEO_URLS = {
   "2026 Giro d'Italia": {
     1: "https://www.youtube.com/watch?v=k9etTDahUFo",
@@ -9201,7 +9221,17 @@ function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
     gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
   }
 
-  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}<span class="rider-text">${escapeHtml(rider)}</span>${gapMarkup}</span>`;
+  return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}${buildRiderLinkMarkup(rider)}${gapMarkup}</span>`;
+}
+
+// The name itself is the link, in the same ink with a dotted underline (chosen from
+// three comps on 2026-09-07). Opens in a new tab; the card stays where it is.
+function buildRiderLinkMarkup(rider) {
+  const url = getRiderProfileUrl(rider);
+  if (!url) {
+    return `<span class="rider-text">${escapeHtml(rider)}</span>`;
+  }
+  return `<a class="rider-text rider-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${escapeHtml(rider)} on ProCyclingStats">${escapeHtml(rider)}</a>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -9475,7 +9505,7 @@ function buildNationalChampionshipPodium(event) {
       (entry) => `
         <li class="national-podium-item">
           <span class="podium-place place-${escapeHtml(entry.place)}">${escapeHtml(entry.place)}</span>
-          <span class="rider-text">${escapeHtml(entry.rider)}</span>
+          ${buildRiderLinkMarkup(entry.rider)}
         </li>`,
     )
     .join("");
@@ -11882,6 +11912,22 @@ function buildHtmlPage(data, view) {
 
       .rider-text {
         min-width: 0;
+      }
+
+      .rider-link {
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-decoration-color: var(--line-strong);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 0.18em;
+      }
+
+      .rider-link:hover,
+      .rider-link:focus-visible {
+        color: var(--uci-blue-bright);
+        text-decoration-style: solid;
+        text-decoration-color: currentColor;
       }
 
       .country-flag {

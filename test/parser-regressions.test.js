@@ -85,6 +85,9 @@ function loadParserExports() {
       buildFinishVideoQuery,
       isLikelyFinishVideo,
       getFreshnessSensitiveRaces,
+      buildRiderMarkup,
+      getRiderProfileUrl,
+      buildNationalChampionshipPodium,
       cleanWikiText,
       buildRaceArticleQueries,
       scoreRaceArticle,
@@ -1763,6 +1766,24 @@ test("Worlds searches name the championship and reject the week's other events",
   assert.equal(isLikelyFinishVideo(video("Il Lombardia 2026 Highlights"), roadRace), false);
   assert.equal(isLikelyFinishVideo(video("Women's Elite Time Trial Highlights | 2026 UCI Road World Championships"), timeTrial), true);
   assert.equal(isLikelyFinishVideo(video("Men's Elite Time Trial Highlights | 2026 UCI Road World Championships"), timeTrial), false);
+});
+
+test("rider names link to ProCyclingStats, search by default and direct when verified", () => {
+  const { buildRiderMarkup, getRiderProfileUrl, buildPodiumMarkup, buildNationalChampionshipPodium } = loadParserExports();
+
+  assert.equal(getRiderProfileUrl("Juan Ayuso"), "https://www.procyclingstats.com/search.php?term=Juan%20Ayuso");
+  assert.equal(getRiderProfileUrl("Tadej Pogačar"), "https://www.procyclingstats.com/rider/tadej-pogacar");
+  assert.equal(getRiderProfileUrl(""), "");
+
+  const markup = buildRiderMarkup({ place: "2", rider: "Juan Ayuso", countryCode: "ESP", gap: "+01:28" });
+  assert.match(markup, /<a class="rider-text rider-link" href="https:\/\/www\.procyclingstats\.com\/search\.php\?term=Juan%20Ayuso" target="_blank" rel="noreferrer" title="Juan Ayuso on ProCyclingStats">Juan Ayuso<\/a>/);
+  assert.match(markup, /🇪🇸/);
+  assert.match(markup, /standing-gap">\+01:28/);
+  // Names are escaped inside the link as they were in the span.
+  assert.match(buildRiderMarkup({ rider: "Ben O'Connor" }), /Ben O&#39;Connor<\/a>/);
+  // A podium row and a national championship row carry the same link.
+  assert.match(buildPodiumMarkup([{ place: "1", rider: "Tadej Pogačar", countryCode: "SLO" }]), /href="https:\/\/www\.procyclingstats\.com\/rider\/tadej-pogacar"/);
+  assert.match(buildNationalChampionshipPodium({ podium: [{ place: "1", rider: "Artem Shmidt" }] }), /rider-link" href="https:\/\/www\.procyclingstats\.com\/search\.php\?term=Artem%20Shmidt"/);
 });
 
 test("parseAthleteDetails reads every {{flagathlete}} redirect spelling", () => {
@@ -4833,9 +4854,9 @@ test("a stage podium shows each rider's finishing time and gap, deriving whichev
     ],
     { metricContext: "stage" },
   );
-  assert.match(html, /Jakob Omrzel<\/span><span class="standing-gap">4:29:53<\/span><\/span>/);
-  assert.match(html, /Urko Berrade<\/span><span class="standing-gap">4:31:49<\/span><span class="standing-delta">\+01:56<\/span>/);
-  assert.match(html, /Santiago Buitrago<\/span><span class="standing-gap">4:32:06<\/span><span class="standing-delta">\+02:13<\/span>/);
+  assert.match(html, /Jakob Omrzel<\/a><span class="standing-gap">4:29:53<\/span><\/span>/);
+  assert.match(html, /Urko Berrade<\/a><span class="standing-gap">4:31:49<\/span><span class="standing-delta">\+01:56<\/span>/);
+  assert.match(html, /Santiago Buitrago<\/a><span class="standing-gap">4:32:06<\/span><span class="standing-delta">\+02:13<\/span>/);
 
   // The GC podium is untouched: leader time, then gaps.
   const gc = buildPodiumMarkup(
@@ -4845,8 +4866,8 @@ test("a stage podium shows each rider's finishing time and gap, deriving whichev
     ],
     { metricContext: "gc" },
   );
-  assert.match(gc, /Enric Mas<\/span><span class="standing-gap">40:31:51<\/span>/);
-  assert.match(gc, /Roglič<\/span><span class="standing-gap">\+01:45<\/span>/);
+  assert.match(gc, /Enric Mas<\/a><span class="standing-gap">40:31:51<\/span>/);
+  assert.match(gc, /Roglič<\/a><span class="standing-gap">\+01:45<\/span>/);
   assert.doesNotMatch(gc, /standing-delta/);
 });
 

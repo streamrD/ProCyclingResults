@@ -101,3 +101,6 @@ how the site fetches. The review log below is updated each time.
   paces the rebuild like a live stage day (once a minute in Montréal racing hours), so
   the steady-state count in those hours is the same one revisions query per minute as
   during a Grand Tour, plus one YouTube search per event once it has a result.
+- **2026-09-07, evening.** Rider names now link out to ProCyclingStats. This is a link
+  for the reader to follow, not something we fetch: the server makes no request to
+  ProCyclingStats, and the site is not in the table above. No change to request counts.

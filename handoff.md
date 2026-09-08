@@ -171,7 +171,7 @@ rg -n "function loadRaceData|function buildHtmlPage|NATIONAL_CHAMPIONSHIP|OFFICI
 Major areas (anchored to symbols rather than line numbers, which drift on every change — `rg -n "<symbol>" server.js`):
 
 - Top-level constants and product config: `PORT`, `BUILD_INFO`, the cache-TTL constants, `SEASONS`
-- Country, rider, and video lookup tables: `COUNTRY_NAMES`, `COUNTRY_FLAG_CODES`, `COUNTRY_NAME_ALPHA2`, `RACE_FINISH_VIDEO_URLS`
+- Country, rider, and video lookup tables: `COUNTRY_NAMES`, `COUNTRY_FLAG_CODES`, `COUNTRY_NAME_ALPHA2`, `RACE_FINISH_VIDEO_URLS`, `RIDER_PROFILE_URLS` (verified direct ProCyclingStats addresses; everyone else links to the PCS search page for their name through `getRiderProfileUrl`)
 - HTML escaping, wiki cleaning, and athlete parsing helpers: `escapeHtml`, `cleanWikiText`, `decodeHtml`, `parseAthleteDetails`
 - Season table parsing and upstream fetch helpers: `parseSeasonRows`, `fetchText`, `fetchWikiRaw`
 - National Championships parser and event expansion: `parseNationalChampionshipsIndex`, `buildNationalChampionshipEventRecords`
@@ -850,6 +850,21 @@ Live as of 2026-08-23. Verify against production before acting — these move.
 - **Where the details live.** "World Championships" under "Data Source Cross-Reference"
   above; the scope line in `AGENTS.md`; two entries in `data/release-notes.md`; two
   review-log lines in `DATA-SOURCES.md`.
+
+### Added 2026-09-07, later (rider links)
+
+- **Rider names link to ProCyclingStats** through `buildRiderLinkMarkup`, used by
+  `buildRiderMarkup` (podiums, stage winners, GC rows, jersey holders) and by the
+  national championship podium. Direction A ("Quiet": same ink, dotted underline) was
+  chosen from three comps: https://claude.ai/code/artifact/d1323357-44d7-47cf-af26-2bc18bf45ac3.
+- **Why the search page and not a slug.** PCS addresses are name slugs, but some
+  riders carry a second surname there (`/rider/juan-ayuso` is "Page not found") and
+  PCS blocks our server (Cloudflare 403), so a slug cannot be verified from code. The
+  search page for the name always lands and lists the rider; when two riders share a
+  name it lists both with birth date and team. A direct address checked in a browser
+  goes in `RIDER_PROFILE_URLS`. Phase two (a "season so far" line built from our own
+  cards, plus a Wikipedia link from the wikitext's rider link, which `cleanWikiText`
+  currently discards) was discussed and not started.
 
 ### Added 2026-09-06
 
