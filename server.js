@@ -14315,8 +14315,11 @@ function buildHtmlPage(data, view) {
           const name = entry ? entry.name : link.textContent.trim();
           const flagNode = link.previousElementSibling;
           const flag = flagNode && flagNode.classList.contains("country-flag") ? flagNode.textContent : "";
+          // "Race wins" are one-day races and overall classifications from the season
+          // tables; stage wins are counted apart, so a reader is not left adding them up
+          // or doubting the first number. Podiums include the wins.
           const tally = entry
-            ? tallyPart(entry.wins, "win", "wins") + tallyPart(entry.podiums, "podium", "podiums") + tallyPart(entry.stageWins, "stage win", "stage wins")
+            ? tallyPart(entry.wins, "race win", "race wins") + tallyPart(entry.stageWins, "stage win", "stage wins") + tallyPart(entry.podiums, "podium", "podiums")
             : "";
           const wikipedia = entry && entry.wikiTitle
             ? "https://en.wikipedia.org/wiki/" + encodeURIComponent(entry.wikiTitle.replace(/ /g, "_"))
