@@ -1788,7 +1788,9 @@ test("rider names link to ProCyclingStats, search by default and direct when ver
   // A corrected address wins over the rule.
   assert.equal(getRiderProfileUrl("Juan Ayuso"), "https://www.procyclingstats.com/rider/juan-ayuso-pesquera");
   // A team in a team time trial, or a lone surname, has no address to guess.
-  assert.equal(getRiderProfileUrl("Visma–Lease a Bike"), "https://www.procyclingstats.com/search.php?term=Visma%E2%80%93Lease%20a%20Bike");
+  // A dash in a team name makes PCS search return nothing; a space finds the team.
+  assert.equal(getRiderProfileUrl("Visma–Lease a Bike"), "https://www.procyclingstats.com/search.php?term=Visma%20Lease%20a%20Bike");
+  assert.equal(getRiderProfileUrl("Red Bull–Bora–Hansgrohe"), "https://www.procyclingstats.com/search.php?term=Red%20Bull%20Bora%20Hansgrohe");
   assert.equal(getRiderProfileUrl("UAE Team Emirates XRG"), "https://www.procyclingstats.com/search.php?term=UAE%20Team%20Emirates%20XRG");
   assert.equal(getRiderProfileUrl("Bredewold"), "https://www.procyclingstats.com/search.php?term=Bredewold");
   assert.equal(getRiderProfileUrl(""), "");

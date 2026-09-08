@@ -597,7 +597,11 @@ function getRiderProfileUrl(name) {
   if (isDirectRiderLinkCandidate(rider)) {
     return `https://www.procyclingstats.com/rider/${buildRiderSlug(rider)}`;
   }
-  return `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(rider)}`;
+  // PCS search matches words, and a dash in a team name ("Visma–Lease a Bike") is
+  // not one of them: with the dash the search finds nothing, with a space it lists
+  // the team.
+  const term = rider.replace(/\s*[–—-]\s*/g, " ").replace(/\s+/g, " ").trim();
+  return `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(term)}`;
 }
 
 const RACE_FINISH_VIDEO_URLS = {
