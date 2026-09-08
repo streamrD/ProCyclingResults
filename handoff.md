@@ -929,6 +929,27 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   spelling of a rider's name reaches every table on the card", both in
   `test/parser-regressions.test.js`, with `buildCanonicalRiderNames` and
   `applyCanonicalRiderNames` exported through the harness.
+- **Left open: season rows still carry their own spelling.** The pass skips
+  `race.winner/second/third`, so a rider can still appear under two names on the page
+  — just not inside one card. On 2026-09-08 that is Katarzyna Niewiadoma-Phinney in a
+  Women's WorldTour podium against Katarzyna Niewiadoma in the stage tables (a split
+  this pass created: before it, both said Niewiadoma-Phinney), and Kimberley Le
+  Court-Pienaar against Kim Le Court-Pienaar (pre-existing, and out of reach of a rule
+  keyed on a matching first name). Both keep the right tally and the right PCS address;
+  only the printed name differs. Fixing it is either extending the rewrite to season
+  rows, or preferring the racing name over the article title — a product call, not a
+  parser one.
+- **Verification trap worth remembering:** a sweep that groups rendered names by
+  `foldRiderKey` cannot see this class of split, because the two spellings fold to
+  different keys — which is the whole reason `mergeRiderNameVariants` exists. The
+  "0 riders spelled two ways" check run on the day was blind to exactly the case it
+  was meant to prove. Group by canonical name, not by folded key.
+- **Coupling to watch:** `RIDER_PROFILE_URLS` is keyed by the name as rendered, so a
+  rename can silently orphan an override. Today's renamed "Enric Mas Nicolau" entry is
+  now unreachable, harmlessly (the settled "Enric Mas" slugs to the right address on
+  its own). Whenever the settling rule changes, re-check that map. PCS addresses for
+  names that changed cannot be verified from the server at all — Cloudflare blocks it;
+  use `scripts/pcs-rider-links.browser.js` from a PCS tab.
 
 ### Added 2026-09-07, later (cancelled stages)
 
