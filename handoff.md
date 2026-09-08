@@ -1421,6 +1421,69 @@ Traps that cost time:
 - `git pull --rebase` refuses with unstaged changes; commit first, then pull, then push
   (the site editor may have committed to `main` in the meantime).
 
+## Process Lessons From The 2026-09-07 Session
+
+A long session, four features, thirteen pushes, every one verified on production before
+the next was started: the Montréal Worlds (upcoming cards, then results), rider names
+linked to ProCyclingStats, a cancelled-stage fix, and a rider hover card. The detail of
+each lives under "Open Threads › Added 2026-09-07…" above and in "Data Source
+Cross-Reference"; this section is about how the work went.
+
+- **Start by measuring the gap on production, not in the code.** "Will we have
+  problems with the Worlds?" was answered by curling `/api/races` on the live site and
+  seeing the upcoming list jump from GP de Montréal (13 Sept) to Il Lombardia (10 Oct).
+  The cause was then one grep away (the race list is the two WorldTour season tables and
+  nothing else). The same order, production first, found the "Stage cancelled" rider.
+- **When the source does not exist yet, build against last year's and say so.** The
+  2026 Worlds event pages were 404 all day, so the results parser was written against
+  the 2025 Kigali pages, saved as fixtures, and the handoff, AGENTS.md and a memory note
+  all carry the 20 September check. A test that passes on 2025 markup is a promise
+  about layout, not about the future; naming that plainly is part of the deliverable.
+- **The user decides scope in short answers; comps are how they can.** "Upcoming cards,
+  yes, but only the four elite events" / "option b, put the men first" / "compact" /
+  "a". Each came back within a minute of a canvas built from the production stylesheet
+  and real data (`prod-index.html` for the CSS, `/api/races` for the rows, the VM
+  harness for the real builders). Three canvases were made today:
+  Worlds cards https://claude.ai/code/artifact/9d6216f4-92dd-48b1-806c-34feb554a6fc,
+  rider links https://claude.ai/code/artifact/d1323357-44d7-47cf-af26-2bc18bf45ac3,
+  hover card https://claude.ai/code/artifact/78d3c7d0-757b-48e8-b1e9-883c6da2ad51.
+- **Some checks can only run in the user's browser.** ProCyclingStats answers the
+  server with a Cloudflare challenge (403), so the 517 rider addresses were verified
+  from a PCS tab in the user's Chrome: same-origin `fetch` of each `/rider/<slug>`,
+  reading the `<title>`, with the PCS search page consulted for misses. That became
+  `scripts/pcs-rider-links.browser.js`. Two traps: the JavaScript tool's 45 s cap
+  (run the loop as a background job on `window` and poll it), and a `fetch` with no
+  timeout that hung the whole run (use `AbortSignal.timeout`). Reading results back is
+  limited to ~1 KB per call, so return compact rows in slices; a POST to a local
+  receiver from the PCS page did not get through.
+- **A first answer can be right and still wrong for the reader.** "1 win, 3 podiums,
+  3 stage wins" for Van Aert was correct by our definitions and read as an error to the
+  maintainer, twice ("Wout has more than 1 win", then Romele's stage second place).
+  The fix was the definition, not the data: wins and podiums now each count one-day,
+  overall and stage results together, as PCS does. When a figure has a narrow
+  definition, either say the definition on the card or use the one readers expect.
+- **Never build a `$`-pattern into a `String.replace` replacement.** A code-editing
+  script wrote `(.+)$\`` into `server.js` and JavaScript's replace expanded `` $` `` to
+  the whole file prefix, producing a 14,000-line syntax error. Every edit script since
+  passes a function as the replacement (`s.replace(a, () => b)`).
+- **Escaping across three layers bites.** Bash single quotes cannot hold an apostrophe
+  ("Men's"), a JS template literal cannot hold `${`, and the smoke test refuses any
+  `${` in the client script. Edit scripts went into files via quoted heredocs, the
+  client code is string concatenation, and `\\s*` after `=` in an infobox regex once
+  swallowed the newline and read the next line's value (`[ \\t]*` fixed it).
+- **VM-sandbox values are not `deepStrictEqual` to host values.** Arrays built inside
+  the test harness's `vm` context have a different `Array` prototype; compare through
+  `JSON.parse(JSON.stringify(...))`, as the older tests already did.
+- **Same rider, two spellings, one card.** The ASO provider writes "Tadej Pogacar",
+  Wikipedia "Tadej Pogačar". Anything keyed by rider name must fold accents
+  (`foldRiderKey`), or a rider's season splits in two. The rider index does; the finish
+  video map and `RIDER_PROFILE_URLS` are keyed by the name as rendered, on purpose.
+- **Verification loop, unchanged and worth repeating:** commit, `git pull --rebase`,
+  push, poll `/api/build-info` for the SHA, wait for the page past warm-up, then grep
+  the live HTML or JSON for the exact thing that changed. Every push today went through
+  it; the one time a check script looked for the wrong string, a direct `curl | grep`
+  settled it.
+
 ## Suggested First Checks For A New Agent
 
 Run these before making changes (and read `DATA-SOURCES.md` before changing anything
@@ -1448,6 +1511,8 @@ Then choose the smallest relevant read path:
 - Parser or data issue: search `server.js` for the target race/provider, then inspect relevant tests
 - National Championships issue: search `NATIONAL_CHAMPIONSHIP` in `server.js`
 - Finish video issue: search `RACE_FINISH_VIDEO_URLS`, `getRaceFinishVideoUrl`, and `getStageFinishVideoUrl`
+- Rider link or hover card issue: search `getRiderProfileUrl`, `RIDER_PROFILE_URLS`, `buildRiderSeasonIndex`, and `bindRiderCards`; verify PCS addresses only from a browser (`scripts/pcs-rider-links.browser.js`)
+- World Championships issue: search `WORLD_CHAMPIONSHIPS`, `parseWorldChampionshipEliteEvents`, and `enrichWorldChampionshipResults`; the 2026 event pages were first expected to exist on 20 September 2026
 - Stage results / stage strip issue: search `buildStageHistory`, `buildStageSwitcherMarkup`, and `extractStageArticleTitles`
 - Stage profile issue: search `buildStageProfileMarkup`, `enrichStageProfiles`, `extractRouteStages`, and `STAGE_PROFILE_SOURCES`
 - Article issue: search `buildRaceArticleQueries`, `scoreRaceArticle`, and `selectRaceArticles`

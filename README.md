@@ -211,6 +211,11 @@ Some championship event records have small local metadata overrides for known da
 
 `DATA-SOURCES.md` is the public statement of what the site reads, how often, and how to reach us. It is the URL in the server's user agent (`FETCH_USER_AGENT`); set `SOURCE_CONTACT` in the deployment environment to an email address and it is appended so a site operator can reach a person. Keep that document's table current whenever fetch frequency or caching changes, and add a dated line to its review log.
 
+ProCyclingStats is linked, never read: every rider name is a link to the rider's PCS
+page (`getRiderProfileUrl`, `RIDER_PROFILE_URLS`), and the server makes no request to
+PCS, which answers it with a Cloudflare challenge in any case. Rider addresses are
+verified from a browser with `scripts/pcs-rider-links.browser.js`.
+
 ### Secondary source: Bing News RSS
 
 Race coverage articles are pulled from Bing News RSS search feeds, using several search queries per race name variant. The app then filters, deduplicates, and scores those results.
@@ -328,6 +333,15 @@ The `SEASONS` constant is the main content configuration layer. Each entry decla
 - Optional inclusion filters for partial season pages
 
 If future seasons or calendars are added, this is the first place to inspect.
+
+The UCI Road World Championships are not on either WorldTour season page, so they have
+their own configuration, `WORLD_CHAMPIONSHIPS`: the championship article's title and the
+series label. `parseWorldChampionshipEliteEvents` reads the four elite events from that
+article's schedule tables, `enrichWorldChampionshipResults` reads each event's own page
+from its race day, and `parseWorldChampionshipEventResult` parses the infobox podium and
+the "Final classification" table (nations, not teams). The events render in the
+`world-championships` competition group, men's first. For 2027 the page title changes
+and nothing else should need to.
 
 ## Parsing Strategy
 
@@ -583,6 +597,8 @@ Client-side JS is still intentionally small, but it now does more than simple fo
 - Loads the full stage podiums for a finished stage race on demand, replacing the switcher with the deeper markup returned by `/api/race-stages`. The control appears only when the card's history is winner-only, and never on a live card, whose companion articles were already read at build time.
 - Swaps the stage shown on a stage-race card. Each card with two or more raced stages renders a numbered strip covering the whole route — stages not yet raced are disabled — plus one hidden panel per raced stage. A delegated `click` listener on anything carrying `data-stage-target` — the chips and, on a live race, the "Up next" row — toggles `is-active` and panel `hidden` by target, so the strip works inside deferred sections without rebinding, and a 21-stage card stays the height of a 5-stage one. The GC section below always shows the race's current overall regardless of the selected stage. Each panel links its own stage's finish video where one is known. Each panel also opens with a stage profile block — a measured altitude trace where the organiser publishes one (labelled with its source, compact by default and expandable to a tall chart with axes and start/finish markers; the choice is kept in `localStorage` under `pcr-profile-view`), otherwise a schematic stage-type pictogram with a "no elevation profile is available" note — with distance and climbing in metric or imperial. The km/mi toggle is delegated at `document`, stores the choice in `localStorage` (`pcr-units`), and a `MutationObserver` re-applies it to stage markup that arrives later.
 - Fills each race card's "Latest news" line from `/api/race-news` as the card scrolls into view, and opens the list in place
+- Links every rider name to ProCyclingStats (opens in a new tab), and on pointer devices opens a small rider card after a 250 ms hover or on keyboard focus: flag and name, the season's wins and podiums as the site holds them (`riderSeasons`, an accent-folded index embedded as JSON before the client script), and links to the rider's PCS page and exact Wikipedia article. The card is fixed-positioned on the body so the result cards' overflow clip cannot cut it off; it flips above the name when there is no room below, and closes on mouse-out, Escape, scroll or resize. Phones keep the plain link.
+- Draws a cancelled stage in the stage strip as a struck-through chip whose title carries the reason from the route table, and never offers it as the next stage.
 
 There is still no frontend framework and no SPA state model. The browser only fetches server-rendered fragments and JSON payloads for these targeted interactions.
 
