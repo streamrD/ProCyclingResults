@@ -789,7 +789,10 @@ function applyCanonicalRiderNames(riderSeasons, stageRaces, seasonRaces) {
   (stageRaces || []).forEach((race) => {
     (race?.resultStandings || []).forEach((standing) => rename(standing, "rider"));
     const stageRace = race?.stageRace;
-    (stageRace?.stages || []).forEach((stage) => {
+    [...(stageRace?.stages || []), stageRace?.latestStage].forEach((stage) => {
+      if (!stage) {
+        return;
+      }
       rename(stage, "winner");
       (stage?.standings || []).forEach((standing) => rename(standing, "rider"));
     });
@@ -6397,7 +6400,11 @@ function loadOfficialStageRaceSnapshotWithinBudget(race, budgetMs) {
 // objects the caller cached, so the refinement appears on the next render without
 // another build. It merges through the same path the inline case uses, so a late
 // snapshot never wins where it is worse than what Wikipedia already gave.
-function applyLateOfficialSnapshots(lateLookups) {
+// The snapshot lands after the page has already been built, so it has to be put
+// through the same name settling the first pass did — otherwise a provider's
+// spelling ("Anna Van Der Breggen", "Niamh Fisher-black") overwrites a settled one
+// and the race is printed with a rider the rest of the page calls something else.
+function applyLateOfficialSnapshots(lateLookups, riderSeasons) {
   lateLookups.forEach(({ race, pending }) => {
     pending
       .then((officialSnapshot) => {
@@ -6409,6 +6416,7 @@ function applyLateOfficialSnapshots(lateLookups) {
         if (merged && ((merged.totalStages || 0) > 1 || (merged.completedStages || 0) > 0)) {
           race.stageRace = merged;
           race.resultStandings = selectStandings(merged.generalClassification?.standings, merged.overallResult);
+          applyCanonicalRiderNames(riderSeasons, [race]);
         }
       })
       .catch(() => {
@@ -7481,15 +7489,17 @@ async function buildRaceData(metadata, options = {}) {
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageProfiles([...liveStageRaces, ...finalizedStageRaces, ...recentResults]);
-  // Fire-and-forget: these races already render from Wikipedia, and their provider is
-  // still in flight rather than re-requested.
-  applyLateOfficialSnapshots(lateOfficialLookups);
-
   // Settle a rider's spelling before anything renders, so a card cannot show its
   // general classification and its stage table calling the same rider two names.
+  // This has to happen before the late snapshots are wired up, because each one
+  // re-settles the race it lands on and needs the index to do it.
   const riderStageRaces = [...liveStageRaces, ...finalizedStageRaces, ...recentResults];
   const riderSeasons = buildRiderSeasonIndex(allRaces, riderStageRaces);
   applyCanonicalRiderNames(riderSeasons, riderStageRaces, [...allRaces, ...riderStageRaces]);
+
+  // Fire-and-forget: these races already render from Wikipedia, and their provider is
+  // still in flight rather than re-requested.
+  applyLateOfficialSnapshots(lateOfficialLookups, riderSeasons);
 
   return {
     fetchedAt: new Date().toISOString(),

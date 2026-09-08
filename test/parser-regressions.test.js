@@ -1984,6 +1984,7 @@ test("a rider the sources link to one article is one rider whatever they call th
 
 test("one spelling of a rider's name reaches every table on the card", () => {
   const { buildRiderSeasonIndex, buildCanonicalRiderNames, applyCanonicalRiderNames, foldRiderKey } = loadParserExports();
+  const stageRaceOf = (race) => race.stageRace;
 
   const vuelta = {
     pageTitle: "2026 Vuelta a España",
@@ -1992,6 +1993,9 @@ test("one spelling of a rider's name reaches every table on the card", () => {
         { label: "Stage 9", winner: "Enric Mas", standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP", pageTitle: "Enric Mas" }, { place: "2", rider: "Oscar Onley", countryCode: "GBR" }, { place: "3", rider: "Tadej Pogačar", countryCode: "SLO", pageTitle: "Tadej Pogačar" }] },
       ],
       route: [{ number: 3, winner: "Stage cancelled", cancelled: true }, { number: 9, winner: "Enric Mas" }],
+      // A provider's snapshot puts its own copy of the last stage here, and it
+      // arrives after the page is built, so it has to be settled too.
+      latestStage: { label: "Stage 9", winner: "Enric Mas Nicolau", standings: [{ place: "1", rider: "Enric Mas Nicolau", countryCode: "ESP" }] },
       generalClassification: {
         leader: "Enric Mas Nicolau",
         standings: [
@@ -2020,7 +2024,9 @@ test("one spelling of a rider's name reaches every table on the card", () => {
   // A rider the page spells one way is in the map reading the way he already does.
   assert.equal(canonical.get("oscar onley"), "Oscar Onley");
 
-  assert.equal(applyCanonicalRiderNames(index, races, [seasonRow]), 7);
+  assert.equal(applyCanonicalRiderNames(index, races, [seasonRow]), 9);
+  assert.equal(stageRaceOf(vuelta).latestStage.winner, "Enric Mas");
+  assert.equal(stageRaceOf(vuelta).latestStage.standings[0].rider, "Enric Mas");
   assert.equal(seasonRow.winner, "Tadej Pogačar");
   assert.equal(seasonRow.second, "Enric Mas");
   assert.equal(seasonRow.third, "Oscar Onley");
