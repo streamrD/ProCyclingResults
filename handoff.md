@@ -699,8 +699,8 @@ links (`fillClassificationLeaderCountryCodes`, applied in the snapshot and again
 `mergeStageRaceSnapshots`).
 
 **7a. Jersey contenders on hover (added 2026-09-10).** Resting the pointer on a
-classification in that list opens a card with the five riders — or, on the team
-classification, the five teams — closest to the jersey. The source is the
+classification in that list opens a card with that classification's top five — five
+teams, on the team classification — the leader of it first, not five riders chasing it. The source is the
 "Classification standings" section below the leadership table, which every stage-race
 article carries: one top-ten table per classification, written either as a captioned
 wikitable ("Points classification after stage 17 (1–10)") on the Grand Tours or as a

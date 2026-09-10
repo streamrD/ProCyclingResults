@@ -9923,9 +9923,10 @@ function buildJerseySwatchMarkup(jersey) {
   )}</title>${body}${dotMarkup}</svg>`;
 }
 
-// The five riders — or, on the team classification, the five teams — closest to each
-// jersey, carried in a <template> beside the classification and cloned into a card on
-// hover. Rendered here rather than in the client script so a name, a flag and a
+// A classification's top five — five teams, on the team classification — carried in a
+// <template> beside it and cloned into a card on hover. The leader of the classification
+// is the first row, and because these tables lag the leadership table by a stage that is
+// not always whoever holds the jersey beside it. Rendered here rather than in the client script so a name, a flag and a
 // standing are written the one way the rest of the page writes them.
 //
 // The standing itself is whatever the classification is scored in: the count on a
