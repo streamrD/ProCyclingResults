@@ -15417,6 +15417,20 @@ function renderMarkdown(markdown) {
       out.push("<hr />");
       continue;
     }
+    // An image alone on its line is a figure. Same address rule as a link — our own
+    // /assets or an https URL, nothing else — so a page saved from the site editor
+    // cannot smuggle a javascript: or data: source past escapeHtml.
+    const figure = line.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]*)\)$/);
+    if (figure) {
+      flushParagraph();
+      flushList();
+      out.push(
+        `<figure class="site-figure"><img src="${escapeHtml(figure[2])}" alt="${escapeHtml(
+          figure[1],
+        )}" loading="lazy" decoding="async" /></figure>`,
+      );
+      continue;
+    }
     const lead = line.match(/^>\s+(.+)$/);
     if (lead) {
       flushParagraph();
@@ -15831,6 +15845,12 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .site-prose a:hover { text-decoration: underline; }
       .site-prose code { padding: 0.1rem 0.35rem; border-radius: 6px; background: rgba(0, 51, 160, 0.07); font-size: 0.9em; }
       .site-prose hr { margin: 1.5rem 0; border: 0; border-top: 1px solid var(--line); }
+      .site-prose .site-figure { margin: 0 0 1.4rem; }
+      .site-prose .site-figure img { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line); }
+      /* The page already writes its asides as an italic line; one straight after a
+         figure is that figure's caption. */
+      .site-prose .site-figure + p { margin-top: 0.7rem; color: var(--muted); font-size: 0.92rem; }
+      .site-prose .site-figure + p + .site-lead { margin-top: 1.3rem; }
       .meta { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.9rem; }
       .site-edit-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
       .site-edit-status { margin: 0; }

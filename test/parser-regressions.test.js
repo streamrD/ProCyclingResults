@@ -5561,6 +5561,12 @@ test("renderMarkdown handles the small subset the site pages use and escapes eve
     "[bad](javascript:alert(1)) stays text",
     "",
     "> A lead line in larger type",
+    "",
+    "![A committee, <script>alert(1)</script> and all](/assets/gruppetto.jpg)",
+    "",
+    "*The caption under it.*",
+    "",
+    "![nowhere](javascript:alert(1))",
   ].join("\n"));
 
   assert.match(html, /<p>Intro line with <strong>bold<\/strong>, <em>italics<\/em>, <code>code<\/code> and a <a href="https:\/\/example.com\/a\?b=1&amp;c=2" target="_blank" rel="noreferrer">link<\/a>\.<\/p>/);
@@ -5570,6 +5576,15 @@ test("renderMarkdown handles the small subset the site pages use and escapes eve
   assert.match(html, /\[bad\]\(javascript:alert\(1\)\) stays text/);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /<p class="site-lead">A lead line in larger type<\/p>/);
+  // An image alone on its line is a figure; the italic line under it is its caption by
+  // the page's own convention, so it stays an ordinary paragraph.
+  assert.match(
+    html,
+    /<figure class="site-figure"><img src="\/assets\/gruppetto\.jpg" alt="A committee, &lt;script&gt;alert\(1\)&lt;\/script&gt; and all" loading="lazy" decoding="async" \/><\/figure>\n<p><em>The caption under it\.<\/em><\/p>/,
+  );
+  // An address that is neither ours nor https is not an image, and not a link either.
+  assert.match(html, /!\[nowhere\]\(javascript:alert\(1\)\)/);
+  assert.doesNotMatch(html, /javascript:alert\(1\)"/);
   assert.equal(renderMarkdown(""), "");
 });
 
