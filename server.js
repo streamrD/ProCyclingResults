@@ -15632,13 +15632,72 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       <div class="site-editor" data-site-editor data-site-page="${escapeHtml(pageId)}" hidden>
         <label class="site-editor-label" for="site-editor-text">Markdown for ${escapeHtml(page.title)}</label>
         <textarea id="site-editor-text" class="site-editor-text" spellcheck="true">${escapeHtml(markdown)}</textarea>
-        <p class="meta">Headings with #, bullets with -, a lead paragraph with &gt;, **bold**, *italics* and [links](https://…) are supported. Saving publishes immediately.</p>
+        <p class="meta">Headings with #, bullets with -, a lead paragraph with &gt;, **bold**, *italics*, [links](https://…) and a picture on its own line (![description](/assets/name.jpg)) are supported. Saving publishes immediately.</p>
         <div class="site-editor-actions">
           <button type="button" class="site-edit-button is-primary" data-site-save>Save</button>
           <button type="button" class="site-edit-button" data-site-cancel>Cancel</button>
         </div>
       </div>`
     : "";
+  // Double-click a picture to fill the window with it, click anywhere to put it back.
+  // Delegated from the prose so it still works on markup the editor replaces after a
+  // save, and written without a template expression because this whole page is one.
+  const figureScript = `
+    <script>
+      (function () {
+        var prose = document.querySelector("[data-site-prose]");
+        if (!prose) {
+          return;
+        }
+        var overlay = null;
+
+        function close() {
+          if (!overlay) {
+            return;
+          }
+          overlay.remove();
+          overlay = null;
+          document.documentElement.style.removeProperty("overflow");
+        }
+
+        function open(image) {
+          close();
+          overlay = document.createElement("div");
+          overlay.className = "site-figure-full";
+          overlay.setAttribute("role", "dialog");
+          overlay.setAttribute("aria-modal", "true");
+          overlay.setAttribute("aria-label", image.alt || "Picture, full size");
+          var full = document.createElement("img");
+          full.src = image.currentSrc || image.src;
+          full.alt = image.alt || "";
+          overlay.appendChild(full);
+          document.body.appendChild(overlay);
+          document.documentElement.style.overflow = "hidden";
+        }
+
+        prose.addEventListener("dblclick", function (event) {
+          var image = event.target.closest(".site-figure img");
+          if (!image) {
+            return;
+          }
+          // A double-click selects the words around the picture; nobody wants that.
+          event.preventDefault();
+          if (window.getSelection) {
+            window.getSelection().removeAllRanges();
+          }
+          open(image);
+        });
+        // The two clicks of the double-click land before it, while nothing is open yet,
+        // so this only ever closes what the double-click opened.
+        document.addEventListener("click", close);
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            close();
+          }
+        });
+        window.addEventListener("resize", close);
+      })();
+    </script>`;
   const editorScript = editable
     ? `
     <script>
@@ -15851,6 +15910,14 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
          figure is that figure's caption. */
       .site-prose .site-figure + p { margin-top: 0.7rem; color: var(--muted); font-size: 0.92rem; }
       .site-prose .site-figure + p + .site-lead { margin-top: 1.3rem; }
+      /* Double-click fills the window with the picture; a click puts it back. Only the
+         cursor hints at it, and only where there is a pointer to double-click with. */
+      @media (hover: hover) { .site-prose .site-figure img { cursor: zoom-in; } }
+      .site-figure-full {
+        position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center;
+        padding: 2vmin; background: rgba(0, 24, 77, 0.93); cursor: zoom-out;
+      }
+      .site-figure-full img { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 10px; box-shadow: var(--shadow-strong); }
       .meta { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.9rem; }
       .site-edit-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
       .site-edit-status { margin: 0; }
@@ -15904,6 +15971,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       <p class="footer-note">Free, for all to use and enjoy.</p>
       ${buildSiteFooterLinks(page.path)}
     </main>
+    ${figureScript}
     ${editorScript}
   </body>
 </html>`;

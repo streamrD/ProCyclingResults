@@ -31,13 +31,14 @@ function loadServer() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup };`,
+    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup, buildSiteContentPage };`,
     sandbox,
   );
   return {
     buildStageSwitcherMarkup: sandbox.__SMOKE__.buildStageSwitcherMarkup,
     buildRaceNewsMarkup: sandbox.__SMOKE__.buildRaceNewsMarkup,
     buildJerseyHoldersMarkup: sandbox.__SMOKE__.buildJerseyHoldersMarkup,
+    buildSiteContentPage: sandbox.__SMOKE__.buildSiteContentPage,
     style: serverSource.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@font-face\s*\{[^}]*\}/g, ""),
     // The homepage script is the block that defines the unit preference; the warm-up
     // page carries a later, unrelated block. Its one server-side expression is the
@@ -383,4 +384,83 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(touch.hoverMedia, false);
   assert.equal(touch.opened, false);
   assert.equal(touch.cursor, "auto");
+});
+
+test("a picture on a site page fills the window on double-click and goes back on a click", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  // The real page, not a stand-in: runProbe writes whatever HTML it is handed, so the
+  // about page is driven exactly as it ships, with its own script and stylesheet.
+  const { buildSiteContentPage } = loadServer();
+  const markdown = [
+    "![Five people who do not exist](/assets/gruppetto.jpg)",
+    "",
+    "*The caption.*",
+    "",
+    "Some prose to double-click near.",
+  ].join("\n");
+  const page = buildSiteContentPage("about", markdown, { editable: false }).replace(
+    "</body>",
+    `<pre id="smoke"></pre>
+<script>
+  const out = { errors: [] };
+  window.addEventListener('error', (event) => out.errors.push(event.message));
+  const fire = (node, type) => node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+  const image = document.querySelector('.site-figure img');
+  out.startingOverlays = document.querySelectorAll('.site-figure-full').length;
+
+  // The real sequence: two clicks land before the double-click, and neither may close
+  // what the double-click is about to open.
+  fire(image, 'click');
+  fire(image, 'click');
+  fire(image, 'dblclick');
+  const overlay = document.querySelector('.site-figure-full');
+  out.opened = Boolean(overlay);
+  // Assigning .src resolves it, so compare the resolved address, not the attribute.
+  out.sameImage = overlay && overlay.querySelector('img').src === image.src;
+  out.imagePath = new URL(image.src).pathname;
+  out.altKept = overlay && overlay.querySelector('img').alt;
+  out.covers = overlay
+    ? (() => {
+        const box = overlay.getBoundingClientRect();
+        return box.width === window.innerWidth && box.height === window.innerHeight;
+      })()
+    : false;
+  out.scrollLocked = getComputedStyle(document.documentElement).overflow === 'hidden';
+  out.dialog = overlay && overlay.getAttribute('role');
+
+  fire(document.body, 'click');
+  out.closed = !document.querySelector('.site-figure-full');
+  out.scrollFree = getComputedStyle(document.documentElement).overflow !== 'hidden';
+
+  // Escape closes it too, and a double-click on ordinary prose opens nothing.
+  fire(image, 'dblclick');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  out.escapeClosed = !document.querySelector('.site-figure-full');
+  fire(document.querySelector('.site-prose p:last-of-type'), 'dblclick');
+  out.proseOpensNothing = !document.querySelector('.site-figure-full');
+
+  document.getElementById('smoke').textContent = JSON.stringify(out);
+</script>
+</body>`,
+  );
+  const out = runProbe(chrome, page);
+
+  assert.deepEqual(out.errors, []);
+  assert.equal(out.startingOverlays, 0);
+  assert.equal(out.opened, true);
+  assert.equal(out.sameImage, true);
+  assert.equal(out.imagePath, "/assets/gruppetto.jpg");
+  assert.equal(out.altKept, "Five people who do not exist");
+  assert.equal(out.covers, true);
+  assert.equal(out.scrollLocked, true);
+  assert.equal(out.dialog, "dialog");
+  assert.equal(out.closed, true);
+  assert.equal(out.scrollFree, true);
+  assert.equal(out.escapeClosed, true);
+  assert.equal(out.proseOpensNothing, true);
 });
