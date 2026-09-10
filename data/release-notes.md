@@ -2,6 +2,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 10 September 2026
 
+- **A picture of the committee.** The about page opens with one now. Click it to fill the window, click again to come back.
+
 - **The top five in every classification.** On a computer, rest the pointer on one of the classifications listed under a stage race's overall result and a card opens with the top five in it, the rider leading it first.
 
 - **Two races that had been reading as blank.** The Giro d'Italia Women and the Vuelta a Burgos Feminas write their result tables with one extra space, and the site had been skipping all eighteen of those tables. Their classifications, and the standings behind each jersey, are now read like every other race's.

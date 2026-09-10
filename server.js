@@ -15639,9 +15639,11 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
         </div>
       </div>`
     : "";
-  // Double-click a picture to fill the window with it, click anywhere to put it back.
-  // Delegated from the prose so it still works on markup the editor replaces after a
-  // save, and written without a template expression because this whole page is one.
+  // Click a picture to fill the window with it, click anywhere to put it back. The
+  // magnifying-glass cursor is invitation enough; asking for a double-click on top of
+  // it was a second thing to discover. Delegated from the prose so it still works on
+  // markup the editor replaces after a save, and written without a template expression
+  // because this whole page is one.
   const figureScript = `
     <script>
       (function () {
@@ -15675,20 +15677,16 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
           document.documentElement.style.overflow = "hidden";
         }
 
-        prose.addEventListener("dblclick", function (event) {
+        prose.addEventListener("click", function (event) {
           var image = event.target.closest(".site-figure img");
           if (!image) {
             return;
           }
-          // A double-click selects the words around the picture; nobody wants that.
-          event.preventDefault();
-          if (window.getSelection) {
-            window.getSelection().removeAllRanges();
-          }
+          // Without this the opening click carries on to the handler below and shuts
+          // the overlay in the same tick it was opened.
+          event.stopPropagation();
           open(image);
         });
-        // The two clicks of the double-click land before it, while nothing is open yet,
-        // so this only ever closes what the double-click opened.
         document.addEventListener("click", close);
         document.addEventListener("keydown", function (event) {
           if (event.key === "Escape") {
@@ -15913,11 +15911,15 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       /* Double-click fills the window with the picture; a click puts it back. Only the
          cursor hints at it, and only where there is a pointer to double-click with. */
       @media (hover: hover) { .site-prose .site-figure img { cursor: zoom-in; } }
+      /* Deliberately not the site blue: it sits right against the photograph and fought
+         with its colour. A near-black keeps the eye on the picture. Edge to edge, with
+         no padding or corner radius, so the image takes as much of the window as its
+         own shape allows. */
       .site-figure-full {
         position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center;
-        padding: 2vmin; background: rgba(0, 24, 77, 0.93); cursor: zoom-out;
+        background: #100e0c; cursor: zoom-out;
       }
-      .site-figure-full img { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 10px; box-shadow: var(--shadow-strong); }
+      .site-figure-full img { width: 100%; height: 100%; object-fit: contain; }
       .meta { margin: 0.6rem 0 0; color: var(--muted); font-size: 0.9rem; }
       .site-edit-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); }
       .site-edit-status { margin: 0; }

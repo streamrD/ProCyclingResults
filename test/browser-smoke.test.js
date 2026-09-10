@@ -386,7 +386,7 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(touch.cursor, "auto");
 });
 
-test("a picture on a site page fills the window on double-click and goes back on a click", (t) => {
+test("a picture on a site page fills the window on a click and goes back on the next one", (t) => {
   const chrome = findChrome();
   if (!chrome) {
     t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
@@ -413,11 +413,9 @@ test("a picture on a site page fills the window on double-click and goes back on
   const image = document.querySelector('.site-figure img');
   out.startingOverlays = document.querySelectorAll('.site-figure-full').length;
 
-  // The real sequence: two clicks land before the double-click, and neither may close
-  // what the double-click is about to open.
+  // One click opens it, and that same click must not carry on to the handler that
+  // closes it.
   fire(image, 'click');
-  fire(image, 'click');
-  fire(image, 'dblclick');
   const overlay = document.querySelector('.site-figure-full');
   out.opened = Boolean(overlay);
   // Assigning .src resolves it, so compare the resolved address, not the attribute.
@@ -430,6 +428,14 @@ test("a picture on a site page fills the window on double-click and goes back on
         return box.width === window.innerWidth && box.height === window.innerHeight;
       })()
     : false;
+  // Edge to edge: no padding holding the picture off the window.
+  out.imageFills = overlay
+    ? (() => {
+        const box = overlay.querySelector('img').getBoundingClientRect();
+        return box.width === window.innerWidth && box.height === window.innerHeight;
+      })()
+    : false;
+  out.ground = overlay && getComputedStyle(overlay).backgroundColor;
   out.scrollLocked = getComputedStyle(document.documentElement).overflow === 'hidden';
   out.dialog = overlay && overlay.getAttribute('role');
 
@@ -437,12 +443,18 @@ test("a picture on a site page fills the window on double-click and goes back on
   out.closed = !document.querySelector('.site-figure-full');
   out.scrollFree = getComputedStyle(document.documentElement).overflow !== 'hidden';
 
-  // Escape closes it too, and a double-click on ordinary prose opens nothing.
-  fire(image, 'dblclick');
+  // Escape closes it too, and clicking ordinary prose opens nothing.
+  fire(image, 'click');
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   out.escapeClosed = !document.querySelector('.site-figure-full');
-  fire(document.querySelector('.site-prose p:last-of-type'), 'dblclick');
+  fire(document.querySelector('.site-prose p:last-of-type'), 'click');
   out.proseOpensNothing = !document.querySelector('.site-figure-full');
+
+  // Reopened, a click on the picture itself closes it like any other.
+  fire(image, 'click');
+  out.reopened = Boolean(document.querySelector('.site-figure-full'));
+  fire(document.querySelector('.site-figure-full img'), 'click');
+  out.closedFromInside = !document.querySelector('.site-figure-full');
 
   document.getElementById('smoke').textContent = JSON.stringify(out);
 </script>
@@ -457,10 +469,15 @@ test("a picture on a site page fills the window on double-click and goes back on
   assert.equal(out.imagePath, "/assets/gruppetto.jpg");
   assert.equal(out.altKept, "Five people who do not exist");
   assert.equal(out.covers, true);
+  assert.equal(out.imageFills, true);
+  // A neutral near-black, not the site blue it started as.
+  assert.equal(out.ground, "rgb(16, 14, 12)");
   assert.equal(out.scrollLocked, true);
   assert.equal(out.dialog, "dialog");
   assert.equal(out.closed, true);
   assert.equal(out.scrollFree, true);
   assert.equal(out.escapeClosed, true);
   assert.equal(out.proseOpensNothing, true);
+  assert.equal(out.reopened, true);
+  assert.equal(out.closedFromInside, true);
 });

@@ -1,4 +1,4 @@
-![The Grupetto Committee in the back room of the bakery: Ambrose Bidon standing with his bicycle and a croissant, Marguerite Lanterne with the ledger and her lantern, Professor Sprocket mid-explanation over an open notebook, Old Tom Chainwhip with his pipe, and Izzy Échappée with her camera and a map.](/assets/gruppetto.jpg)
+![The Grupetto Committee in the back room of the bakery: Ambrose Bidon standing with his bicycle and a croissant, Marguerite Lanterne with the ledger and her lantern, Professor Sprocket mid-explanation over an open notebook, Old Tom Chainwhip with his pipe, and Izzy Échappée with her camera and a map.](/assets/grupetto.jpg)
 
 *The committee, left to right, on a Tuesday. Not a photograph — nobody in it exists, and neither does the committee.*
 
