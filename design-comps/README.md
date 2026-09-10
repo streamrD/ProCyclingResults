@@ -26,6 +26,27 @@ large and turned to mush small, so they were dropped rather than refined.
 | `marks/squircle.svg` | App-icon shape, for a home-screen bookmark or PWA install |
 | `marks/roundel.svg` | The only one drawing the full bike. Best large, softest small |
 
+## jersey-contenders.html
+
+The comp that decided the jersey contenders card, shipped 2026-09-10. Built from the
+real 2026 Vuelta a España standings as Wikipedia held them that morning — jersey
+holders after stage 18, standings tables after stage 17 — in the site's own palette, so
+the layout was judged against the data it would actually carry rather than a plausible
+fill.
+
+Two things changed between the comp and what shipped:
+
+- The comp put each contender's team on a second line under their name. Dropped: the
+  card is meant to be glanceable, and five two-line rows made it a panel.
+- The comp's hover target was a button wrapping the swatch and the classification. The
+  shipped trigger is the classification text alone, because the swatch and the label are
+  separate cells of the jersey row's grid and wrapping them broke the column widths.
+
+The notes at the foot of the comp are the survey of what the sources actually publish —
+which races carry standings tables, in which of the two wikitext forms, and which
+classifications are scored in points rather than time. Item 7a of "Stage Results Feature
+Map" in `handoff.md` is the durable version.
+
 ## Swapping the favicon
 
 `marks/cyclist.svg` is a copy of what ships (the icon links carry `?v=2` for it). To switch to a different mark, copy it over

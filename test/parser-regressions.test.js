@@ -72,6 +72,10 @@ function loadParserExports() {
       extractClassificationLeadership,
       parseWikiTableGrid,
       buildJerseyHoldersMarkup,
+      extractClassificationStandings,
+      extractCyclingResultBlocks,
+      attachClassificationContenders,
+      parseClassificationStandingsCaption,
       parseAthleteDetails,
       parseWorldChampionshipEliteEvents,
       buildUpcomingCard,
@@ -5957,4 +5961,280 @@ test("a live card wears a Rest day pill and dates the Up next row on a rest day"
   assert.match(generic, /<span class="status-pill">Live stage race<\/span>/);
   assert.match(generic, /Live classifications refresh as stage and GC data become available\./);
   assert.match(generic, /stage-next-row-label">Up next<\/span>/);
+});
+
+test("the classification standings tables give each jersey its five closest chasers", () => {
+  const { extractClassificationStandings, extractCyclingResultBlocks, attachClassificationContenders } =
+    loadParserExports();
+
+  // A Grand Tour writes its standings as captioned wikitables, one per classification,
+  // and updates them a stage behind the leadership table.
+  const grandTour = `
+== Classification standings ==
+
+=== Points classification ===
+{| class="wikitable"
+|+ Points classification after stage 17 (1–10)<ref name="class" />
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Points
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Wout van Aert]]|BEL}} {{cjersey|dark green}}
+| {{UCI team code|TVL men|2026}}
+| align="right" | 295
+|-
+! scope="row" | 2
+| {{Flag athlete|[[Matthew Brennan (cyclist)|Matthew Brennan]]|GBR}}
+| {{UCI team code|TVL men|2026}}
+| align="right" | 239
+|-
+! scope="row" | 3
+| {{Flag athlete|[[Alessandro Romele]]|ITA}}
+| {{UCI team code|XAT|2026}}
+| align="right" | 171
+|}
+
+=== Young rider classification ===
+{| class="wikitable"
+|+ Young rider classification after stage 17 (1–10)
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flag athlete|[[Oscar Onley]]|GBR}} {{cjersey|white}}
+| {{UCI team code|NCI|2026b}}
+| align="right" | 60h 15' 28"
+|-
+! scope="row" | 2
+| {{Flag athlete|[[Jakob Omrzel]]|SLO}}
+| {{UCI team code|TBV|2026}}
+| align="right" | + 30"
+|}
+
+=== Team classification ===
+{| class="wikitable"
+|+ Team classification after stage 17 (1–10)
+|-
+! scope="col" | Rank
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{flagicon|FRA}} {{UCI team code|DCT|2026}} {{cjersey|red number}}
+| align="right" | 180h 49' 41"
+|-
+! scope="row" | 2
+| {{flagicon|KAZ}} {{UCI team code|XAT|2026}}
+| align="right" | + 57' 32"
+|}
+`;
+  const teamNames = new Map([
+    ["DCT|2026", "Decathlon CMA CGM"],
+    ["XAT|2026", "XDS Astana Team"],
+  ]);
+  const standings = extractClassificationStandings(grandTour, teamNames, []);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(standings.get("points"))), {
+    key: "points",
+    stageNumber: 17,
+    metric: "count",
+    metricLabel: "Points",
+    entries: [
+      { place: "1", rider: "Wout van Aert", countryCode: "BEL", pageTitle: "Wout van Aert", value: "295" },
+      {
+        place: "2",
+        rider: "Matthew Brennan",
+        countryCode: "GBR",
+        pageTitle: "Matthew Brennan (cyclist)",
+        value: "239",
+      },
+      { place: "3", rider: "Alessandro Romele", countryCode: "ITA", pageTitle: "Alessandro Romele", value: "171" },
+    ],
+  });
+  // The young rider classification is scored in time, not points: the leader carries an
+  // elapsed time and everyone below a gap to it.
+  assert.deepEqual(JSON.parse(JSON.stringify(standings.get("young"))), {
+    key: "young",
+    stageNumber: 17,
+    metric: "time",
+    entries: [
+      { place: "1", rider: "Oscar Onley", countryCode: "GBR", pageTitle: "Oscar Onley", time: "60:15:28" },
+      { place: "2", rider: "Jakob Omrzel", countryCode: "SLO", pageTitle: "Jakob Omrzel", gap: "+00:30" },
+    ],
+  });
+  // The team classification names teams, resolved through the same map the stage
+  // results use, and a code with no name is left out rather than shown raw.
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(standings.get("team").entries.map((entry) => [entry.rider, entry.time || entry.gap]))),
+    [
+      ["Decathlon CMA CGM", "180:49:41"],
+      ["XDS Astana Team", "+57:32"],
+    ],
+  );
+
+  // The smaller races write the same standings as {{cyclingresult}} blocks instead,
+  // flagging a points classification on the start tag.
+  const blockRace = `
+{{cyclingresult start|title=General classification after stage 1}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UAD men|2026}}|4h 00' 27"|{{cjersey|yellow}}}}
+{{cyclingresult end}}
+
+{{cyclingresult start |title=Final points classification (1–10) |points=yes}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UAD men|2026}}|203|{{cjersey|yellow}}{{cjersey|orange}}}}
+{{cyclingresult|2|[[Dorian Godon]]|FRA|{{UCI team code|IGD|2026a}}|110}}
+{{cyclingresult end}}
+
+{{cyclingresult start|title=Final general classification (1–10)}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UAD men|2026}}|20h 05' 42"|{{cjersey|yellow}}}}
+{{cyclingresult|2|[[Florian Lipowitz]]|GER|{{UCI team code|RBH|2026}}|+ 42"}}
+{{cyclingresult end}}
+`;
+  const blockStandings = extractClassificationStandings(blockRace, new Map(), extractCyclingResultBlocks(blockRace));
+
+  // "|points=yes" lands inside the greedy title= argument, and cleanWikiText turns its
+  // pipe into a comma; the block was invisible until the parameter was cut off first.
+  assert.deepEqual(JSON.parse(JSON.stringify(blockStandings.get("points"))), {
+    key: "points",
+    final: true,
+    metric: "count",
+    metricLabel: "Points",
+    entries: [
+      { place: "1", rider: "Tadej Pogačar", countryCode: "SLO", pageTitle: "Tadej Pogačar", value: "203" },
+      { place: "2", rider: "Dorian Godon", countryCode: "FRA", pageTitle: "Dorian Godon", value: "110" },
+    ],
+  });
+  // A race writes "General classification after stage N" under every stage before its
+  // final table, so the newest wins — reading the first one met showed stage 1 all week.
+  assert.equal(blockStandings.get("general").final, true);
+  assert.equal(blockStandings.get("general").entries[1].gap, "+00:42");
+
+  // A classification with no standings table keeps its plain entry.
+  const leaders = attachClassificationContenders(
+    {
+      stageNumber: 18,
+      entries: [
+        { key: "points", label: "Points", rider: "Wout van Aert" },
+        { key: "polish-rider", label: "Polish rider", rider: "Filip Gruszczyński" },
+      ],
+    },
+    standings,
+  );
+  assert.equal(leaders.entries[0].contenders.entries.length, 3);
+  assert.equal("contenders" in leaders.entries[1], false);
+});
+
+test("a caption keeps its own stage even when a citation swallowed the braces after it", () => {
+  const { parseClassificationStandingsCaption, extractCyclingResultBlocks } = loadParserExports();
+
+  const caption = (value) => JSON.parse(JSON.stringify(parseClassificationStandingsCaption(value) || null));
+  assert.deepEqual(caption("Mountains classification after stage 4 (1–10)"), {
+    key: "mountains",
+    stageNumber: 4,
+  });
+  assert.deepEqual(caption("FInal general classification (1–10)"), {
+    key: "general",
+    final: true,
+  });
+  assert.deepEqual(caption("General classification after prologue"), {
+    key: "general",
+    stageNumber: 0,
+  });
+  // Not a classification standings table, and never to be read as one.
+  assert.equal(parseClassificationStandingsCaption("Classification leadership by stage"), null);
+  assert.equal(parseClassificationStandingsCaption("Stage characteristics and winners"), null);
+
+  // The block regex stops at the first "}}", which on a cited title is the one closing
+  // the citation's own {{cite web}}: the caption arrives with half a reference trailing
+  // it, and requiring it to end cleanly put the race a stage behind.
+  const cited = `{{cyclingresult start|title=General classification after Stage 5<ref name="gc">{{cite web |title=Results |url=https://example.com |access-date=22 June 2026}}</ref>}}
+{{cyclingresult|1|[[Marlen Reusser]]|SUI|{{UCI team code|MOV women|2026}}|11h 58' 35"}}
+{{cyclingresult end}}`;
+  assert.equal(parseClassificationStandingsCaption(extractCyclingResultBlocks(cited)[0].title).stageNumber, 5);
+});
+
+test("a spaced {{cyclingresult start |title=…}} still yields its block", () => {
+  const { extractCyclingResultBlocks } = loadParserExports();
+
+  // Every block on the 2026 Giro d'Italia Women and Vuelta a Burgos Feminas pages is
+  // written with a space before the parameter list, and all 18 of them were dropped.
+  const spaced = `{{cyclingresult start |title=Final general classification (1–10)}}
+{{cyclingresult|1|[[Demi Vollering]]|NED|{{UCI team code|FSF|2026}} | 29h 54' 19"| {{cjersey|pink}}}}
+{{cyclingresult end}}`;
+  const blocks = extractCyclingResultBlocks(spaced);
+
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].title, "Final general classification (1–10)");
+});
+
+test("the jersey list carries its contenders card, priced in whatever the classification is scored in", () => {
+  const { buildJerseyHoldersMarkup } = loadParserExports();
+  const race = {
+    stageRace: {
+      generalClassification: { stageNumber: 18, standings: [{ place: "1", rider: "Enric Mas" }] },
+      classificationLeaders: {
+        stageNumber: 18,
+        stageLabel: "Stage 18",
+        entries: [
+          {
+            key: "points",
+            label: "Points",
+            jersey: "dark green",
+            rider: "Wout van Aert",
+            countryCode: "BEL",
+            contenders: {
+              stageNumber: 17,
+              metric: "count",
+              metricLabel: "Points",
+              entries: [
+                { place: "1", rider: "Wout van Aert", countryCode: "BEL", value: "295" },
+                { place: "2", rider: "Matthew Brennan", countryCode: "GBR", value: "239" },
+              ],
+            },
+          },
+          {
+            key: "young",
+            label: "Young rider",
+            jersey: "white",
+            rider: "Oscar Onley",
+            contenders: {
+              stageNumber: 17,
+              metric: "time",
+              entries: [
+                { place: "1", rider: "Oscar Onley", countryCode: "GBR", time: "60:15:28" },
+                { place: "2", rider: "Jakob Omrzel", countryCode: "SLO", gap: "+00:30" },
+                { place: "3", rider: "Léo Bisiaux", countryCode: "FRA" },
+              ],
+            },
+          },
+          { key: "polish-rider", label: "Polish rider", rider: "Filip Gruszczyński" },
+        ],
+      },
+    },
+  };
+
+  const html = buildJerseyHoldersMarkup(race);
+
+  // The classification carries the card, not the rider beside it: the rider's name
+  // already opens the rider card.
+  assert.equal((html.match(/<template class="jersey-card-source">/g) || []).length, 2);
+  assert.match(html, /<span class="jersey-classification has-contenders" data-jersey-contenders>Points<\/span>/);
+  assert.match(html, /<span class="jersey-classification">Polish rider<\/span>/);
+  assert.ok(!/Polish rider<\/span>[\s\S]*?<template/.test(html));
+
+  const [, points = "", young = ""] = html.split("<template class=\"jersey-card-source\">");
+  assert.match(points, /<span class="jersey-card-name">Points classification<\/span>/);
+  // The card is dated by its own table, which trails the leadership table by a stage.
+  assert.match(points, /<span>Top five after stage 17<\/span><span>Points<\/span>/);
+  assert.match(points, /<span class="contender-value">295<\/span>/);
+  assert.match(young, /<span>Top five after stage 17<\/span><span>Time<\/span>/);
+  assert.match(young, /<span class="contender-value">60:15:28<\/span>/);
+  assert.match(young, /<span class="contender-value">\+00:30<\/span>/);
+  // A gap of nothing behind the leader is the same time, not missing data.
+  assert.match(young, /Léo Bisiaux<\/span><span class="contender-value">same time<\/span>/);
 });

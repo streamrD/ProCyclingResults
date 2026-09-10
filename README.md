@@ -317,7 +317,7 @@ Parsed race entries generally include:
 - `startDate`
 - `endDate`
 - `finishedToday`
-- `stageRace` when applicable, including `stages` for multi-day races and `classificationLeaders` (the jersey holders after the latest stage: `{ stageNumber, stageLabel, entries: [{ key, label, jersey?, rider, countryCode? }] }`)
+- `stageRace` when applicable, including `stages` for multi-day races and `classificationLeaders` (the jersey holders after the latest stage: `{ stageNumber, stageLabel, entries: [{ key, label, jersey?, rider, countryCode?, contenders? }] }`, where `contenders` is that classification's top five: `{ stageNumber | final, metric, metricLabel?, entries }`)
 - `resultStandings` when richer standings are available
 
 These objects are plain JS objects, not instances or schemas.
@@ -774,6 +774,8 @@ Beside the general classification podium, every stage-race card lists who leads 
 
 The data is the article's "Classification leadership" table, the only place Wikipedia states the points, mountains and young-rider leaders. Its cells span rows, so `parseWikiTableGrid` expands the spans into a positional grid before `extractClassificationLeadershipRows` reads the columns; a team cell resolves through the same `{{UCI team code}}` map as team time trials. The merge keeps the field from whichever snapshot has it (only Wikipedia does), bounded by the same calendar rule as the GC; a list one stage behind the official provider is kept and labelled "Jersey holders after stage N" rather than dropped. The layout is a container query on the card: stacked below the podium on a phone, a narrow second column beside it on the usual three-across grid, and two bounded columns packed to the left on a full-width card. Item 7 of "Stage Results Feature Map" in `handoff.md` has the full rules, the layout table and the history.
 
+Resting the pointer on one of those classifications opens a card with the five riders closest to the jersey — the five teams, on the team classification. That comes from the article's "Classification standings" section, one top-ten table per classification, written as a captioned wikitable on the Grand Tours and as a `{{cyclingresult}}` block elsewhere; `extractClassificationStandings` reads both and keys each table the way the leadership columns are keyed, so it joins its jersey by key alone. What the card prints is what the classification is scored in — points for points and mountains, time for the general, young rider and team classifications, kilometres for the Giro's breakaway classification — read from the table's own column heading rather than assumed. During a live race these tables lag the leadership table by a stage, so the card carries its own stage ("Top five after stage 17"). A classification with no table keeps its plain entry and opens nothing. Item 7a of "Stage Results Feature Map" in `handoff.md` has the rules and the two shared-parser bugs fixed along the way.
+
 ## Suggested Near-Term Improvements
 
 If another agent is taking over development, these are strong candidates:
@@ -785,7 +787,7 @@ If another agent is taking over development, these are strong candidates:
 4. Add health-oriented logging around upstream fetch failures and cache refreshes.
 5. Externalize season/year configuration so rolling to a new season is safer.
 6. Move inline HTML/CSS/JS into template/static modules if the app becomes larger.
-7. Read the points and mountains tables the ASO sites publish (lavuelta.es, letour.fr) so the jersey holders update on a live evening before Wikipedia does; today they come from Wikipedia alone.
+7. Read the points and mountains tables the ASO sites publish (lavuelta.es, letour.fr) so the jersey holders and their contenders update on a live evening before Wikipedia does; today both come from Wikipedia alone, and its standings tables trail its own leadership table by a stage.
 
 ## Practical Notes for an LLM Taking Over
 

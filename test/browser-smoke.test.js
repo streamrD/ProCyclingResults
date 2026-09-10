@@ -31,12 +31,13 @@ function loadServer() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup };`,
+    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup };`,
     sandbox,
   );
   return {
     buildStageSwitcherMarkup: sandbox.__SMOKE__.buildStageSwitcherMarkup,
     buildRaceNewsMarkup: sandbox.__SMOKE__.buildRaceNewsMarkup,
+    buildJerseyHoldersMarkup: sandbox.__SMOKE__.buildJerseyHoldersMarkup,
     style: serverSource.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@font-face\s*\{[^}]*\}/g, ""),
     // The homepage script is the block that defines the unit preference; the warm-up
     // page carries a later, unrelated block. Its one server-side expression is the
@@ -282,4 +283,85 @@ test("the refresh button reports when there is nothing newer instead of reloadin
   assert.equal(out.statusText, "You already have the latest results. Built 4 minutes ago; the next rebuild is due in about 11 minutes.");
   assert.equal(out.enabledAgain, true);
   assert.equal(out.idleLabel, "Refresh results");
+});
+
+test("the jersey list opens its contenders card on hover", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  const { buildJerseyHoldersMarkup } = loadServer();
+  const race = {
+    stageRace: {
+      generalClassification: { stageNumber: 18, standings: [{ place: "1", rider: "Enric Mas" }] },
+      classificationLeaders: {
+        stageNumber: 18,
+        stageLabel: "Stage 18",
+        entries: [
+          {
+            key: "points",
+            label: "Points",
+            jersey: "dark green",
+            rider: "Wout van Aert",
+            countryCode: "BEL",
+            contenders: {
+              stageNumber: 17,
+              metric: "count",
+              metricLabel: "Points",
+              entries: [
+                { place: "1", rider: "Wout van Aert", countryCode: "BEL", value: "295" },
+                { place: "2", rider: "Matthew Brennan", countryCode: "GBR", value: "239" },
+                { place: "3", rider: "Alessandro Romele", countryCode: "ITA", value: "171" },
+                { place: "4", rider: "Bryan Coquard", countryCode: "FRA", value: "141" },
+                { place: "5", rider: "Jordi Meeus", countryCode: "BEL", value: "116" },
+              ],
+            },
+          },
+          { key: "polish-rider", label: "Polish rider", rider: "Filip Gruszczyński" },
+        ],
+      },
+    },
+  };
+  const probe = `
+    const out = { errors: window.__errors };
+    const hover = (node, type) => node.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+    out.hoverMedia = matchMedia('(hover: hover)').matches;
+    out.plainLabels = document.querySelectorAll('.jersey-classification:not(.has-contenders)').length;
+
+    hover(document.querySelector('[data-jersey-contenders]'), 'mouseover');
+    setTimeout(() => {
+      const card = document.querySelector('body > .jersey-card');
+      out.opened = Boolean(card);
+      out.name = card && card.querySelector('.jersey-card-name').textContent;
+      out.kicker = card && [...card.querySelectorAll('.jersey-card-kicker span')].map((span) => span.textContent);
+      out.rows = card ? card.querySelectorAll('.contender-row').length : 0;
+      out.first = card && card.querySelector('.contender-row').textContent;
+      // Fixed to the viewport and inside it, whatever the card it sits in clips.
+      const box = card && card.getBoundingClientRect();
+      out.position = card && getComputedStyle(card).position;
+      out.onScreen = Boolean(box && box.left >= 0 && box.right <= window.innerWidth && box.top >= 0);
+      // Nothing opens for a classification the article has no standings table for.
+      hover(document.querySelector('[data-jersey-contenders]'), 'mouseout');
+      hover([...document.querySelectorAll('.jersey-classification')].find((node) => node.textContent === 'Polish rider'), 'mouseover');
+      setTimeout(() => {
+        out.closed = !document.querySelector('body > .jersey-card');
+        document.getElementById('smoke').textContent = JSON.stringify(out);
+      }, 400);
+    }, 400);
+  `;
+  const out = runProbe(chrome, buildPage({ markup: `<article class="card">${buildJerseyHoldersMarkup(race)}</article>`, probe }));
+
+  assert.deepEqual(out.errors, []);
+  assert.equal(out.hoverMedia, true);
+  assert.equal(out.plainLabels, 1);
+  assert.equal(out.opened, true);
+  assert.equal(out.name, "Points classification");
+  assert.deepEqual(out.kicker, ["Top five after stage 17", "Points"]);
+  assert.equal(out.rows, 5);
+  assert.equal(out.first, "1🇧🇪Wout van Aert295");
+  assert.equal(out.position, "fixed");
+  assert.equal(out.onScreen, true);
+  assert.equal(out.closed, true);
 });

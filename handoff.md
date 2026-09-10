@@ -698,6 +698,46 @@ official provider's GC, matched by name, because the table writes most riders as
 links (`fillClassificationLeaderCountryCodes`, applied in the snapshot and again in
 `mergeStageRaceSnapshots`).
 
+**7a. Jersey contenders on hover (added 2026-09-10).** Resting the pointer on a
+classification in that list opens a card with the five riders — or, on the team
+classification, the five teams — closest to the jersey. The source is the
+"Classification standings" section below the leadership table, which every stage-race
+article carries: one top-ten table per classification, written either as a captioned
+wikitable ("Points classification after stage 17 (1–10)") on the Grand Tours or as a
+`{{cyclingresult}}` block ("Final points classification (1–10)") on the smaller races.
+`extractClassificationStandings` reads both and keys the result the way
+`parseClassificationLeadershipColumn` keys the leadership columns, so a table joins its
+jersey by key alone — including one-off columns such as Pologne's "Active rider".
+`attachClassificationContenders` hangs it on the entry as `contenders =
+{ stageNumber | final, metric, metricLabel?, entries }`; a classification with no table
+(Pologne's "Polish rider", the Giro's "Red Bull KM") keeps its plain entry and no card
+opens. Four things this has to get right:
+
+- **The metric is not always points.** Points and mountains are scored in points, the
+  general, young rider and team classifications in time, and the Giro's breakaway
+  classification in kilometres. `readClassificationMetric` takes it from the table's own
+  last column heading (`points=yes` on the `{{cyclingresult}}` start tag), and the card
+  prints the unit it was given. Do not relabel a time gap as a point total.
+- **The standings trail the leadership table by a stage.** On a live evening Wikipedia
+  updates the jerseys first, so the card is dated by its own caption ("Top five after
+  stage 17") while the list above it says stage 18. That is correct, not a bug.
+- **The newest table wins.** The smaller races write "General classification after Stage
+  N" under every stage before the final table; reading the first one met left the Tour
+  de Suisse and the Tour of Britain Women showing their stage 1 standings all season.
+- **The card hangs off the classification, not the rider.** The rider's name already
+  opens the rider card; the classification carries `data-jersey-contenders` and a
+  `<template>` with the card's markup, cloned on hover by `bindJerseyContenderCards`.
+  Both cards are `bindHoverCards`, which is the old rider-card body factored out — same
+  frame, same 250ms delay, same fixed positioning, pointer devices only.
+
+Two parser bugs in shared code were in the way and are fixed:
+`extractCyclingResultBlocks` required the parameter list to follow `start` immediately,
+so `{{cyclingresult start |title=…}}` matched nothing and every block on the 2026 Giro
+d'Italia Women and Vuelta a Burgos Feminas pages — 18 of them — was dropped; and its
+`title=` argument is greedy to the end of the parameter list, so a parameter written
+after it (`|points=yes`) landed inside the title and `cleanWikiText` then turned the
+pipe into a comma. Both have regression tests.
+
 The merge keeps whichever side has the field — only Wikipedia does — bounded by the
 same calendar rule as the GC (`isStageRaceProgressPlausible`). Unlike the GC, a list one
 stage *behind* the official provider is kept and labelled "Jersey holders after stage N"

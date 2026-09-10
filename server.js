@@ -800,7 +800,10 @@ function applyCanonicalRiderNames(riderSeasons, stageRaces, seasonRaces) {
     (stageRace?.overallResult || []).forEach((standing) => rename(standing, "rider"));
     rename(stageRace?.generalClassification, "leader");
     (stageRace?.generalClassification?.standings || []).forEach((standing) => rename(standing, "rider"));
-    (stageRace?.classificationLeaders?.entries || []).forEach((entry) => rename(entry, "rider"));
+    (stageRace?.classificationLeaders?.entries || []).forEach((entry) => {
+      rename(entry, "rider");
+      (entry?.contenders?.entries || []).forEach((contender) => rename(contender, "rider"));
+    });
   });
 
   (seasonRaces || []).forEach((race) => {
@@ -2746,7 +2749,10 @@ function extractCyclingResultBlocks(rawText) {
   const text = String(rawText || "");
   // The parameter list can span lines: a citation inside `title=` often wraps, which is
   // why this cannot be anchored to a single line.
-  const starts = [...text.matchAll(/\{\{\s*cycling\s*result\s*start((?:\|[\s\S]*?)?)\}\}/gi)];
+  // The space in `{{cyclingresult start |title=…}}` is not decorative to a regex: while
+  // the parameter list had to follow `start` immediately, every block on the 2026 Giro
+  // d'Italia Women and Vuelta a Burgos Feminas pages — all 18 of them — was dropped.
+  const starts = [...text.matchAll(/\{\{\s*cycling\s*result\s*start\s*((?:\|[\s\S]*?)?)\}\}/gi)];
 
   return starts.map((match, index) => {
     const bodyStart = match.index + match[0].length;
@@ -2755,7 +2761,21 @@ function extractCyclingResultBlocks(rawText) {
     const endIndex = body.search(/\{\{\s*cycling\s*result\s*end/i);
 
     return {
-      title: cleanWikiText(match[1]?.match(/(?:^|\|)\s*title\s*=([\s\S]*)$/)?.[1] || ""),
+      // `title=` is greedy to the end of the parameter list, so a parameter written
+      // after it lands inside the title — and cleanWikiText then turns its pipe into a
+      // comma, leaving "Final points classification (1–10) , points=yes" with no pipe
+      // to cut at later. Only a plain trailing `|name=value` is dropped here: a
+      // citation's own arguments end in braces, so a title carrying a <ref> keeps it.
+      title: cleanWikiText(
+        (match[1]?.match(/(?:^|\|)\s*title\s*=([\s\S]*)$/)?.[1] || "").replace(
+          /(?:\|\s*[A-Za-z][\w-]*\s*=[^|{}]*)+$/,
+          "",
+        ),
+      ),
+      // A points classification block is flagged on the start tag rather than in its
+      // rows: {{Cyclingresult start|title=Final points classification|points=yes}}.
+      // Without it a bare "203" in the rows is indistinguishable from a stage number.
+      points: /(?:^|\|)\s*points\s*=\s*yes\b/i.test(match[1] || ""),
       body: endIndex >= 0 ? body.slice(0, endIndex) : body,
     };
   });
@@ -3443,20 +3463,26 @@ function normalizeWikiTimeCell(value) {
   return /\d\s*'(?!')/.test(asoLike) ? asoLike : asoLike.replace(/(\d{2})''/, "0' $1''");
 }
 
+function extractWikiTableRowCells(row) {
+  const cells = [];
+  for (const line of String(row || "").split("\n")) {
+    if (line === "|}" || line.startsWith("|+") || line.startsWith("{|")) {
+      continue;
+    }
+
+    if (line.startsWith("!") || line.startsWith("|")) {
+      cells.push(stripWikiCellAttributes(line));
+    }
+  }
+
+  return cells;
+}
+
 function parseWikiClassificationTableStandings(table) {
   return String(table || "")
     .split("\n|-")
     .map((row) => {
-      const cells = [];
-      for (const line of row.split("\n")) {
-        if (line === "|}" || line.startsWith("|+") || line.startsWith("{|")) {
-          continue;
-        }
-
-        if (line.startsWith("!") || line.startsWith("|")) {
-          cells.push(stripWikiCellAttributes(line));
-        }
-      }
+      const cells = extractWikiTableRowCells(row);
 
       // Rank / Rider / ... / Time. The header row's "Rank" cell is not a number, so
       // it drops out here rather than needing a separate skip.
@@ -3503,6 +3529,222 @@ function extractClassificationTableGcSnapshots(rawText) {
     .filter(Boolean);
 }
 
+// Classification standings
+//
+// Below the leadership table every stage-race article carries a "Classification
+// standings" section: one top-ten table per classification, which is where the jersey
+// list's hover card gets the riders chasing each jersey. Wikipedia writes them in the
+// same two forms it writes every other result in — a plain wikitable captioned
+// "Points classification after stage 17 (1–10)" on the Grand Tours, a
+// {{cyclingresult}} block titled "Final points classification (1–10)" on the smaller
+// races — so both are read here.
+//
+// Two things the card has to say honestly. Points and mountains are scored in points
+// while the general, young rider and team classifications are times, so the metric is
+// read from the source rather than assumed. And these tables are updated a stage
+// behind the leadership table during a live race, so each one keeps the stage its own
+// caption names.
+const CLASSIFICATION_CONTENDERS_LIMIT = 5;
+
+function parseClassificationStandingsCaption(caption) {
+  const cleaned = cleanWikiText(
+    stripWikiFootnoteTemplates(String(caption || ""))
+      // A caption carries two tails that are not part of it, and both hid whole tables:
+      // a citation, whose own {{cite web |title=…}} arguments are why the reference has
+      // to go before the parameters do, and the template parameters that follow
+      // `title=` ("Final points classification (1–10) |points=yes"). No caption itself
+      // contains a bare pipe, so cutting at the first one is safe once refs are gone.
+      .replace(/<ref[\s\S]*$/i, "")
+      .replace(/\|[\s\S]*$/, ""),
+  )
+    .replace(/\([^)]*\)\s*$/, "")
+    .trim();
+  // Deliberately not anchored at the end: a citation that swallowed the closing braces
+  // of its own {{cite web}} leaves half of it trailing the caption, and requiring the
+  // caption to end cleanly put the Tour de Suisse Women a stage behind on the strength
+  // of one such reference. What comes after the classification is named is ignored.
+  const match = cleaned.match(/^(?:final\s+)?(.+?)\s+classification(?:\s+after\s+(?:stage\s+(\d+)|(prologue)))?/i);
+  if (!match) {
+    return null;
+  }
+
+  const name = match[1].trim();
+  const rule = CLASSIFICATION_LEADERSHIP_COLUMNS.find((entry) => entry.pattern.test(name.toLowerCase()));
+  const stageNumber = match[3] ? 0 : Number.parseInt(match[2] || "", 10);
+
+  return {
+    // The same keys the leadership table's columns carry, so a table joins its jersey
+    // by key alone — including the one-off columns ("Active rider" on the Tour de
+    // Pologne), which both sides derive from the heading the same way.
+    key: rule?.key || normalizeSearchText(name).replace(/\s+/g, "-"),
+    ...(Number.isInteger(stageNumber) ? { stageNumber } : { final: true }),
+  };
+}
+
+// A holder is a rider, or on the team classification a team, exactly as in the
+// leadership table. The last cell is the standing itself, and what it holds depends on
+// how the classification is scored: a time on a time classification (the leader's own,
+// a gap on every row below), a count on any other. The count's unit is whatever the
+// table's own column is headed — "Points" nearly everywhere, "Kilometers" on the
+// Giro's breakaway classification — so it is carried rather than assumed.
+function buildClassificationContender(place, holderCell, valueCell, metric, teamNames) {
+  const holder = parseClassificationLeadershipHolder(holderCell, teamNames);
+  if (!Number.isInteger(place) || place < 1 || !holder) {
+    return null;
+  }
+
+  const pageTitle = extractRiderPageTitle(holderCell);
+  const cleaned = cleanWikiText(stripWikiFootnoteTemplates(String(valueCell || "")));
+  const base = { place: String(place), ...holder, ...(pageTitle ? { pageTitle } : {}) };
+
+  if (metric === "count") {
+    const value = cleaned.match(/\d[\d,.]*/)?.[0]?.replace(/[,.]/g, "") || "";
+    return value ? { ...base, value } : null;
+  }
+
+  const timeCell = normalizeWikiTimeCell(cleaned);
+  const isGap = timeCell.startsWith("+");
+  return {
+    ...base,
+    ...(isGap ? { gap: normalizeStandingGap(timeCell) } : { time: normalizeStandingTime(timeCell) }),
+  };
+}
+
+// "Time" and "Deficit" are the only headings a stage race scores a classification in
+// time under; everything else is a count of something.
+function readClassificationMetric(heading) {
+  const label = cleanWikiText(stripWikiFootnoteTemplates(String(heading || ""))).trim();
+  return /^(?:time|deficit)$/i.test(label) || !label
+    ? { metric: "time" }
+    : { metric: "count", metricLabel: label };
+}
+
+function parseClassificationStandingsTable(table, teamNames) {
+  const rows = String(table || "").split("\n|-");
+  const headerCells = rows.map(extractWikiTableRowCells).find((cells) => cells.some((cell) => /^rank$/i.test(cell)));
+  const { metric, metricLabel } = readClassificationMetric(headerCells?.[headerCells.length - 1]);
+  const entries = rows
+    .map((row) => {
+      const cells = extractWikiTableRowCells(row);
+      return cells.length >= 2
+        ? buildClassificationContender(
+            Number.parseInt(cells[0], 10),
+            cells[1],
+            cells[cells.length - 1],
+            metric,
+            teamNames,
+          )
+        : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => Number(left.place) - Number(right.place))
+    .slice(0, CLASSIFICATION_CONTENDERS_LIMIT);
+
+  return entries.length > 0 ? { metric, ...(metricLabel ? { metricLabel } : {}), entries } : null;
+}
+
+function parseClassificationStandingsBlock(block, teamNames) {
+  const metric = block?.points ? "count" : "time";
+  const entries = String(block?.body || "")
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!/^\{\{\s*cycling\s*result\s*\|/i.test(trimmed)) {
+        return null;
+      }
+
+      const args = splitWikiTemplateArgs(trimmed.replace(/^\{\{/, "").replace(/\}\}$/, ""));
+      if (args.length < 3) {
+        return null;
+      }
+
+      // {{cyclingresult|1|[[Rider]]|SLO|{{UCI team code|…}}|203|{{cjersey|orange}}}}:
+      // the value is the points argument on a points block and the time-shaped one
+      // otherwise, matched by shape so an absent jersey or team argument costs nothing.
+      const trailing = args.slice(3);
+      const value =
+        metric === "count"
+          ? trailing.find((entry) => /^\d[\d,.]*$/.test(entry.trim())) || ""
+          : trailing.find(isWikiResultTimeCell) || "";
+      const holderCell = args[2]?.trim() ? args[2] : trailing.find((entry) => parseTeamReference(entry)) || "";
+      const contender = buildClassificationContender(
+        Number.parseInt(cleanWikiText(args[1]), 10),
+        holderCell,
+        value,
+        metric,
+        teamNames,
+      );
+      // The country is its own positional argument in this form rather than inline in
+      // the rider cell, so a rider parsed without one still gets a flag.
+      const positionalCountryCode = normalizeCountryCode(
+        trailing.find((entry) => /^[A-Za-z]{2,3}$/.test(entry.trim())) || "",
+      );
+      return contender && !contender.countryCode && positionalCountryCode
+        ? { ...contender, countryCode: positionalCountryCode }
+        : contender;
+    })
+    .filter(Boolean)
+    .sort((left, right) => Number(left.place) - Number(right.place))
+    .slice(0, CLASSIFICATION_CONTENDERS_LIMIT);
+
+  return entries.length > 0 ? { metric, ...(block?.points ? { metricLabel: "Points" } : {}), entries } : null;
+}
+
+// Every classification the article publishes standings for, keyed the way the
+// leadership table keys its columns.
+//
+// An article carries the same classification more than once: the smaller races write a
+// "General classification after Stage N" block under every stage before the final
+// table, so the newest one wins — the final table where the race has one, the highest
+// stage otherwise. Reading the first one met put the Tour de Suisse and the Tour of
+// Britain Women a whole race behind, on their stage 1 standings.
+function extractClassificationStandingsTableSources(rawText) {
+  return [...String(rawText || "").matchAll(/\{\|[\s\S]*?\n\|\}/g)]
+    .map((match) => match[0])
+    .filter((table) => parseClassificationStandingsCaption(table.match(/\|\+\s*([^\n]+)/)?.[1] || ""));
+}
+
+function extractClassificationStandings(rawText, teamNames = new Map(), blocks = []) {
+  const standings = new Map();
+  const rank = (entry) => (entry.final ? Number.MAX_SAFE_INTEGER : entry.stageNumber || 0);
+  const add = (caption, parsed) => {
+    const heading = parseClassificationStandingsCaption(caption);
+    if (!heading || !parsed) {
+      return;
+    }
+    const held = standings.get(heading.key);
+    if (!held || rank(heading) >= rank(held)) {
+      standings.set(heading.key, { ...heading, ...parsed });
+    }
+  };
+
+  extractClassificationStandingsTableSources(rawText).forEach((table) => {
+    add(table.match(/\|\+\s*([^\n]+)/)?.[1] || "", parseClassificationStandingsTable(table, teamNames));
+  });
+  (blocks || []).forEach((block) => {
+    add(block.title, parseClassificationStandingsBlock(block, teamNames));
+  });
+
+  return standings;
+}
+
+// Hangs each jersey's chasers off the jersey it belongs to. A classification with no
+// standings table — the Tour de Pologne's "Polish rider", the Giro's "Red Bull KM" —
+// keeps its plain entry, and the card simply does not open for it.
+function attachClassificationContenders(leaders, standings) {
+  if (!leaders || !Array.isArray(leaders.entries) || !standings?.size) {
+    return leaders;
+  }
+
+  return {
+    ...leaders,
+    entries: leaders.entries.map((entry) => {
+      const table = standings.get(entry.key);
+      return table ? { ...entry, contenders: table } : entry;
+    }),
+  };
+}
+
 function parseTotalStages(rawText) {
   const stagesField = getInfoboxField(rawText, "stages");
   if (!stagesField) {
@@ -3536,10 +3778,13 @@ function collectTeamReferences(rawText, stageArticleTexts = []) {
   });
 
   // The team classification column of the leadership table is the third place a team
-  // code appears with no name beside it.
+  // code appears with no name beside it, and the team classification's own standings
+  // table under "Classification standings" is the fourth: the jersey list's hover card
+  // names five teams there, which need not be the five the leadership table named.
   const routeTable = extractWikiTableByCaption(rawText, /^stage characteristics(?: and winners)?$/i);
   const leadershipTable = extractClassificationLeadershipTable(rawText);
-  [...`${routeTable}\n${leadershipTable}`.matchAll(/\{\{\s*UCI team code[^}]*\}\}[^\n]*/gi)].forEach((match) => {
+  const standingsTables = extractClassificationStandingsTableSources(rawText).join("\n");
+  [...`${routeTable}\n${leadershipTable}\n${standingsTables}`.matchAll(/\{\{\s*UCI team code[^}]*\}\}[^\n]*/gi)].forEach((match) => {
     const reference = parseTeamReference(match[0]);
     if (reference) {
       references.push(reference);
@@ -3596,7 +3841,10 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
   const routeStageWinners = routeStages.filter((entry) => entry.winner);
   const classificationTableGcResults = extractClassificationTableGcSnapshots(rawText);
   const leadershipGcResults = extractStageLeadershipGcSnapshots(rawText);
-  const classificationLeaders = extractClassificationLeadership(rawText, teamNames);
+  const classificationLeaders = attachClassificationContenders(
+    extractClassificationLeadership(rawText, teamNames),
+    extractClassificationStandings(rawText, teamNames, blocks),
+  );
   const stages = buildStageHistory(routeStageWinners, stageResults);
   // The most recent raced stage is simply the last history entry, so the card's
   // headline stage and its stage selector can never disagree about which stage is
@@ -9675,6 +9923,48 @@ function buildJerseySwatchMarkup(jersey) {
   )}</title>${body}${dotMarkup}</svg>`;
 }
 
+// The five riders — or, on the team classification, the five teams — closest to each
+// jersey, carried in a <template> beside the classification and cloned into a card on
+// hover. Rendered here rather than in the client script so a name, a flag and a
+// standing are written the one way the rest of the page writes them.
+//
+// The standing itself is whatever the classification is scored in: the count on a
+// points or kilometres classification, the leader's time and everyone else's gap to it
+// on a time classification. A gap of zero is not missing data, it is the same time.
+function buildJerseyContendersMarkup(entry) {
+  const contenders = entry?.contenders || null;
+  const rows = Array.isArray(contenders?.entries) ? contenders.entries : [];
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const stage = contenders.final
+    ? "Final top five"
+    : contenders.stageNumber === 0
+      ? "Top five after the prologue"
+      : `Top five after stage ${contenders.stageNumber}`;
+  const metricLabel = contenders.metric === "count" ? contenders.metricLabel || "Points" : "Time";
+  const items = rows
+    .map((row) => {
+      const value =
+        contenders.metric === "count"
+          ? row.value || ""
+          : row.time || row.gap || (Number(row.place) > 1 ? "same time" : "");
+      const flag = getCountryFlagEmoji(normalizeCountryCode(row.countryCode));
+
+      return `<li class="contender-row"><span class="contender-place">${escapeHtml(row.place)}</span><span class="contender-name">${
+        flag ? `<span class="country-flag" aria-hidden="true">${escapeHtml(flag)}</span>` : ""
+      }${escapeHtml(row.rider)}</span><span class="contender-value">${escapeHtml(value)}</span></li>`;
+    })
+    .join("");
+
+  return `<template class="jersey-card-source"><div class="jersey-card-head">${buildJerseySwatchMarkup(
+    entry.jersey,
+  )}<span class="jersey-card-name">${escapeHtml(entry.label)} classification</span></div><div class="jersey-card-kicker"><span>${escapeHtml(
+    stage,
+  )}</span><span>${escapeHtml(metricLabel)}</span></div><ol class="contender-list">${items}</ol></template>`;
+}
+
 // The jersey holders listed beneath the GC podium: one row per classification the
 // leadership table names, in the table's own column order. Labelled with its stage only
 // when that differs from the GC's, so the common case reads simply "Jersey holders".
@@ -9693,14 +9983,22 @@ function buildJerseyHoldersMarkup(race, options = {}) {
       ? `Jersey holders after ${stageLabel.toLowerCase()}`
       : "Jersey holders";
   const items = entries
-    .map(
-      (entry) => `
+    .map((entry) => {
+      const card = buildJerseyContendersMarkup(entry);
+      // The classification carries the card, not the rider beside it: the rider's name
+      // already opens the rider card, and two tooltips racing for one element helps
+      // nobody. A classification with no standings table stays a plain span.
+      const classification = card
+        ? `<span class="jersey-classification has-contenders" data-jersey-contenders>${escapeHtml(entry.label)}</span>`
+        : `<span class="jersey-classification">${escapeHtml(entry.label)}</span>`;
+
+      return `
           <li class="jersey-item">
             ${buildJerseySwatchMarkup(entry.jersey)}
-            <span class="jersey-classification">${escapeHtml(entry.label)}</span>
-            ${buildRiderMarkup(entry, "jersey-holder")}
-          </li>`,
-    )
+            ${classification}
+            ${buildRiderMarkup(entry, "jersey-holder")}${card}
+          </li>`;
+    })
     .join("");
 
   return `
@@ -12883,6 +13181,86 @@ function buildHtmlPage(data, view) {
         text-decoration: underline;
       }
 
+      /* The jersey contenders card borrows the rider card's frame and arrow so the two
+         read as one thing, and only sets what differs: a narrower box and the standings
+         list inside it. */
+      .jersey-card {
+        width: 19.5rem;
+      }
+
+      .jersey-card-head {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .jersey-card-name {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .jersey-card-kicker {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.9rem;
+        margin: 0.55rem 0 0.4rem;
+        color: var(--uci-blue-bright);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .contender-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.32rem;
+      }
+
+      .contender-row {
+        display: grid;
+        grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+        align-items: baseline;
+        gap: 0.5rem;
+        color: var(--ink);
+        font-size: 0.92rem;
+      }
+
+      .contender-place {
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      .contender-name .country-flag {
+        margin-right: 0.35rem;
+      }
+
+      .contender-value {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      /* Dotted rather than solid: the classification is not a link, and the pointer
+         says so. Untouched on a phone, where the card never opens. */
+      @media (hover: hover) {
+        .jersey-classification.has-contenders {
+          cursor: help;
+          text-decoration: underline dotted rgba(0, 51, 160, 0.35);
+          text-underline-offset: 0.22em;
+        }
+
+        .jersey-classification.has-contenders:hover {
+          color: var(--uci-blue-bright);
+          text-decoration-color: var(--uci-blue-bright);
+        }
+      }
+
       .stage-panel-meta {
         margin: 0.3rem 0 0;
         color: rgba(9, 33, 76, 0.66);
@@ -14556,14 +14934,112 @@ function buildHtmlPage(data, view) {
       applyProfileView(readProfileView());
       narrowViewport.addEventListener("change", () => applyProfileView(readProfileView()));
 
-      // A small card under a rider's name on hover or focus: what this site holds about
-      // their season, and the two outward links. Pointer devices only; a phone keeps the
-      // plain link. The card is fixed-positioned on the body so a card's overflow clip
-      // cannot cut it off.
-      function bindRiderCards() {
+      // A small card that opens beside whatever the pointer is resting on. The rider
+      // card and the jersey contenders card are both one of these and differ only in
+      // what goes inside. Pointer devices only; a phone keeps the plain page. The card
+      // is fixed-positioned on the body so a card's overflow clip cannot cut it off.
+      function bindHoverCards(selector, className, buildMarkup) {
         if (!window.matchMedia || !window.matchMedia("(hover: hover)").matches) {
           return;
         }
+        let card = null;
+        let openFor = null;
+        let showTimer = null;
+        let hideTimer = null;
+
+        function hideCard() {
+          clearTimeout(showTimer);
+          clearTimeout(hideTimer);
+          if (card) {
+            card.remove();
+            card = null;
+          }
+          openFor = null;
+        }
+
+        function showCard(target) {
+          if (openFor === target) {
+            return;
+          }
+          const markup = buildMarkup(target);
+          if (!markup) {
+            return;
+          }
+          hideCard();
+          card = document.createElement("div");
+          card.className = className;
+          card.setAttribute("role", "tooltip");
+          card.innerHTML = markup;
+          document.body.appendChild(card);
+          const rect = target.getBoundingClientRect();
+          const width = card.offsetWidth;
+          const height = card.offsetHeight;
+          const left = Math.max(8, Math.min(rect.left - 16, window.innerWidth - width - 8));
+          const below = rect.bottom + 10;
+          const above = rect.top - height - 10;
+          const fitsBelow = below + height <= window.innerHeight - 8 || above < 8;
+          card.style.left = left + "px";
+          card.style.top = (fitsBelow ? below : above) + "px";
+          card.style.setProperty("--rider-card-arrow", Math.max(12, rect.left - left + 8) + "px");
+          card.classList.toggle("is-above", !fitsBelow);
+          openFor = target;
+        }
+
+        function scheduleHide() {
+          clearTimeout(hideTimer);
+          hideTimer = setTimeout(hideCard, 180);
+        }
+
+        document.addEventListener("mouseover", (event) => {
+          const target = event.target.closest(selector);
+          if (target) {
+            clearTimeout(hideTimer);
+            if (openFor !== target) {
+              clearTimeout(showTimer);
+              showTimer = setTimeout(() => showCard(target), 250);
+            }
+            return;
+          }
+          if (card && card.contains(event.target)) {
+            clearTimeout(hideTimer);
+          }
+        });
+        document.addEventListener("mouseout", (event) => {
+          const target = event.target.closest(selector);
+          if (target || (card && card.contains(event.target))) {
+            clearTimeout(showTimer);
+            scheduleHide();
+          }
+        });
+        document.addEventListener("focusin", (event) => {
+          const target = event.target.closest(selector);
+          if (target) {
+            showCard(target);
+          } else if (!(card && card.contains(event.target))) {
+            hideCard();
+          }
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            hideCard();
+          }
+        });
+        window.addEventListener("scroll", hideCard, { passive: true });
+        window.addEventListener("resize", hideCard);
+      }
+
+      // The five riders closest to a jersey, written into a template beside the
+      // classification when the page was built, so nothing here has to know how a name,
+      // a flag or a standing is spelled.
+      function bindJerseyContenderCards() {
+        bindHoverCards("[data-jersey-contenders]", "rider-card jersey-card", (label) => {
+          const source = label.parentElement && label.parentElement.querySelector(".jersey-card-source");
+          return source ? source.innerHTML : "";
+        });
+      }
+
+      // What this site holds about a rider's season, and the two outward links.
+      function bindRiderCards() {
         let index = {};
         try {
           const node = document.getElementById("rider-seasons");
@@ -14571,10 +15047,6 @@ function buildHtmlPage(data, view) {
         } catch (error) {
           index = {};
         }
-        let card = null;
-        let openFor = null;
-        let showTimer = null;
-        let hideTimer = null;
 
         function escapeText(value) {
           return String(value || "")
@@ -14617,86 +15089,13 @@ function buildHtmlPage(data, view) {
           );
         }
 
-        function hideCard() {
-          clearTimeout(showTimer);
-          clearTimeout(hideTimer);
-          if (card) {
-            card.remove();
-            card = null;
-          }
-          openFor = null;
-        }
-
-        function showCard(link) {
-          if (openFor === link) {
-            return;
-          }
-          hideCard();
-          card = document.createElement("div");
-          card.className = "rider-card";
-          card.setAttribute("role", "tooltip");
-          card.innerHTML = buildCardMarkup(link);
-          document.body.appendChild(card);
-          const rect = link.getBoundingClientRect();
-          const width = card.offsetWidth;
-          const height = card.offsetHeight;
-          const left = Math.max(8, Math.min(rect.left - 16, window.innerWidth - width - 8));
-          const below = rect.bottom + 10;
-          const above = rect.top - height - 10;
-          const fitsBelow = below + height <= window.innerHeight - 8 || above < 8;
-          card.style.left = left + "px";
-          card.style.top = (fitsBelow ? below : above) + "px";
-          card.style.setProperty("--rider-card-arrow", Math.max(12, rect.left - left + 8) + "px");
-          card.classList.toggle("is-above", !fitsBelow);
-          openFor = link;
-        }
-
-        function scheduleHide() {
-          clearTimeout(hideTimer);
-          hideTimer = setTimeout(hideCard, 180);
-        }
-
-        document.addEventListener("mouseover", (event) => {
-          const link = event.target.closest(".rider-link");
-          if (link) {
-            clearTimeout(hideTimer);
-            if (openFor !== link) {
-              clearTimeout(showTimer);
-              showTimer = setTimeout(() => showCard(link), 250);
-            }
-            return;
-          }
-          if (card && card.contains(event.target)) {
-            clearTimeout(hideTimer);
-          }
-        });
-        document.addEventListener("mouseout", (event) => {
-          const link = event.target.closest(".rider-link");
-          if (link || (card && card.contains(event.target))) {
-            clearTimeout(showTimer);
-            scheduleHide();
-          }
-        });
-        document.addEventListener("focusin", (event) => {
-          const link = event.target.closest(".rider-link");
-          if (link) {
-            showCard(link);
-          } else if (!(card && card.contains(event.target))) {
-            hideCard();
-          }
-        });
-        document.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") {
-            hideCard();
-          }
-        });
-        window.addEventListener("scroll", hideCard, { passive: true });
-        window.addEventListener("resize", hideCard);
+        bindHoverCards(".rider-link", "rider-card", buildCardMarkup);
       }
 
       bindLoadMoreRaces();
       bindRaceNews();
       bindRiderCards();
+      bindJerseyContenderCards();
       bindNationalChampionshipFilters();
       bindNationalChampionshipMap();
       bindSeasonCalendar();

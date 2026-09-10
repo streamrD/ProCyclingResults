@@ -104,3 +104,9 @@ how the site fetches. The review log below is updated each time.
 - **2026-09-07, evening.** Rider names now link out to ProCyclingStats. This is a link
   for the reader to follow, not something we fetch: the server makes no request to
   ProCyclingStats, and the site is not in the table above. No change to request counts.
+- **2026-09-10.** The jersey list now opens a card with each classification's top five.
+  Those standings come from the race article we already fetch — a section further down
+  the same page — so nothing new is requested. The one adjacent change is that the
+  batched `{{UCI team code}}` lookup, already a single request per rebuild, now names a
+  handful more codes (the teams in a team classification's top five). No change to
+  request counts.

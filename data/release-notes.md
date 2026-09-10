@@ -1,5 +1,13 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 10 September 2026
+
+- **Who is chasing each jersey.** On a computer, rest the pointer on one of the classifications under a stage race's overall result — General, Points, Mountains, Young rider, Team — and a card opens with the five closest to that jersey. It shows what the classification is actually scored in: points for the points and mountains jerseys, times and gaps for the general, young rider and team classifications, kilometres for the Giro's breakaway prize. Wikipedia updates these tables a stage after it updates the jerseys, so the card says which stage it is counting to. A classification whose table the article does not carry — the Tour de Pologne's Polish rider jersey, say — stays as it was, with nothing to open. Phones are unchanged.
+
+- **Two races that had been reading as blank.** The Giro d'Italia Women and the Vuelta a Burgos Feminas write their result tables with one extra space, and the site had been skipping all eighteen of those tables. Their classifications, and the standings behind each jersey, are now read like every other race's.
+
+- **The Tour de Suisse and the Tour of Britain Women were a race behind.** Both list their overall standings again after every stage, and the site was reading the first list on the page — stage 1 — instead of the last.
+
 ## 8 September 2026
 
 - **The rider card counts the race leader again.** The Vuelta's classification calls him "Enric Mas Nicolau" and its stage results call him "Enric Mas", so the card read them as two riders and said the leader had no win or podium this season. Seven riders were affected; Isaac del Toro's card was missing six wins.
