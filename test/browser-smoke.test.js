@@ -140,6 +140,11 @@ function buildPage({ probe: customProbe, setup = "", markup = "" } = {}) {
 <script>${customProbe || probe}</script>`;
 }
 
+// Chrome's own answer to "(hover: hover)" varies by headless build, so a test that
+// depends on it says which one it wants.
+const HOVER_ON = "--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4";
+const HOVER_OFF = "--blink-settings=primaryHoverType=1,availableHoverTypes=1,primaryPointerType=2,availablePointerTypes=2";
+
 function runProbe(chrome, page, chromeArgs = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pcr-smoke-"));
   const file = path.join(dir, "card.html");
@@ -329,6 +334,7 @@ test("the jersey list opens its contenders card on hover", (t) => {
     const hover = (node, type) => node.dispatchEvent(new MouseEvent(type, { bubbles: true }));
     out.hoverMedia = matchMedia('(hover: hover)').matches;
     out.plainLabels = document.querySelectorAll('.jersey-classification:not(.has-contenders)').length;
+    out.cursor = getComputedStyle(document.querySelector('[data-jersey-contenders]')).cursor;
 
     hover(document.querySelector('[data-jersey-contenders]'), 'mouseover');
     setTimeout(() => {
@@ -351,7 +357,12 @@ test("the jersey list opens its contenders card on hover", (t) => {
       }, 400);
     }, 400);
   `;
-  const out = runProbe(chrome, buildPage({ markup: `<article class="card">${buildJerseyHoldersMarkup(race)}</article>`, probe }));
+  // Whether a headless Chrome reports "(hover: hover)" depends on the build — this
+  // machine's says yes, the CI runner's says no — and the card is gated on it. Both
+  // hover types are forced here so the test exercises the same path everywhere, and
+  // the phone path is asserted below rather than left to the runner's default.
+  const page = buildPage({ markup: `<article class="card">${buildJerseyHoldersMarkup(race)}</article>`, probe });
+  const out = runProbe(chrome, page, [HOVER_ON]);
 
   assert.deepEqual(out.errors, []);
   assert.equal(out.hoverMedia, true);
@@ -364,4 +375,12 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(out.position, "fixed");
   assert.equal(out.onScreen, true);
   assert.equal(out.closed, true);
+
+  // A phone keeps the plain list: no card, and no cursor or underline inviting one.
+  const touch = runProbe(chrome, page, [HOVER_OFF]);
+
+  assert.deepEqual(touch.errors, []);
+  assert.equal(touch.hoverMedia, false);
+  assert.equal(touch.opened, false);
+  assert.equal(touch.cursor, "auto");
 });
