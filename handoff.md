@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-12 (news-line refresh, jersey swatch hover target; 2026-09-10 jersey contenders card; 2026-09-08 one spelling per rider; 2026-09-07 live-card day line and Rest day pill; 2026-09-06 refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
+Updated: 2026-09-12 (news-line refresh, jersey swatch hover target, full-results links to PCS; 2026-09-10 jersey contenders card; 2026-09-08 one spelling per rider; 2026-09-07 live-card day line and Rest day pill; 2026-09-06 refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -1790,6 +1790,18 @@ hoverable?". One was a bug, one was upstream, one was a small change. Details ar
 - **Ask why it worked.** The user's explanation of the jersey fix — the jersey pokes
   out beside the card, so the pointer never has to leave — is a layout rule worth more
   than the change itself. It is saved in memory and in item 7a.
+- **"PCS blocks the server" is not new, and it is not only the server.** It has been
+  in `AGENTS.md` since the rider links shipped on 2026-09-07. What this session added:
+  a plain `curl` from the maintainer's laptop gets the same Cloudflare wall (HTTP 403,
+  a "Just a moment" challenge page), so the block is on anything that is not a real
+  browser, not on Railway's address. A signed-in Chrome loads the pages normally,
+  which is why both check scripts (`pcs-rider-links.browser.js`,
+  `pcs-race-links.browser.js`) run pasted into a PCS tab, and why this session drove
+  the race-address check through the Chrome extension: 65 same-origin fetches from
+  one tab, results parked on `window` and read back in batches, because one call
+  holding the tab for the whole run timed out at 45 s. None of this touches what the
+  site does — it links to PCS and never reads it — it only decides how the links get
+  verified.
 
 ## Suggested First Checks For A New Agent
 
