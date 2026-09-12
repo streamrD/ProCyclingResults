@@ -1,6 +1,6 @@
 # Pro Cycling Results AI Handoff
 
-Updated: 2026-09-07 (live-card day line and Rest day pill; 2026-09-06 refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
+Updated: 2026-09-12 (news-line refresh, jersey swatch hover target; 2026-09-10 jersey contenders card; 2026-09-08 one spelling per rider; 2026-09-07 live-card day line and Rest day pill; 2026-09-06 refresh button and `/api/data-status`; 2026-09-05 live-race timer, news line, source review; 2026-09-04 season calendar, championships almanac and map, editable pages, share previews)
 
 This file accompanies `README.md` and `AGENTS.md`. Use it as a cross-reference and audit snapshot for handing the project to another AI or engineer.
 
@@ -1079,6 +1079,41 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   link, B pill beside the timestamp (chosen), C fifth menu item, each at desktop and
   phone width, plus a board of the four states the button moves through.
 
+### Added 2026-09-12 (news line refresh, jersey targets)
+
+- **The news line froze at the first fetch.** "News coverage stopped on 9/10" was the
+  report; the Vuelta card's line led with stage 18 on the evening of stage 20, while
+  the Québec card was current. Two facts explained it. `peekRaceArticlePool` returned
+  any cached pool, however old, so the card rendered "ready" and the client had
+  nothing to ask for; and `warmRaceArticlePool` only called `loadRaceArticlePool`
+  when the pool was empty. So a live race's pool was built once — at the 2026-09-10
+  deploy, which restarted the process — and nothing ever refreshed it. Québec was fine
+  only because its pool was first built on 2026-09-11. Bing had the stage 19 and 20
+  stories the whole time; one direct call to `/api/race-news` from the terminal
+  triggered the refresh and proved it.
+- **The fix is one definition.** A pool older than `getArticleCacheTtlMs` (15 minutes
+  live, six hours two days after the finish) now counts as cold in `peek`, which makes
+  the live card refresh it at the next rebuild through the unchanged `warm` call and
+  the recent card render a placeholder for the client. `/api/race-news` passes
+  `waitForRefresh: true` so it answers with the refreshed pool rather than the stale
+  one, falling back to the stale pool only if the refresh fails. The refresh-failure
+  path still deletes the pool; retry cadence is unchanged. `DATA-SOURCES.md` already
+  stated a 15-minute cadence for live races; the requests now match it.
+- **Jersey hover cards "updated for a few, not all".** Not ours. Wikipedia's editors
+  updated the Vuelta's stage 20 standings tables in two passes (general and points at
+  16:57 UTC, mountains, young rider and team at 21:26 UTC), and the cards are dated by
+  their own captions, as item 7a says. The revision history (`prop=revisions`, then
+  `action=raw&oldid=`) settled it in two requests. No change made.
+- **The jersey swatch opens the card.** The classification label was the only hover
+  target, one short word in a stack of five. `buildJerseySwatchMarkup` now takes
+  `{ contenders }` and stamps `data-jersey-contenders-swatch`; `bindHoverCards` gained
+  a fourth argument, `resolveTarget`, which maps the swatch onto its label so the card
+  is anchored in one place and moving between the two keeps it open. Under
+  `(hover: hover)` the label also stretches to its row's height. The user's own reading
+  of why it works: the card opens to the right of the jersey column, so the jerseys
+  stay uncovered and the pointer steps straight down the list. Keep that column clear
+  of any future card.
+
 ## Live-Race Freshness, Measured 2026-09-05
 
 Stage 14 of the Vuelta: the riders finished at about 15:48 UTC (13:33 real start plus
@@ -1684,6 +1719,46 @@ hover card says?" — and three pushes. The answer was no, and the detail is und
   through two rounds of fixes that were correct in every local test. When a pass has
   to settle data, find everything that writes that data afterwards — grep for
   assignments to the field, not just for the builders.
+
+## Process Lessons From The 2026-09-12 Session
+
+Three reports in one evening: "news coverage stopped on 9/10", "today's jersey points on
+hovers only are updated for a few", and "could we make the jerseys themselves
+hoverable?". One was a bug, one was upstream, one was a small change. Details are under
+"Open Threads › Added 2026-09-12" above.
+
+- **A date in the report is a clue, not a coincidence.** "Stopped on 9/10" was the
+  day of the last deploy. A process restart rebuilds every in-memory cache once; a
+  cache that is then never refreshed shows its age from exactly that day. When a
+  symptom starts on a deploy day and the deploy did not touch the feature, look for a
+  cache that only fills when empty.
+- **Compare a broken card with a working one.** The Vuelta line was stale and the
+  Québec line was current, on the same server, from the same Bing feeds. The difference
+  was when each pool was first built, which pointed straight at "built once, never
+  refreshed" and away from Bing, filters and scoring.
+- **Hit the endpoint yourself before reading the code for the answer.** One curl to
+  `/api/race-news` returned the stale set; the second, a minute later, returned stage
+  20. That proved the refresh path worked and only the trigger was missing, which
+  turned a scoring-and-filters investigation into a one-definition fix.
+- **Two of three reports were not bugs in the code.** The hover-card lag was
+  Wikipedia's editors working in two passes; the fix would have been to fabricate
+  standings, so there was none. Checking the article's revision history took two
+  requests and settled it with a table of times. Say "not ours" with the evidence,
+  and stop.
+- **A doc that states a cadence is a promise.** `DATA-SOURCES.md` had said "cached for
+  15 minutes" since 2026-09-05; the code had never once refetched a live race's pool.
+  When a fix makes the requests match the document, log that in its review log rather
+  than treating it as a no-change.
+- **The client script is inside a template literal.** A backtick in a comment ended it
+  and every test failed at once. The smoke test's `${` guard did not catch it because
+  the break was a backtick, not a dollar brace. Use plain quotes in that block.
+- **Headless `--screenshot` does not paint a card opened by script.** The DOM dump
+  showed the fixed-position card at the right coordinates; three screenshot attempts
+  showed the list without it. The smoke test, which asserts on the DOM in the same
+  headless Chrome, is the proof for hover work; do not burn time trying to picture it.
+- **Ask why it worked.** The user's explanation of the jersey fix — the jersey pokes
+  out beside the card, so the pointer never has to leave — is a layout rule worth more
+  than the change itself. It is saved in memory and in item 7a.
 
 ## Suggested First Checks For A New Agent
 
