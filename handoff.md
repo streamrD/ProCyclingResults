@@ -1802,6 +1802,14 @@ hoverable?". One was a bug, one was upstream, one was a small change. Details ar
   holding the tab for the whole run timed out at 45 s. None of this touches what the
   site does — it links to PCS and never reads it — it only decides how the links get
   verified.
+- **Release notes are two sentences, not five.** The full-results entry ran to five
+  sentences (what, where, how many were checked, what the fallback does) and the user
+  asked for it to be cut and for the rule to be kept: "these should always be concise".
+  An entry is a bold lead of a few words and one or two sentences on what changed for
+  the reader; the diagnosis, the counts and the fallback belong in this file. Three
+  sessions have now trimmed notes after the fact ("Cut the contenders release note to
+  one sentence", "Shorten today's release notes", today), so the rule is in `AGENTS.md`
+  and in memory. Write the entry last, from the reader's side.
 
 ## Suggested First Checks For A New Agent
 
