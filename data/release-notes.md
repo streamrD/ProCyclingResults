@@ -2,11 +2,11 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 12 September 2026
 
-- **The full placings, one click away.** Every card shows the top five and stops there. Beside "Watch the race finish" there is now a "Full results" link, and on a stage race a "Full stage results" link under each stage, to that race's page on ProCyclingStats. The top-five card behind each jersey ends with a link to the full classification there. All 65 races on the site were checked by hand; a race the site does not know goes to a ProCyclingStats search instead.
+- **Full results, one click away.** Every card stops at five. A "Full results" link now sits beside the finish video, each stage has a "Full stage results" link, and each jersey's top-five card links to the full classification, all on ProCyclingStats.
 
-- **The jersey opens its top five too.** Under "Jersey holders", the classification name was the only thing that opened the top-five card, and it is a short word in a stack of five. Now the jersey beside it opens the same card, and the name's hover area runs the full height of its row.
+- **The jersey opens its top five too.** The jersey beside a classification name now opens the same card, and the name is easier to land on.
 
-- **The news line had stopped on 10 September.** A live race's stories were gathered once and then kept, so the Vuelta's line stayed on stage 18 through stages 19 and 20. Stories older than fifteen minutes are now fetched again, for the live race and every card that opens.
+- **The news line had stopped on 10 September.** A live race's stories were fetched once and kept. They now refresh every fifteen minutes.
 
 ## 10 September 2026
 
