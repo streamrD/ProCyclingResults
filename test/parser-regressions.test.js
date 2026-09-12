@@ -6243,6 +6243,10 @@ test("the jersey list carries its contenders card, priced in whatever the classi
   assert.equal((html.match(/<template class="jersey-card-source">/g) || []).length, 2);
   assert.match(html, /<span class="jersey-classification has-contenders" data-jersey-contenders>Points<\/span>/);
   assert.match(html, /<span class="jersey-classification">Polish rider<\/span>/);
+  // The swatch beside a classification with a card is a second way onto it; beside
+  // one without, it stays a plain swatch.
+  assert.match(html, /<svg class="jersey-swatch has-contenders" data-jersey-contenders-swatch [^>]*aria-label="dark green jersey">[\s\S]*?<span class="jersey-classification has-contenders" data-jersey-contenders>Points<\/span>/);
+  assert.match(html, /<svg class="jersey-swatch" viewBox[^>]*>[\s\S]*?<span class="jersey-classification">Polish rider<\/span>/);
   assert.ok(!/Polish rider<\/span>[\s\S]*?<template/.test(html));
 
   const [, points = "", young = ""] = html.split("<template class=\"jersey-card-source\">");

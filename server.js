@@ -9907,7 +9907,9 @@ const JERSEY_POLKADOT_COLOURS = new Map([
   ["orange polkadot", "#f28c1e"],
 ]);
 
-function buildJerseySwatchMarkup(jersey) {
+// With `contenders` the swatch is a second way onto the classification's card: the
+// label beside it is a short word, and in a stack of five rows the pointer misses it.
+function buildJerseySwatchMarkup(jersey, { contenders = false } = {}) {
   const name = String(jersey || "").trim().toLowerCase();
   const dots = JERSEY_POLKADOT_COLOURS.get(name) || "";
   const fill = dots ? "#ffffff" : JERSEY_FILL_COLOURS.get(name) || "";
@@ -9928,7 +9930,9 @@ function buildJerseySwatchMarkup(jersey) {
     : "";
   const title = name ? `${name} jersey` : "jersey";
 
-  return `<svg class="jersey-swatch" viewBox="0 0 24 24" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(
+  const hook = contenders ? ` has-contenders" data-jersey-contenders-swatch` : `"`;
+
+  return `<svg class="jersey-swatch${hook} viewBox="0 0 24 24" role="img" aria-label="${escapeHtml(title)}"><title>${escapeHtml(
     title,
   )}</title>${body}${dotMarkup}</svg>`;
 }
@@ -9998,14 +10002,16 @@ function buildJerseyHoldersMarkup(race, options = {}) {
       const card = buildJerseyContendersMarkup(entry);
       // The classification carries the card, not the rider beside it: the rider's name
       // already opens the rider card, and two tooltips racing for one element helps
-      // nobody. A classification with no standings table stays a plain span.
+      // nobody. The jersey swatch is a second way onto the same card (asked for on
+      // 2026-09-12: the label alone was a small target in the stack). A classification
+      // with no standings table stays a plain span and a plain swatch.
       const classification = card
         ? `<span class="jersey-classification has-contenders" data-jersey-contenders>${escapeHtml(entry.label)}</span>`
         : `<span class="jersey-classification">${escapeHtml(entry.label)}</span>`;
 
       return `
           <li class="jersey-item">
-            ${buildJerseySwatchMarkup(entry.jersey)}
+            ${buildJerseySwatchMarkup(entry.jersey, { contenders: Boolean(card) })}
             ${classification}
             ${buildRiderMarkup(entry, "jersey-holder")}${card}
           </li>`;
@@ -13271,9 +13277,19 @@ function buildHtmlPage(data, view) {
           cursor: help;
           text-decoration: underline dotted rgba(0, 51, 160, 0.35);
           text-underline-offset: 0.22em;
+          /* The label is one short word in a row as tall as the swatch: fill the row
+             so the pointer has the whole height to land on, not just the text. */
+          align-self: stretch;
+          display: flex;
+          align-items: center;
         }
 
-        .jersey-classification.has-contenders:hover {
+        .jersey-swatch.has-contenders {
+          cursor: help;
+        }
+
+        .jersey-classification.has-contenders:hover,
+        .jersey-item:has(.jersey-swatch.has-contenders:hover) .jersey-classification {
           color: var(--uci-blue-bright);
           text-decoration-color: var(--uci-blue-bright);
         }
@@ -14956,10 +14972,13 @@ function buildHtmlPage(data, view) {
       // card and the jersey contenders card are both one of these and differ only in
       // what goes inside. Pointer devices only; a phone keeps the plain page. The card
       // is fixed-positioned on the body so a card's overflow clip cannot cut it off.
-      function bindHoverCards(selector, className, buildMarkup) {
+      // resolveTarget maps a secondary target onto the element the card belongs to,
+      // so moving between the two keeps one card open instead of closing and reopening.
+      function bindHoverCards(selector, className, buildMarkup, resolveTarget) {
         if (!window.matchMedia || !window.matchMedia("(hover: hover)").matches) {
           return;
         }
+        const resolve = (node) => (node && resolveTarget ? resolveTarget(node) : node);
         let card = null;
         let openFor = null;
         let showTimer = null;
@@ -15009,7 +15028,7 @@ function buildHtmlPage(data, view) {
         }
 
         document.addEventListener("mouseover", (event) => {
-          const target = event.target.closest(selector);
+          const target = resolve(event.target.closest(selector));
           if (target) {
             clearTimeout(hideTimer);
             if (openFor !== target) {
@@ -15023,14 +15042,14 @@ function buildHtmlPage(data, view) {
           }
         });
         document.addEventListener("mouseout", (event) => {
-          const target = event.target.closest(selector);
+          const target = resolve(event.target.closest(selector));
           if (target || (card && card.contains(event.target))) {
             clearTimeout(showTimer);
             scheduleHide();
           }
         });
         document.addEventListener("focusin", (event) => {
-          const target = event.target.closest(selector);
+          const target = resolve(event.target.closest(selector));
           if (target) {
             showCard(target);
           } else if (!(card && card.contains(event.target))) {
@@ -15049,11 +15068,21 @@ function buildHtmlPage(data, view) {
       // The five riders closest to a jersey, written into a template beside the
       // classification when the page was built, so nothing here has to know how a name,
       // a flag or a standing is spelled.
+      // The swatch beside the classification opens the same card, resolved onto the
+      // label so the card is anchored, and kept, in one place.
       function bindJerseyContenderCards() {
-        bindHoverCards("[data-jersey-contenders]", "rider-card jersey-card", (label) => {
-          const source = label.parentElement && label.parentElement.querySelector(".jersey-card-source");
-          return source ? source.innerHTML : "";
-        });
+        bindHoverCards(
+          "[data-jersey-contenders], [data-jersey-contenders-swatch]",
+          "rider-card jersey-card",
+          (label) => {
+            const source = label.parentElement && label.parentElement.querySelector(".jersey-card-source");
+            return source ? source.innerHTML : "";
+          },
+          (node) =>
+            node.hasAttribute("data-jersey-contenders-swatch")
+              ? node.parentElement && node.parentElement.querySelector("[data-jersey-contenders]")
+              : node,
+        );
       }
 
       // What this site holds about a rider's season, and the two outward links.

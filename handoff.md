@@ -716,7 +716,11 @@ jersey by key alone — including one-off columns such as Pologne's "Active ride
 `attachClassificationContenders` hangs it on the entry as `contenders =
 { stageNumber | final, metric, metricLabel?, entries }`; a classification with no table
 (Pologne's "Polish rider", the Giro's "Red Bull KM") keeps its plain entry and no card
-opens. Four things this has to get right:
+opens. Since 2026-09-12 the jersey swatch beside the label is a second way onto the same
+card (`data-jersey-contenders-swatch`, resolved onto the label by `bindHoverCards`'s
+`resolveTarget` so moving between the two keeps one card open), and the label fills its
+row's height under `(hover: hover)` — the user found the word alone too small a target
+in the stack. Four things this has to get right:
 
 - **The metric is not always points.** Points and mountains are scored in points, the
   general, young rider and team classifications in time, and the Giro's breakaway

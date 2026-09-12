@@ -2,6 +2,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 12 September 2026
 
+- **The jersey opens its top five too.** Under "Jersey holders", the classification name was the only thing that opened the top-five card, and it is a short word in a stack of five. Now the jersey beside it opens the same card, and the name's hover area runs the full height of its row.
+
 - **The news line had stopped on 10 September.** A live race's stories were gathered once and then kept, so the Vuelta's line stayed on stage 18 through stages 19 and 20. Stories older than fifteen minutes are now fetched again, for the live race and every card that opens.
 
 ## 10 September 2026

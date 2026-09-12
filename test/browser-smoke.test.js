@@ -354,7 +354,20 @@ test("the jersey list opens its contenders card on hover", (t) => {
       hover([...document.querySelectorAll('.jersey-classification')].find((node) => node.textContent === 'Polish rider'), 'mouseover');
       setTimeout(() => {
         out.closed = !document.querySelector('body > .jersey-card');
-        document.getElementById('smoke').textContent = JSON.stringify(out);
+        // The swatch opens the same card, and moving from it to the label keeps it.
+        const swatch = document.querySelector('[data-jersey-contenders-swatch]');
+        out.swatchCursor = getComputedStyle(swatch).cursor;
+        hover(swatch, 'mouseover');
+        setTimeout(() => {
+          const viaSwatch = document.querySelector('body > .jersey-card');
+          out.swatchOpened = viaSwatch && viaSwatch.querySelector('.jersey-card-name').textContent;
+          hover(swatch, 'mouseout');
+          hover(document.querySelector('[data-jersey-contenders]'), 'mouseover');
+          setTimeout(() => {
+            out.keptAcross = document.querySelector('body > .jersey-card') === viaSwatch;
+            document.getElementById('smoke').textContent = JSON.stringify(out);
+          }, 400);
+        }, 400);
       }, 400);
     }, 400);
   `;
@@ -376,6 +389,9 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(out.position, "fixed");
   assert.equal(out.onScreen, true);
   assert.equal(out.closed, true);
+  assert.equal(out.swatchCursor, "help");
+  assert.equal(out.swatchOpened, "Points classification");
+  assert.equal(out.keptAcross, true);
 
   // A phone keeps the plain list: no card, and no cursor or underline inviting one.
   const touch = runProbe(chrome, page, [HOVER_OFF]);
@@ -384,6 +400,7 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(touch.hoverMedia, false);
   assert.equal(touch.opened, false);
   assert.equal(touch.cursor, "auto");
+  assert.equal(touch.swatchCursor, "auto");
 });
 
 test("a picture on a site page fills the window on a click and goes back on the next one", (t) => {
