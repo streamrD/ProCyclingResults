@@ -130,6 +130,9 @@ function loadParserExports() {
       isRaceWithinRacingHours,
       hasRaceEndedDaysAgo,
       getArticleCacheTtlMs,
+      articleCache,
+      peekRaceArticlePool,
+      loadRaceArticlePool,
       indexWikiRevisions,
       FETCH_USER_AGENT,
       YOUTUBE_FETCH_USER_AGENT,
@@ -6252,4 +6255,39 @@ test("the jersey list carries its contenders card, priced in whatever the classi
   assert.match(young, /<span class="contender-value">\+00:30<\/span>/);
   // A gap of nothing behind the leader is the same time, not missing data.
   assert.match(young, /Léo Bisiaux<\/span><span class="contender-value">same time<\/span>/);
+});
+
+test("a stale article pool renders as a placeholder and the news endpoint waits for its refresh", async () => {
+  const { articleCache, peekRaceArticlePool, loadRaceArticlePool, getArticleCacheTtlMs } = loadParserExports();
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00Z"),
+    endDate: new Date("2026-09-13T00:00:00Z"),
+  };
+  const stale = [{ title: "Küng wins stage 18", publisher: "Reuters", url: "https://example.com/18" }];
+  const fresh = [{ title: "Landa wins stage 20", publisher: "Cycling Weekly", url: "https://example.com/20" }];
+  const ttl = getArticleCacheTtlMs(race, new Date("2026-09-12T12:00:00Z"));
+
+  // Warm and inside its window: the card renders ready from it.
+  articleCache.set(race.pageTitle, { updatedAt: Date.now() - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race), stale);
+
+  // Older than its window: the card renders a placeholder so the client asks for it.
+  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race), null);
+
+  // A refresh already in flight: the endpoint waits for it rather than serving the
+  // old stories, and a caller that did not ask to wait still gets the old pool now.
+  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: Promise.resolve(fresh) });
+  assert.equal(await loadRaceArticlePool(race), stale);
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), fresh);
+
+  // A refresh that fails leaves the waiting caller with the old pool, not an error.
+  const failing = Promise.reject(new Error("bing down"));
+  failing.catch(() => {});
+  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: failing });
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), stale);
+  articleCache.delete(race.pageTitle);
 });

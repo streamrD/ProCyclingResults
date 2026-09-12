@@ -568,11 +568,16 @@ score first — `selectRaceArticles` with refresh token 0) and opens all eight s
 in place. The "Race Coverage" block that used to close each section was retired the
 same day as redundant (archived in `archive/race-coverage-block.js`; its Refresh paging
 and story summaries were the only things not carried over). It renders ready only when `articleCache` already
-holds the race (`peekRaceArticlePool`); otherwise it is a pending placeholder that the
+holds the race and the pool is younger than its cache window (`peekRaceArticlePool`;
+until 2026-09-12 any cached pool counted, so a live race's news froze at its first
+fetch — the Vuelta sat on stage 18 for two days); otherwise it is a pending placeholder that the
 client fills from `/api/race-news?race=<id>` when the card scrolls within 240px of the
 viewport or the line is tapped, so a page of recent races fetches coverage one card at
 a time instead of 12 × 32 RSS queries at build. Live cards call `warmRaceArticlePool`
-so the second render carries the headline in the HTML. Measured before the change: on
+so the second render carries the headline in the HTML, and the same call refreshes a
+stale pool in the background on a later rebuild. `/api/race-news` asks
+`loadRaceArticlePool` to wait for an in-flight refresh (`waitForRefresh`) rather than
+answer with the stale pool, falling back to the stale pool only if the refresh fails. Measured before the change: on
 desktop the Vuelta card ended ~1,800px above the coverage block (plus a click), on a
 phone ~2,900px.
 

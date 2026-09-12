@@ -7204,7 +7204,12 @@ function getArticleCacheTtlMs(race, now = new Date()) {
   return hasRaceEndedDaysAgo(race, 2, now) ? ARTICLE_SETTLED_CACHE_TTL_MS : CACHE_TTL_MS;
 }
 
-async function loadRaceArticlePool(race) {
+// The pool for one race. A fresh pool is returned as is; a stale one is returned at
+// once while it refreshes in the background, unless the caller asks to wait for the
+// refresh (the on-demand news endpoint does, because the card it fills has already
+// shown a placeholder and a stale pool there is exactly what the reader came to
+// replace). A failed refresh falls back to the stale pool for a waiting caller.
+async function loadRaceArticlePool(race, { waitForRefresh = false } = {}) {
   const raceId = getRaceId(race);
   const cached = articleCache.get(raceId);
   const now = Date.now();
@@ -7237,6 +7242,11 @@ async function loadRaceArticlePool(race) {
         promise,
       });
       promise.catch(() => {});
+    }
+
+    if (waitForRefresh) {
+      const staleData = cached.data;
+      return articleCache.get(raceId).promise.catch(() => staleData);
     }
 
     return cached.data;
@@ -10055,14 +10065,21 @@ function formatTimestamp(timestamp) {
 }
 
 // Reads the article cache without triggering a fetch: the pill renders from a warm
-// pool and otherwise as a placeholder the client fills in.
+// pool and otherwise as a placeholder the client fills in. A pool older than its
+// cache window counts as cold here — rendering it "ready" would leave the client with
+// nothing to ask for, and nothing else refreshes a warm pool (the Vuelta's news line
+// stopped at stage 18 for two days that way, 2026-09-10 to 2026-09-12).
 function peekRaceArticlePool(race) {
   const cached = articleCache.get(getRaceId(race));
-  return Array.isArray(cached?.data) ? cached.data : null;
+  if (!Array.isArray(cached?.data)) {
+    return null;
+  }
+  return Date.now() - cached.updatedAt < getArticleCacheTtlMs(race) ? cached.data : null;
 }
 
 // Start filling the cache in the background so the next render carries the
-// headlines. Used only for live races: recent cards load when scrolled into view.
+// headlines, or refresh a pool that has gone stale. Used only for live races: recent
+// cards load when scrolled into view.
 function warmRaceArticlePool(race) {
   if (!peekRaceArticlePool(race) && getRaceId(race)) {
     loadRaceArticlePool(race).catch(() => {});
@@ -16135,7 +16152,7 @@ const server = http.createServer(async (request, response) => {
 
         let articles;
         try {
-          articles = await loadRaceArticlePool(race);
+          articles = await loadRaceArticlePool(race, { waitForRefresh: true });
         } catch (error) {
           sendJson(response, 502, { error: "Race coverage is unavailable right now." });
           return;

@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 12 September 2026
+
+- **The news line had stopped on 10 September.** A live race's stories were gathered once and then kept, so the Vuelta's line stayed on stage 18 through stages 19 and 20. Stories older than fifteen minutes are now fetched again, for the live race and every card that opens.
+
 ## 10 September 2026
 
 - **A picture of the committee.** The about page opens with one now. Click it to fill the window, click again to come back.

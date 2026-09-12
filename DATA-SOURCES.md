@@ -41,7 +41,7 @@ no scraping of pages we do not show.
 |---|---|---|
 | Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
 | Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
-| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. |
+| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
 | Cyclingnews | The national championships index page | At most once an hour. |
 | YouTube | A search for the finish highlights of a stage | Once per stage, cached for six hours (or 20 minutes for a miss). |
 | komoot | The elevation trace an organiser embeds | Once per stage, kept for a week; the traces we have are committed to this repository so they are not fetched again after a restart. |
@@ -110,3 +110,9 @@ how the site fetches. The review log below is updated each time.
   batched `{{UCI team code}}` lookup, already a single request per rebuild, now names a
   handful more codes (the teams in a team classification's top five). No change to
   request counts.
+- **2026-09-12.** A live race's headlines were fetched once and then never again: a cached
+  set of stories, however old, was rendered as final and nothing asked for a newer one
+  (the Vuelta's news line sat on stage 18 from 10 to 12 September). A set older than its
+  cache window is now treated as cold, so a live race is searched again every 15 minutes
+  while it runs and a finished race at the cadence the table already stated. That is the
+  cadence this document has described since 2026-09-05; the requests now match it.

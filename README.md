@@ -446,9 +446,9 @@ Article coverage is race-specific and separate from the main race-data cache, an
 
 For one race:
 
-1. The card renders its news line from the article cache if that race's pool is already warm, otherwise as a placeholder. Live races start warming their pool at render.
+1. The card renders its news line from the article cache if that race's pool is warm and younger than its cache window (15 minutes; six hours once the race has been over for two days), otherwise as a placeholder. Live races start warming, or refreshing, their pool at render.
 2. The client requests `/api/race-news?race=<id>` when a placeholder scrolls within 240px of the viewport or is tapped.
-3. The server loads or reuses the article pool for that race and picks up to 8 articles.
+3. The server loads or reuses the article pool for that race, waiting for a refresh of a stale pool, and picks up to 8 articles.
 4. The line shows the leading story; opening it lists all eight.
 
 ### Race article query generation
