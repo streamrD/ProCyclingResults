@@ -133,6 +133,8 @@ function loadParserExports() {
       articleCache,
       peekRaceArticlePool,
       loadRaceArticlePool,
+      getRaceResultsUrl,
+      RACE_RESULT_SLUGS,
       indexWikiRevisions,
       FETCH_USER_AGENT,
       YOUTUBE_FETCH_USER_AGENT,
@@ -6294,4 +6296,87 @@ test("a stale article pool renders as a placeholder and the news endpoint waits 
   articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: failing });
   assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), stale);
   articleCache.delete(race.pageTitle);
+});
+
+test("every card links out to the full placings on ProCyclingStats", () => {
+  const { getRaceResultsUrl, RACE_RESULT_SLUGS, buildRaceCard, buildStageRaceCard, buildJerseyHoldersMarkup } = loadParserExports();
+
+  // One verified address per race in scope, keyed by the page title without its year.
+  assert.equal(Object.keys(RACE_RESULT_SLUGS).length, 65);
+  const vuelta = { pageTitle: "2026 Vuelta a España", title: "Vuelta a España" };
+  assert.equal(getRaceResultsUrl(vuelta, "stage-20"), "https://www.procyclingstats.com/race/vuelta-a-espana/2026/stage-20");
+  assert.equal(getRaceResultsUrl(vuelta, "gc"), "https://www.procyclingstats.com/race/vuelta-a-espana/2026/gc");
+  assert.equal(
+    getRaceResultsUrl({ pageTitle: "2026 Grand Prix Cycliste de Québec", title: "Grand Prix Cycliste de Québec" }),
+    "https://www.procyclingstats.com/race/gp-quebec/2026/result",
+  );
+  // A race the map does not know goes to the PCS search page, dashes as spaces.
+  assert.equal(
+    getRaceResultsUrl({ pageTitle: "2026 Tour de Nowhere–Sur-Mer", title: "Tour de Nowhere–Sur-Mer" }),
+    "https://www.procyclingstats.com/search.php?term=Tour%20de%20Nowhere%20Sur%20Mer%202026",
+  );
+  assert.equal(getRaceResultsUrl({}), "");
+
+  // A one-day card: the results link beside the finish video, in one row.
+  const oneDay = buildRaceCard({
+    id: "2026 Grand Prix Cycliste de Québec",
+    pageTitle: "2026 Grand Prix Cycliste de Québec",
+    title: "Grand Prix Cycliste de Québec",
+    series: "Men's WorldTour",
+    date: "11 September 2026",
+    location: "Canada",
+    winner: "Remco Evenepoel",
+    finishVideoUrl: "https://www.youtube.com/watch?v=quebec",
+  });
+  assert.match(oneDay, /<div class="race-links">\s*<a class="race-finish-link" href="https:\/\/www\.youtube\.com\/watch\?v=quebec"[\s\S]*?<a class="race-results-link" href="https:\/\/www\.procyclingstats\.com\/race\/gp-quebec\/2026\/result" target="_blank" rel="noreferrer">Full results<\/a><\/div>/);
+
+  // A stage panel links its own stage.
+  const stageRace = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    date: "22 August – 13 September 2026",
+    location: "Spain",
+    stageRace: {
+      totalStages: 21,
+      completedStages: 2,
+      stages: [
+        { number: 1, order: 1, label: "Stage 1", winner: "A", standings: [{ place: "1", rider: "A" }] },
+        { number: 2, order: 2, label: "Stage 2", winner: "B", standings: [{ place: "1", rider: "B" }] },
+      ],
+      latestStage: { number: 2, label: "Stage 2", winner: "B", standings: [{ place: "1", rider: "B" }] },
+      generalClassification: { stageNumber: 2, standings: [{ place: "1", rider: "B" }] },
+      classificationLeaders: {
+        stageNumber: 2,
+        entries: [
+          {
+            key: "general",
+            label: "General",
+            jersey: "red",
+            rider: "B",
+            contenders: { key: "general", stageNumber: 2, metric: "time", entries: [{ place: "1", rider: "B", time: "5:00:00" }] },
+          },
+          {
+            key: "team",
+            label: "Team",
+            jersey: "red number",
+            rider: "Team X",
+            contenders: { key: "team", stageNumber: 2, metric: "time", entries: [{ place: "1", rider: "Team X", time: "15:00:00" }] },
+          },
+        ],
+      },
+    },
+  };
+  const card = buildStageRaceCard(stageRace, { live: true });
+  const [, stageOnePanel = "", stageTwoPanel = ""] = card.split(/id="2026-vuelta-a-espana-stage-\d"/);
+  assert.match(stageOnePanel, /race\/vuelta-a-espana\/2026\/stage-1" target="_blank" rel="noreferrer">Full stage results</);
+  assert.match(stageTwoPanel, /race\/vuelta-a-espana\/2026\/stage-2" target="_blank" rel="noreferrer">Full stage results</);
+
+  // The jersey card ends with the classification's PCS page; the team jersey, whose
+  // classification has no page there, carries no link.
+  const jerseys = buildJerseyHoldersMarkup(stageRace);
+  const [, general = "", team = ""] = jerseys.split('<template class="jersey-card-source">');
+  assert.match(general, /<div class="rider-card-links"><a href="https:\/\/www\.procyclingstats\.com\/race\/vuelta-a-espana\/2026\/gc" target="_blank" rel="noreferrer">Full classification on ProCyclingStats \u2197<\/a><\/div><\/template>/);
+  assert.doesNotMatch(team, /rider-card-links/);
 });

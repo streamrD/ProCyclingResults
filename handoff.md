@@ -433,6 +433,37 @@ clicking back to stage 1 of a Grand Tour offers that stage's finish.
   That entry is the video of the *race* finishing and belongs to the final stage; a
   per-stage map entry still outranks a searched one.
 
+## Full Results Links (2026-09-12)
+
+The cards stop at five on purpose; the full placings are one click away on
+ProCyclingStats, which is where rider names already go. `getRaceResultsUrl(race,
+target)` builds `https://www.procyclingstats.com/race/<slug>/<year>/<target>` from
+`RACE_RESULT_SLUGS`, keyed by the page title without its year ("Tour of Flanders
+(women's race)", "UCI Road World Championships – Men's time trial"). Targets: `result`
+for a one-day race, `stage-<n>` for a stage (`prologue` for stage 0), and `gc`,
+`points`, `kom`, `youth` for the classifications (`PCS_CLASSIFICATION_PAGES`; the team
+classification has no page there, its `teams` path is the start list). A race the map
+does not know goes to the PCS search page for its title and year, as an unmatched
+rider name does. Three places render it: `buildRaceLinksMarkup` puts "Full results"
+beside "Watch the race finish" on a one-day card and "Full stage results" beside the
+stage finish link in every stage panel (the two share a `.race-links` row; the video
+keeps the filled pill, the results link is the same pill outlined), and
+`buildJerseyContendersMarkup` ends the jersey card with "Full classification on
+ProCyclingStats" in the rider card's link row.
+
+All 65 slugs were verified in the user's Chrome on 2026-09-12 by fetching each
+`/race/<slug>/2026` same-origin from a PCS tab (`scripts/pcs-race-links.browser.js`
+is that check, written up). What the check taught: a wrong slug answers HTTP 500 with
+an empty body, not a titled 404; the women's races rarely take the men's slug plus
+"-we" (`strade-bianche-donne`, `milano-sanremo-donne`, `la-fleche-wallonne-feminine`,
+`liege-bastogne-liege-femmes`, `gent-wevelgem-women-elite`, `santos-women-s-tour`,
+`cadel-evans-great-ocean-we`, `vuelta-espana-femenina`, `tour-of-britain-women`); the
+Dauphiné is `tour-auvergne-rhone-alpes`; Classic Lorient is `gp-ouest-france-plouay`;
+Chongming is `tour-of-chongming-island-world-cup`; the Worlds are
+`world-championship`, `-itt`, `-we`, `-itt-we`. PCS's own search page is nearly
+useless for this (its results are mostly the site navigation), so guess slugs and test
+them. The server never fetches PCS; `DATA-SOURCES.md` says so and must stay true.
+
 ## Testing Cross-Reference
 
 The test harness reads `server.js`, strips the `server.listen(...)` block, runs the rest in a VM, and exposes selected internals on `globalThis.__PCR_TEST__`.

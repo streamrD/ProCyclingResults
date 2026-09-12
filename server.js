@@ -952,6 +952,138 @@ function getRiderProfileUrl(name) {
   return `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(term)}`;
 }
 
+// ProCyclingStats race pages, keyed by the race's Wikipedia page title without its
+// year. PCS blocks the server, so these were checked in a browser on 2026-09-12 with
+// scripts/pcs-race-links.browser.js (a wrong slug answers HTTP 500 with an empty
+// body, not a titled 404). A race missing here links to the PCS search page for its
+// title instead, the way an unmatched rider name does. We link to PCS and never fetch
+// from it; keep DATA-SOURCES.md true to that.
+const RACE_RESULT_SLUGS = {
+  "Women's Tour Down Under": "santos-women-s-tour",
+  "Tour Down Under": "tour-down-under",
+  "Cadel Evans Great Ocean Road Race (women's race)": "cadel-evans-great-ocean-we",
+  "Cadel Evans Great Ocean Road Race": "great-ocean-road-race",
+  "UAE Tour Women": "uae-tour-women",
+  "UAE Tour": "uae-tour",
+  "Omloop Het Nieuwsblad": "omloop-het-nieuwsblad",
+  "Omloop Het Nieuwsblad (women's race)": "omloop-het-nieuwsblad-we",
+  "Strade Bianche": "strade-bianche",
+  "Strade Bianche Donne": "strade-bianche-donne",
+  "Paris–Nice": "paris-nice",
+  "Tirreno–Adriatico": "tirreno-adriatico",
+  "Trofeo Alfredo Binda-Comune di Cittiglio": "trofeo-alfredo-binda",
+  "Milan–San Remo": "milano-sanremo",
+  "Milan–San Remo Women": "milano-sanremo-donne",
+  "Volta a Catalunya": "volta-a-catalunya",
+  "Tour of Bruges": "classic-brugge-de-panne",
+  "Tour of Bruges Women": "classic-brugge-de-panne-we",
+  "E3 Saxo Classic": "e3-harelbeke",
+  "Gent–Wevelgem": "gent-wevelgem",
+  "Gent–Wevelgem (women's race)": "gent-wevelgem-women-elite",
+  "Dwars door Vlaanderen": "dwars-door-vlaanderen",
+  "Dwars door Vlaanderen for Women": "dwars-door-vlaanderen-we",
+  "Tour of Flanders (men's race)": "ronde-van-vlaanderen",
+  "Tour of Flanders (women's race)": "ronde-van-vlaanderen-we",
+  "Tour of the Basque Country": "itzulia-basque-country",
+  "Paris–Roubaix": "paris-roubaix",
+  "Paris–Roubaix Femmes": "paris-roubaix-we",
+  "Amstel Gold Race": "amstel-gold-race",
+  "Amstel Gold Race (women's race)": "amstel-gold-race-we",
+  "La Flèche Wallonne": "la-fleche-wallone",
+  "La Flèche Wallonne Femmes": "la-fleche-wallonne-feminine",
+  "Liège–Bastogne–Liège": "liege-bastogne-liege",
+  "Liège–Bastogne–Liège Femmes": "liege-bastogne-liege-femmes",
+  "Tour de Romandie": "tour-de-romandie",
+  "Eschborn–Frankfurt": "eschborn-frankfurt",
+  "La Vuelta Femenina": "vuelta-espana-femenina",
+  "Giro d'Italia": "giro-d-italia",
+  "Itzulia Women": "itzulia-women",
+  "Vuelta a Burgos Feminas": "vuelta-a-burgos-feminas",
+  "Giro d'Italia Women": "giro-d-italia-women",
+  "Tour Auvergne-Rhône-Alpes": "tour-auvergne-rhone-alpes",
+  "Copenhagen Sprint (women's race)": "copenhagen-sprint-we",
+  "Copenhagen Sprint (men's race)": "copenhagen-sprint",
+  "Tour de Suisse": "tour-de-suisse",
+  "Tour de Suisse Women": "tour-de-suisse-women",
+  "Tour de France": "tour-de-france",
+  "Tour de France Femmes": "tour-de-france-femmes",
+  "Clásica de San Sebastián": "san-sebastian",
+  "Tour de Pologne": "tour-de-pologne",
+  "Hamburg Cyclassics": "cyclassics-hamburg",
+  "Renewi Tour": "renewi-tour",
+  "Tour of Britain Women": "tour-of-britain-women",
+  "Vuelta a España": "vuelta-a-espana",
+  "Classic Lorient Agglomération": "gp-ouest-france-plouay",
+  "Bretagne Classic": "bretagne-classic",
+  "Grand Prix Cycliste de Québec": "gp-quebec",
+  "Grand Prix Cycliste de Montréal": "gp-montreal",
+  "Il Lombardia": "il-lombardia",
+  "Tour of Guangxi": "tour-of-guangxi",
+  "Tour of Chongming Island": "tour-of-chongming-island-world-cup",
+  "UCI Road World Championships – Men's road race": "world-championship",
+  "UCI Road World Championships – Men's time trial": "world-championship-itt",
+  "UCI Road World Championships – Women's road race": "world-championship-we",
+  "UCI Road World Championships – Women's time trial": "world-championship-itt-we",
+};
+
+// The PCS page for each classification the jersey list keys, checked on the Vuelta.
+// The team classification has no page of its own there (its "teams" path is the
+// start list), so the team jersey's card carries no link.
+const PCS_CLASSIFICATION_PAGES = {
+  general: "gc",
+  points: "points",
+  mountains: "kom",
+  young: "youth",
+};
+
+function getRaceResultsKey(race) {
+  return String(race?.pageTitle || "")
+    .replace(/^\d{4}\s+/, "")
+    .trim();
+}
+
+// The full placings on ProCyclingStats: `target` is "result" for a one-day race,
+// "stage-<n>" (or "prologue") for a stage, or a classification page. A race with no
+// verified slug goes to the PCS search page for its title and year.
+function getRaceResultsUrl(race, target = "result") {
+  const key = getRaceResultsKey(race);
+  if (!key || !target) {
+    return "";
+  }
+  const year = getRaceYear(race) || Number((String(race?.pageTitle || "").match(/^(\d{4})\s/) || [])[1]) || null;
+  const slug = RACE_RESULT_SLUGS[key];
+  if (slug && year) {
+    return `https://www.procyclingstats.com/race/${slug}/${year}/${target}`;
+  }
+  const term = `${race?.title || key} ${year || ""}`
+    .replace(/\s*[–—-]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `https://www.procyclingstats.com/search.php?term=${encodeURIComponent(term)}`;
+}
+
+function getStageResultsTarget(stage) {
+  const number = Number(stage?.number);
+  if (!Number.isFinite(number)) {
+    return "";
+  }
+  return number > 0 ? `stage-${number}` : number === 0 ? "prologue" : "";
+}
+
+function buildResultsLink(url, label) {
+  if (!url) {
+    return "";
+  }
+  return `<a class="race-results-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+}
+
+// The links at the foot of a card or a stage panel share one row: the finish video
+// where there is one, then the full placings. Nothing renders when there is neither.
+function buildRaceLinksMarkup(links) {
+  const inner = links.filter(Boolean).join("");
+  return inner ? `<div class="race-links">${inner}</div>` : "";
+}
+
 const RACE_FINISH_VIDEO_URLS = {
   "2026 Giro d'Italia": {
     1: "https://www.youtube.com/watch?v=k9etTDahUFo",
@@ -9513,7 +9645,10 @@ function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
           { metricContext: "stage" },
         )}</div>
         ${buildPodiumMarkup(standings, { metricContext: "stage" })}
-        ${buildStageFinishLink(race, stage, isCurrentStage)}
+        ${buildRaceLinksMarkup([
+          buildStageFinishLink(race, stage, isCurrentStage),
+          buildResultsLink(getRaceResultsUrl(race, getStageResultsTarget(stage)), "Full stage results"),
+        ])}
       </div>`;
 }
 
@@ -9740,7 +9875,10 @@ function buildStageRaceCard(race, options = {}) {
           { metricContext: "stage" },
         )}</div>
         ${buildPodiumMarkup(stageStandings, { metricContext: "stage" })}
-        ${buildRaceFinishLink(race)}
+        ${buildRaceLinksMarkup([
+          buildRaceFinishLink(race),
+          buildResultsLink(getRaceResultsUrl(race, getStageResultsTarget(latestStage)), "Full stage results"),
+        ])}
       </div>`
     : isFinalized
       ? ""
@@ -9812,7 +9950,7 @@ function buildRaceCard(race) {
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
-      ${buildRaceFinishLink(race)}
+      ${buildRaceLinksMarkup([buildRaceFinishLink(race), buildResultsLink(getRaceResultsUrl(race, "result"), "Full results")])}
       ${buildRaceNewsMarkup(race)}
     </article>`;
 }
@@ -9946,7 +10084,7 @@ function buildJerseySwatchMarkup(jersey, { contenders = false } = {}) {
 // The standing itself is whatever the classification is scored in: the count on a
 // points or kilometres classification, the leader's time and everyone else's gap to it
 // on a time classification. A gap of zero is not missing data, it is the same time.
-function buildJerseyContendersMarkup(entry) {
+function buildJerseyContendersMarkup(entry, race = null) {
   const contenders = entry?.contenders || null;
   const rows = Array.isArray(contenders?.entries) ? contenders.entries : [];
   if (rows.length === 0) {
@@ -9973,11 +10111,18 @@ function buildJerseyContendersMarkup(entry) {
     })
     .join("");
 
+  // The full classification lives on PCS, linked the way the rider card links out.
+  const page = PCS_CLASSIFICATION_PAGES[entry.key];
+  const fullUrl = page && race ? getRaceResultsUrl(race, page) : "";
+  const links = fullUrl
+    ? `<div class="rider-card-links"><a href="${escapeHtml(fullUrl)}" target="_blank" rel="noreferrer">Full classification on ProCyclingStats \u2197</a></div>`
+    : "";
+
   return `<template class="jersey-card-source"><div class="jersey-card-head">${buildJerseySwatchMarkup(
     entry.jersey,
   )}<span class="jersey-card-name">${escapeHtml(entry.label)} classification</span></div><div class="jersey-card-kicker"><span>${escapeHtml(
     stage,
-  )}</span><span>${escapeHtml(metricLabel)}</span></div><ol class="contender-list">${items}</ol></template>`;
+  )}</span><span>${escapeHtml(metricLabel)}</span></div><ol class="contender-list">${items}</ol>${links}</template>`;
 }
 
 // The jersey holders listed beneath the GC podium: one row per classification the
@@ -9999,7 +10144,7 @@ function buildJerseyHoldersMarkup(race, options = {}) {
       : "Jersey holders";
   const items = entries
     .map((entry) => {
-      const card = buildJerseyContendersMarkup(entry);
+      const card = buildJerseyContendersMarkup(entry, race);
       // The classification carries the card, not the rider beside it: the rider's name
       // already opens the rider card, and two tooltips racing for one element helps
       // nobody. The jersey swatch is a second way onto the same card (asked for on
@@ -12986,6 +13131,43 @@ function buildHtmlPage(data, view) {
 
       .race-finish-link:hover {
         background: linear-gradient(180deg, rgba(0, 120, 199, 0.16), rgba(0, 51, 160, 0.26));
+        color: var(--uci-blue);
+      }
+
+      /* The finish video and the full placings share one row at the foot of a card or
+         a stage panel. The video keeps the filled pill; the results link is the same
+         pill outlined, so the row reads as one thing with one emphasis. */
+      .race-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.95rem;
+      }
+
+      .race-links .race-finish-link,
+      .race-links .race-results-link {
+        margin-top: 0;
+      }
+
+      .race-results-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.75rem 1rem;
+        border-radius: 16px;
+        border: 1px solid rgba(0, 120, 199, 0.28);
+        background: rgba(255, 255, 255, 0.6);
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.92rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+
+      .race-results-link:hover {
+        background: rgba(0, 120, 199, 0.08);
         color: var(--uci-blue);
       }
 

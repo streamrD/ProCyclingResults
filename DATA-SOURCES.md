@@ -116,3 +116,9 @@ how the site fetches. The review log below is updated each time.
   cache window is now treated as cold, so a live race is searched again every 15 minutes
   while it runs and a finished race at the cadence the table already stated. That is the
   cadence this document has described since 2026-09-05; the requests now match it.
+- **2026-09-12, later.** Every results card and every jersey card now links out to the
+  full placings on ProCyclingStats ("Full results", "Full stage results", "Full
+  classification"). As with the rider links, these are links for the reader to follow:
+  the server makes no request to ProCyclingStats, the 65 race addresses were checked
+  once in a browser, and the site stays out of the table above. No change to request
+  counts.
