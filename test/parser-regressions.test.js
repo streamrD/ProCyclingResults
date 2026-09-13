@@ -119,6 +119,8 @@ function loadParserExports() {
       getRaceFinishVideoUrl,
       isMultiDayRace,
       isRaceWithinScheduledLiveWindow,
+      isStageRaceAwaitingFinalStage,
+      isStageRaceShownLive,
       getStaticStageRaceSnapshot,
       partitionRaceBuckets,
       selectPreferredStageRaceSnapshot,
@@ -3805,6 +3807,25 @@ test("isRaceWithinScheduledLiveWindow keeps a scheduled live stage race visible"
 
   assert.equal(isRaceWithinScheduledLiveWindow(race, new Date("2026-05-17T00:00:00Z")), true);
   assert.equal(isRaceWithinScheduledLiveWindow(race, new Date("2026-06-01T00:00:00Z")), false);
+});
+
+test("a stage race on its last day is live until the final stage is in, then completed", () => {
+  const { isStageRaceAwaitingFinalStage, isStageRaceShownLive } = loadParserExports();
+  const race = (completedStages) => ({
+    pageTitle: "2026 Vuelta a España",
+    startDate: new Date("2026-08-22T00:00:00Z"),
+    endDate: new Date("2026-09-13T00:00:00Z"),
+    stageRace: { totalStages: 21, completedStages },
+  });
+  const lastDay = new Date("2026-09-13T00:00:00Z");
+
+  assert.equal(isStageRaceShownLive(race(20), lastDay), true);
+  assert.equal(isStageRaceAwaitingFinalStage(race(20), lastDay), true);
+  assert.equal(isStageRaceShownLive(race(21), lastDay), false);
+  assert.equal(isStageRaceAwaitingFinalStage(race(21), lastDay), false);
+  // Mid-race the scheduled window still keeps it live, and the day after it is only completed.
+  assert.equal(isStageRaceShownLive(race(21), new Date("2026-09-10T00:00:00Z")), true);
+  assert.equal(isStageRaceAwaitingFinalStage(race(20), new Date("2026-09-14T00:00:00Z")), false);
 });
 
 test("getRaceFinishVideoUrl returns Giro video only for the mapped stage", () => {

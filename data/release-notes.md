@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 13 September 2026
+
+- **A stage race's last day, in one place.** On the final day a stage race stays under Live until the last stage result is in, then moves to Completed with its winner. It had been showing in both, with an empty Completed card.
+
 ## 12 September 2026
 
 - **Full results, one click away.** Every card stops at five. A "Full results" link now sits beside the finish video, each stage has a "Full stage results" link, and each jersey's top-five card links to the full classification, all on ProCyclingStats.

@@ -6628,6 +6628,25 @@ function isFinalizedStageRace(race) {
   );
 }
 
+function isRaceEndingOn(race, todayUtc = new Date()) {
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const currentUtc = toUtcDateOnly(todayUtc);
+  return Boolean(endUtc && currentUtc && endUtc.getTime() === currentUtc.getTime());
+}
+
+// On its last day a stage race is live until its final stage is in, then completed:
+// never in both sections, and never a completed card with no winner.
+function isStageRaceAwaitingFinalStage(race, todayUtc = new Date()) {
+  return isMultiDayRace(race) && isRaceEndingOn(race, todayUtc) && !isFinalizedStageRace(race);
+}
+
+function isStageRaceShownLive(race, todayUtc = new Date()) {
+  return (
+    !isFinalizedStageRace(race) ||
+    (isRaceWithinScheduledLiveWindow(race, todayUtc) && !isRaceEndingOn(race, todayUtc))
+  );
+}
+
 function isRaceWithinScheduledLiveWindow(race, todayUtc = new Date()) {
   const startUtc = toUtcDateOnly(race?.startDate);
   const endUtc = toUtcDateOnly(race?.endDate);
@@ -7837,9 +7856,7 @@ async function buildRaceData(metadata, options = {}) {
   const finalizedStageRaces = (
     includeDeferred ? selectedFinalizedStageCandidates : selectedHomepageRecentCandidates
   ).filter(isFinalizedStageRace);
-  const liveStageRaces = selectedLiveStageCandidates.filter(
-    (race) => !isFinalizedStageRace(race) || isRaceWithinScheduledLiveWindow(race, todayUtc),
-  );
+  const liveStageRaces = selectedLiveStageCandidates.filter((race) => isStageRaceShownLive(race, todayUtc));
   // On the homepage, show every finished recent WorldTour race in date order:
   // one-day results plus finalized stage races. A finished stage race that could
   // not be enriched into a snapshot still appears (rendered from its season-table
@@ -7847,7 +7864,7 @@ async function buildRaceData(metadata, options = {}) {
   const recentResults = (
     includeDeferred
       ? [...selectedRecentOneDayResults, ...finalizedStageRaces]
-      : [...selectedHomepageRecentCandidates]
+      : selectedHomepageRecentCandidates.filter((race) => !isStageRaceAwaitingFinalStage(race, todayUtc))
   ).sort((left, right) => right.endDate - left.endDate);
 
   finalizedStageRaces.forEach((race) => {
