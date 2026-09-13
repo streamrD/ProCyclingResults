@@ -1145,6 +1145,34 @@ Live as of 2026-08-23. Verify against production before acting — these move.
   stay uncovered and the pointer steps straight down the list. Keep that column clear
   of any future card.
 
+### Added 2026-09-13 (a stage race's last day, jerseys on finished cards)
+
+- **The Vuelta showed under Live and Completed on its final day, and the Completed
+  card had no winner.** The homepage's recent list is `selectedHomepageRecentCandidates`
+  unfiltered, and `partitionRaceBuckets` admits a multi-day race to it as soon as
+  `endDate <= today`, before the last stage is run. Meanwhile the live list kept it
+  through `isRaceWithinScheduledLiveWindow` (added 2026-05-17 so a mid-race snapshot
+  that wrongly reads complete cannot drop a Giro out of Live). At 16:15 UTC the payload
+  had `completedStages: 20` of 21 in both lists. The user read the empty card as
+  "results for today are not in"; the stage had simply not finished (18:15 in Madrid).
+- **The fix is two predicates** beside `isRaceWithinScheduledLiveWindow`:
+  `isStageRaceAwaitingFinalStage` drops a stage race ending today and not yet finalized
+  from the homepage recent list, and `isStageRaceShownLive` stops the live window from
+  keeping a finalized race on its end date. Result: live until the last stage is in,
+  then completed, never both. The mid-race protection is unchanged. Commit `3187cb3`;
+  on production the Vuelta was Live-only at 16:40 UTC (a before/after diff of
+  `/api/races` moved nothing else) and Completed-only with 21 stages at 19:14 UTC.
+  The `includeDeferred` path already filtered recent stage races through
+  `isFinalizedStageRace` and only needed the live half.
+- **"We don't display who won the jerseys" on the finished card.** They were
+  displayed: "Final jersey winners" sits under the GC top five, and 14 finished races
+  carry `classificationLeaders`. At desktop width the three-across card's content box
+  is 336px, 4px under the `.gc-columns` 340px container query, so the list stacks
+  rather than sitting beside the podium. Lowering it to 330px (and a variant with
+  smaller place badges and times on their own line) was comped on the live Vuelta
+  card; both break rider names mid-name in a ~170px column. The user chose stacked as
+  correct. No change made; leave the threshold alone.
+
 ## Live-Race Freshness, Measured 2026-09-05
 
 Stage 14 of the Vuelta: the riders finished at about 15:48 UTC (13:33 real start plus
@@ -1810,6 +1838,33 @@ hoverable?". One was a bug, one was upstream, one was a small change. Details ar
   sessions have now trimmed notes after the fact ("Cut the contenders release note to
   one sentence", "Shorten today's release notes", today), so the rule is in `AGENTS.md`
   and in memory. Write the entry last, from the reader's side.
+
+## Process Lessons From The 2026-09-13 Session
+
+Two reports: "vuelta today is showing in both live and completed, but results for today
+are not in", then "now that the vuelta is finalized and the cell collapsed, we don't
+display who won the jerseys". The first was a bug, the second was not. Details are under
+"Open Threads › Added 2026-09-13" above.
+
+- **Check the clock before the parser.** "Results for today are not in" at 16:15 UTC on
+  a Grand Tour's final day meant the Madrid stage had not finished. The real defect was
+  the other half of the report: a Completed card that should not have existed yet. Say
+  which half is a bug and which is just the time of day.
+- **Look at what production renders before proposing a fix.** The second report asked
+  for suggestions to show the jersey winners; a headless screenshot of the live card
+  showed they were already there, below the top five. Saying so first, with the
+  screenshot, reframed the request from "missing" to "easy to miss".
+- **Comp a CSS tweak too.** Moving the jerseys beside the podium looked like a
+  one-number change (340px to 330px). Rendered on the real card it broke "Enric Mas"
+  across two lines, and the user kept the current layout. Five minutes of screenshots
+  saved a push and a revert. Both previews were built by editing a saved copy of the
+  live homepage (`<base href>` pointed at production so fonts and assets load), not
+  the server, which is the fastest way to trial CSS against real data. A measuring
+  script appended to that copy and read back with `--dump-dom` gave the container
+  widths at several window sizes.
+- **Pull before editing the release notes, not after.** `git pull --rebase` refused to
+  run because `data/release-notes.md` was already modified, and the push went through
+  only because `main` had not moved. The site editor commits there; pull first.
 
 ## Suggested First Checks For A New Agent
 
