@@ -11327,7 +11327,7 @@ function buildSeasonCloseoutHero(closeout, heroMenu) {
         <div class="closeout-grid">
           <div>
             <div class="eyebrow">Pro Cycling Results · Season closed</div>
-            <h1 id="closeout-title">Thank you for a wonderful ${escapeHtml(String(closeout.year))}</h1>
+            <h1 id="closeout-title">Thank you, ${escapeHtml(String(closeout.year))}</h1>
             <div class="closeout-letter">
               <p>${escapeHtml(describeCloseoutSeason(closeout))}</p>
               <p>The Grupetto Committee is now taking its winter break. This season's results stay here in the meantime for anyone who wants to look.</p>

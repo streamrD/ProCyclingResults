@@ -6431,7 +6431,7 @@ test("buildSeasonCloseoutHero shows the next season's first day only once its ca
   const calendar = buildSeasonCalendar(buildCalendarFixture(), new Date("2026-11-02T08:00:00Z"));
 
   const waiting = buildSeasonCloseoutHero(buildSeasonCloseout(calendar, null), "");
-  assert.match(waiting, /Thank you for a wonderful 2026/);
+  assert.match(waiting, /<h1 id="closeout-title">Thank you, 2026<\/h1>/);
   assert.match(waiting, /<span>First results<\/span>January 2027/);
   assert.match(waiting, /once the 2027 WorldTour calendar is published/);
   assert.match(waiting, /welcoming you back for the 2027 racing season/);
