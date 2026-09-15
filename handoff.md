@@ -313,8 +313,9 @@ real 2026 data: https://claude.ai/code/artifact/b690e73e-e87a-4e6e-a7a2-e1883bb8
 
 Added 2026-09-04. A "Season at a glance" section sits between the hero and the men's
 WorldTour section but is `hidden` until opened: the hero's "Season Calendar" button
-(with a "New" badge, `data-season-open`) or a `#season-calendar` link reveals it and
-scrolls to it, and a "Close calendar" button in its header hides it again. The product
+(`data-season-open`; its "New" badge came off on 2026-09-15) or a `#season-calendar` link
+reveals it and scrolls to it, and a "Close calendar" button in its header hides it again.
+Since 2026-09-15 a "Full screen" button beside it pins the section over the window. The product
 rule behind this is that the day's results always lead and nothing calendar-related
 occupies space until a reader asks for it.
 
@@ -1869,7 +1870,7 @@ display who won the jerseys". The first was a bug, the second was not. Details a
 ## Process Lessons From The 2026-09-15 Session
 
 - **Season calendar full screen.** A "Full screen" button beside "Close calendar" pins the section over the window (`is-fullscreen`); only `.season-body` scrolls, so the tooltip still positions against the fixed section. Escape, the button, closing the calendar, or clicking a bar to jump to a card all exit. The hero's "New" badge came off the calendar link; the badge mechanism is left in `heroMenu` for the next new thing.
-- **Season close-out and rollover.** Designed on a mockup first (https://claude.ai/artifact/QjRhoAiczyxkSpAmaskg8N, layout B chosen: the header becomes the note). The maintainer wrote the letter; the counts and race names in it are computed. See the two AGENTS.md bullets on `SEASON_YEAR` and `seasonCloseout` for how it hangs together.
+- **Season close-out and rollover.** Designed on a mockup first (https://claude.ai/artifact/QjRhoAiczyxkSpAmaskg8N, layout B chosen: the header becomes the note). The maintainer wrote the letter, set the headline to "Thank you, 2026" and added "Thank you for coming along for the ride." to the first paragraph; the counts and race names in it are computed. Full description under "Season Year And Close-Out" in `README.md`. See the two AGENTS.md bullets on `SEASON_YEAR` and `seasonCloseout` for how it hangs together.
 - **What the unit tests did not catch.** The first cut called `isWorldTourRace` from `buildRaceMetadata`, but that helper is a local inside `buildRaceData`. Every test passed and the local server sat on the warm-up page forever, because the warm-up swallows build errors. Running `buildRaceMetadata` + `buildRaceData` directly in a VM (as the tests load server.js) surfaced the ReferenceError in one step. Do that before trusting a change to the metadata build.
 - **Wikipedia answers a missing season page with 200 and a redirect stub**, not a 404, so `probeSeasonOpening` sees an empty parse and caches a miss for a day (two requests). A thrown error is retried after ten minutes instead.
 - **Still to do by hand:** a release-notes line when the note first appears (19 October 2026, the morning after the Tour of Guangxi), and a look at the site the week of the rollover (around 9 January 2027): the Cyclingnews nationals address is a guess from the pattern, the Worlds parser has only met the 2026 article, and the 2026 race-specific fixes will have stepped aside.

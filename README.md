@@ -18,13 +18,14 @@ Use `handoff.md` alongside this README when transferring the project to another 
 
 ## Product Purpose
 
-The app is a live race desk for selected 2026 UCI calendars. It surfaces:
+The app is a live race desk for the current season's selected UCI calendars (2026 at launch; the season year rolls over by itself, see "Season Year And Close-Out" below). It surfaces:
 
 - Recent one-day race results
 - Live multi-stage race standings
 - Finalized stage-race classifications
 - Upcoming races
-- A season calendar: every WorldTour race drawn to scale on one timeline
+- A season calendar: every WorldTour race drawn to scale on one timeline, with a full-screen view
+- A closing note from the Grupetto Committee in place of the header between one season's last WorldTour race and the next season
 - Elite road national champions by country, grouped by continent
 - Race-specific article coverage
 
@@ -298,8 +299,19 @@ The returned JSON shape currently contains:
 - `upcomingRaces`
 - `nationalChampionships`
 - `seasonCalendar` — every WorldTour race of the season with ISO `startDate`/`endDate`, `status` (`finished`, `live`, `upcoming`, `cancelled`), `tier` (`grand-tour`, `monument`, `stage-race`, `one-day`), winner and the `anchor` id of its card; built by `buildSeasonCalendar()` from `metadata.allRaces`, so it costs no extra fetch
+- `seasonCloseout` — `null` while the season runs; once no WorldTour race is live or upcoming, the closing note's figures: `year`, `nextYear`, `raceCount` (from launch day in the first season), `firstRace`, `lastRace`, the first season's `launchSentence`, and `nextSeasonOpening` (`{ year, date, title }` once next season's pages carry dates, else `null`); built by `buildSeasonCloseout()`
 
 Legacy `europeTour*` keys may still appear internally as empty backward-compatible fields while the retired code is being preserved, but they are not active UI sections.
+
+## Season Year And Close-Out
+
+Added 2026-09-15. `SEASON_YEAR` is no longer edited by hand. It starts at `FIRST_SEASON_YEAR` (2026) and `resolveSeasonYear()` runs at the top of every metadata build: until the calendar year's first WorldTour race is a week away (`SEASON_ROLLOVER_LEAD_DAYS`), the site stays on the season before. The first race's date comes from `probeSeasonOpening(year)`, which parses that year's two WorldTour pages; a miss (Wikipedia serves a redirect stub with HTTP 200 until the page exists) is cached for a day, a hit for an hour, a failed request for ten minutes. The year never steps back within a process.
+
+Everything season-specific derives from the year: `getSeasonSources()` (the WorldTour page titles), `getWorldChampionshipsPageTitle()`, `getNationalChampionshipsSource()` (the Cyclingnews address, guessed from the 2026 pattern for later seasons), `getNationalChampionshipTypicalWindows()`, and `NATIONAL_CHAMPIONSHIP_EVENT_METADATA`, which applies only when its date falls in the active season. Race-specific providers and corrections key on the page title ("2026 Giro d'Italia") and so step aside for the next edition.
+
+Once the season's WorldTour races are all over, the metadata build also probes next season for its opening date, and `buildHtmlPage` swaps the hero for `buildSeasonCloseoutHero()`: the headline "Thank you, <year>", the maintainer's letter (the first sentence names launch day for 2026 via `SEASON_CLOSEOUT_LAUNCH`; later seasons name their first race), a "First results" chip (the exact day once known, otherwise the month with a note saying so), the committee photo (`assets/grupetto-winter.jpg`, a 1400px copy of the about-page picture), each member's winter line (`GRUPETTO_WINTER_ROSTER`), and the hero menu as a "Look back at <year>" row. The results stay below. The note was chosen from a mockup (https://claude.ai/artifact/QjRhoAiczyxkSpAmaskg8N, layout B).
+
+A person should still look at the site the week the year changes (around 9 January 2027): the Cyclingnews address, the Worlds article parser and the next edition of each race have not been seen yet.
 
 ## Core Race Object Shape
 
