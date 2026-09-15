@@ -148,6 +148,12 @@ function loadParserExports() {
       getNationalChampionshipContinent,
       buildSeasonCalendar,
       buildSeasonCalendarSection,
+      buildSeasonCloseout,
+      buildSeasonCloseoutHero,
+      describeCloseoutSeason,
+      findSeasonOpening,
+      resolveSeasonYear,
+      getSeasonSources,
       renderMarkdown,
       getShareView,
       buildShareMetaTags,
@@ -6400,4 +6406,73 @@ test("every card links out to the full placings on ProCyclingStats", () => {
   const [, general = "", team = ""] = jerseys.split('<template class="jersey-card-source">');
   assert.match(general, /<div class="rider-card-links"><a href="https:\/\/www\.procyclingstats\.com\/race\/vuelta-a-espana\/2026\/gc" target="_blank" rel="noreferrer">Full classification on ProCyclingStats \u2197<\/a><\/div><\/template>/);
   assert.doesNotMatch(team, /rider-card-links/);
+});
+
+
+test("buildSeasonCloseout waits for the last race, then counts the first season from launch day", () => {
+  const { buildSeasonCalendar, buildSeasonCloseout, describeCloseoutSeason } = loadParserExports();
+  const races = buildCalendarFixture();
+  assert.equal(buildSeasonCloseout(buildSeasonCalendar(races, new Date("2026-10-15T12:00:00Z")), null), null);
+
+  const closeout = buildSeasonCloseout(buildSeasonCalendar(races, new Date("2026-10-19T08:00:00Z")), null);
+  assert.equal(closeout.year, 2026);
+  assert.equal(closeout.nextYear, 2027);
+  // Launch was 29 April: the Tour Down Under and Milan–San Remo came before it.
+  assert.equal(closeout.raceCount, 5);
+  assert.equal(closeout.lastRace.title, "Tour of Chongming Island");
+  assert.equal(
+    describeCloseoutSeason(closeout),
+    "ProCyclingResults launched at the end of April, 2026, in the middle of the Tour de Romandie. From then until the last stage of the Tour of Chongming Island on 15 October, we recorded the results for 5 WorldTour races and had a great deal of fun doing so.",
+  );
+});
+
+test("buildSeasonCloseoutHero shows the next season's first day only once its calendar has one", () => {
+  const { buildSeasonCalendar, buildSeasonCloseout, buildSeasonCloseoutHero } = loadParserExports();
+  const calendar = buildSeasonCalendar(buildCalendarFixture(), new Date("2026-11-02T08:00:00Z"));
+
+  const waiting = buildSeasonCloseoutHero(buildSeasonCloseout(calendar, null), "");
+  assert.match(waiting, /Thank you for a wonderful 2026/);
+  assert.match(waiting, /<span>First results<\/span>January 2027/);
+  assert.match(waiting, /once the 2027 WorldTour calendar is published/);
+  assert.match(waiting, /welcoming you back for the 2027 racing season/);
+
+  const opening = { year: 2027, date: "2027-01-16", title: "Women's Tour Down Under" };
+  const known = buildSeasonCloseoutHero(buildSeasonCloseout(calendar, opening), "");
+  assert.match(known, /<span>First results<\/span>16 January 2027/);
+  assert.match(known, /The Women&#39;s Tour Down Under opens the 2027 season\./);
+
+  // A probe answer for some other season is never printed as next season's date.
+  const stale = buildSeasonCloseout(calendar, { ...opening, year: 2026 });
+  assert.equal(stale.nextSeasonOpening, null);
+});
+
+test("resolveSeasonYear moves to the new season a week before its first race and never back", async () => {
+  const { resolveSeasonYear, findSeasonOpening, getSeasonSources } = loadParserExports();
+  const opening = { year: 2027, date: "2027-01-16", title: "Women's Tour Down Under" };
+  const probe = async (year) => (year === 2027 ? opening : null);
+  const missing = async () => null;
+
+  assert.equal(await resolveSeasonYear(new Date("2026-11-20T00:00:00Z"), probe, 2026), 2026);
+  assert.equal(await resolveSeasonYear(new Date("2027-01-08T23:00:00Z"), probe, 2026), 2026);
+  assert.equal(await resolveSeasonYear(new Date("2027-01-09T00:00:00Z"), probe, 2026), 2027);
+  // No 2027 pages yet: stay on the closed season rather than show an empty one.
+  assert.equal(await resolveSeasonYear(new Date("2027-01-20T00:00:00Z"), missing, 2026), 2026);
+  // Once moved on, a failed probe does not flip the site back.
+  assert.equal(await resolveSeasonYear(new Date("2027-01-20T00:00:00Z"), missing, 2027), 2027);
+
+  assert.deepEqual(
+    // Spread out of the VM's realm so deepStrictEqual compares values, not prototypes.
+    [...getSeasonSources(2027).map((season) => season.pageTitle)],
+    ["2027_UCI_World_Tour", "2027_UCI_Women's_World_Tour"],
+  );
+  assert.deepEqual({
+    ...findSeasonOpening(
+      [
+        { title: "Tour Down Under", startDate: new Date("2027-01-19T00:00:00Z") },
+        { title: "Women's Tour Down Under", startDate: new Date("2027-01-16T00:00:00Z") },
+        { title: "Cancelled", startDate: new Date("2027-01-02T00:00:00Z"), isCancelled: true },
+      ],
+      2027,
+    ),
+  }, opening);
 });

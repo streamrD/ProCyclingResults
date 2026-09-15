@@ -123,9 +123,14 @@ const FETCH_RETRY_DELAYS_MS = [250, 750];
 // live-race rebuild indefinitely; a timed-out attempt is retried like any other
 // transient failure and ultimately degrades to partial data in enrichment paths.
 const FETCH_TIMEOUT_MS = 10 * 1000;
-const NATIONAL_CHAMPIONSHIPS_SOURCE_URL =
-  "https://www.cyclingnews.com/pro-cycling/racing/2026-road-national-champions-index/";
-const NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL = "Cyclingnews 2026 Road National Champions index";
+// Cyclingnews publishes one index a season under the same address pattern. A later
+// season's address is the pattern's guess until someone checks it in January.
+function getNationalChampionshipsSource(year = SEASON_YEAR) {
+  return {
+    url: `https://www.cyclingnews.com/pro-cycling/racing/${year}-road-national-champions-index/`,
+    label: `Cyclingnews ${year} Road National Champions index`,
+  };
+}
 const NATIONAL_CHAMPIONSHIP_EVENT_KEYS = ["meItt", "meRoadRace", "weItt", "weRoadRace"];
 const NATIONAL_CHAMPIONSHIP_EVENT_LABELS = {
   meItt: "ME ITT",
@@ -163,7 +168,14 @@ const NATIONAL_CHAMPION_NAME_CORRECTIONS = {
 // UCI confederation so the Americas split the way their championship windows do:
 // South America mostly races in January and February, North America in late June.
 // The hints are typical timing, not confirmed dates — the UI says "usually".
-const SEASON_YEAR = 2026;
+// The season the site shows. It is not edited by hand: it starts at the first season
+// the site covered and moves on by itself a week before the next season's first race
+// (resolveSeasonYear, called at the top of every metadata build). Code written for one
+// season's pages keys itself on the page title ("2026 Giro d'Italia") and so steps
+// aside when the year moves on.
+const FIRST_SEASON_YEAR = 2026;
+const SEASON_ROLLOVER_LEAD_DAYS = 7;
+let SEASON_YEAR = FIRST_SEASON_YEAR;
 const NATIONAL_CHAMPIONSHIP_CONTINENTS = [
   { id: "europe", label: "Europe", hint: "Usually the last week of June" },
   { id: "north-america", label: "North & Central America", hint: "Usually late June" },
@@ -196,10 +208,12 @@ const CONTINENT_BY_ALPHA2 = {
 // Windows drawn hatched on both calendar strips. They are schematic: the Cyclingnews
 // index carries no dates, so confirmed dates come only from
 // NATIONAL_CHAMPIONSHIP_EVENT_METADATA and these bands are labelled "typical".
-const NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS = [
-  { start: `${SEASON_YEAR}-01-05`, end: `${SEASON_YEAR}-02-20`, label: "Nationals · southern hemisphere" },
-  { start: `${SEASON_YEAR}-06-18`, end: `${SEASON_YEAR}-06-29`, label: "Nationals week · Europe & N. America" },
-];
+function getNationalChampionshipTypicalWindows(year = SEASON_YEAR) {
+  return [
+    { start: `${year}-01-05`, end: `${year}-02-20`, label: "Nationals · southern hemisphere" },
+    { start: `${year}-06-18`, end: `${year}-06-29`, label: "Nationals week · Europe & N. America" },
+  ];
+}
 const NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS = [
   { key: "meRoadRace", label: "Men's road race", chip: "Men RR" },
   { key: "meItt", label: "Men's time trial", chip: "Men TT" },
@@ -303,9 +317,11 @@ const MAX_STAGE_ARTICLES = 3;
 // back apart; anything wiki-meaningful would be mangled or expanded itself.
 const TEAM_NAME_SEPARATOR = "@@PCR@@";
 
+// The two WorldTour season pages for a year. Wikipedia names them the same way every
+// season.
 const SEASONS = [
   {
-    pageTitle: "2026_UCI_World_Tour",
+    pageTitleSuffix: "_UCI_World_Tour",
     label: "Men's WorldTour",
     winnerMode: "podium",
     dateIndex: 1,
@@ -315,7 +331,7 @@ const SEASONS = [
     statusStartIndex: 2,
   },
   {
-    pageTitle: "2026_UCI_Women's_World_Tour",
+    pageTitleSuffix: "_UCI_Women's_World_Tour",
     label: "Women's WorldTour",
     winnerMode: "podium",
     dateIndex: 1,
@@ -326,7 +342,9 @@ const SEASONS = [
   },
 ];
 
-const ACTIVE_SEASONS = SEASONS;
+function getSeasonSources(year = SEASON_YEAR) {
+  return SEASONS.map(({ pageTitleSuffix, ...season }) => ({ ...season, pageTitle: `${year}${pageTitleSuffix}` }));
+}
 
 const COUNTRY_NAMES = {
   ALG: "Algeria",
@@ -1917,9 +1935,12 @@ function parseSeasonRows(rawText, season, year) {
 // the per-event articles do not exist until race week and their tables list a nation
 // where our parsers expect a team.
 const WORLD_CHAMPIONSHIPS = {
-  pageTitle: "2026_UCI_Road_World_Championships",
   label: "UCI Road World Championships",
 };
+
+function getWorldChampionshipsPageTitle(year = SEASON_YEAR) {
+  return `${year}_UCI_Road_World_Championships`;
+}
 
 // Elite events only, by the link target the schedule row carries. Under-23 and junior
 // targets carry those words between the gender and the discipline, so they do not match.
@@ -2360,8 +2381,10 @@ function createNationalChampionshipEventId(country, eventKey) {
   return `${countrySlug || "unknown"}-${eventKey}`;
 }
 
+// The overrides are one season's facts; a later season's row must not inherit them.
 function getNationalChampionshipEventMetadata(country, eventKey) {
-  return NATIONAL_CHAMPIONSHIP_EVENT_METADATA[country]?.[eventKey] || {};
+  const metadata = NATIONAL_CHAMPIONSHIP_EVENT_METADATA[country]?.[eventKey] || {};
+  return String(metadata.date || "").startsWith(`${SEASON_YEAR}-`) ? metadata : {};
 }
 
 function formatNationalChampionshipDate(dateIso) {
@@ -2567,8 +2590,8 @@ function groupNationalChampionshipsByContinent(events) {
 
 function buildEmptyNationalChampionships(error) {
   return {
-    sourceLabel: NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL,
-    sourceUrl: NATIONAL_CHAMPIONSHIPS_SOURCE_URL,
+    sourceLabel: getNationalChampionshipsSource().label,
+    sourceUrl: getNationalChampionshipsSource().url,
     sourceLastModified: "",
     fetchedAt: new Date().toISOString(),
     rows: [],
@@ -2616,8 +2639,8 @@ function parseNationalChampionshipsIndex(html) {
     "";
 
   return {
-    sourceLabel: NATIONAL_CHAMPIONSHIPS_SOURCE_LABEL,
-    sourceUrl: NATIONAL_CHAMPIONSHIPS_SOURCE_URL,
+    sourceLabel: getNationalChampionshipsSource().label,
+    sourceUrl: getNationalChampionshipsSource().url,
     sourceLastModified,
     fetchedAt: new Date().toISOString(),
     rows,
@@ -2634,17 +2657,21 @@ function parseNationalChampionshipsIndex(html) {
 
 // The championships index changes a few times a week; one fetch an hour is plenty.
 // Served as a copy because the build annotates what it is given.
-let nationalChampionshipsCache = { updatedAt: 0, data: null };
+let nationalChampionshipsCache = { updatedAt: 0, year: 0, data: null };
 
 async function loadNationalChampionships() {
-  if (nationalChampionshipsCache.data && Date.now() - nationalChampionshipsCache.updatedAt < NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS) {
+  if (
+    nationalChampionshipsCache.data &&
+    nationalChampionshipsCache.year === SEASON_YEAR &&
+    Date.now() - nationalChampionshipsCache.updatedAt < NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS
+  ) {
     return JSON.parse(JSON.stringify(nationalChampionshipsCache.data));
   }
 
   try {
-    const html = await fetchText(NATIONAL_CHAMPIONSHIPS_SOURCE_URL);
+    const html = await fetchText(getNationalChampionshipsSource().url);
     const data = parseNationalChampionshipsIndex(html);
-    nationalChampionshipsCache = { updatedAt: Date.now(), data };
+    nationalChampionshipsCache = { updatedAt: Date.now(), year: SEASON_YEAR, data };
     return JSON.parse(JSON.stringify(data));
   } catch (error) {
     return buildEmptyNationalChampionships(error);
@@ -7688,18 +7715,72 @@ function selectHomepageWorldTourUpcomingRaces(upcomingRaces) {
 // the list for this rebuild rather than failing the whole build.
 async function loadWorldChampionshipEliteEvents() {
   try {
-    const rawText = await fetchWikiRaw(WORLD_CHAMPIONSHIPS.pageTitle);
+    const rawText = await fetchWikiRaw(getWorldChampionshipsPageTitle());
     return parseWorldChampionshipEliteEvents(rawText, WORLD_CHAMPIONSHIPS, SEASON_YEAR);
   } catch {
     return [];
   }
 }
 
+// When a season's WorldTour opens: the earliest start on its two season pages, which is
+// the first day a result can come in (a stage race reports after stage 1). Null until
+// those pages exist and carry dates. Wikipedia usually creates them in the autumn
+// before, so a miss is asked again once a day, and a failed request after ten minutes.
+const SEASON_OPENING_HIT_TTL_MS = 60 * 60 * 1000;
+const SEASON_OPENING_MISS_TTL_MS = 24 * 60 * 60 * 1000;
+const SEASON_OPENING_ERROR_TTL_MS = 10 * 60 * 1000;
+const seasonOpeningCache = new Map();
+
+async function probeSeasonOpening(year, now = Date.now()) {
+  const cached = seasonOpeningCache.get(year);
+  if (cached && now - cached.checkedAt < cached.ttlMs) {
+    return cached.opening;
+  }
+  let opening = null;
+  let ttlMs = SEASON_OPENING_MISS_TTL_MS;
+  try {
+    const pages = await Promise.all(
+      getSeasonSources(year).map(async (season) => parseSeasonRows(await fetchWikiRaw(season.pageTitle), season, year)),
+    );
+    opening = findSeasonOpening(pages.flat(), year);
+    ttlMs = opening ? SEASON_OPENING_HIT_TTL_MS : SEASON_OPENING_MISS_TTL_MS;
+  } catch {
+    ttlMs = SEASON_OPENING_ERROR_TTL_MS;
+  }
+  seasonOpeningCache.set(year, { checkedAt: now, ttlMs, opening });
+  return opening;
+}
+
+function findSeasonOpening(races, year) {
+  const first = (races || [])
+    .filter((race) => race && !race.isCancelled && race.startDate)
+    .map((race) => ({ title: race.title || "", date: toIsoDay(race.startDate) }))
+    .filter((race) => race.date.startsWith(`${year}-`))
+    .sort((left, right) => left.date.localeCompare(right.date))[0];
+  return first ? { year, date: first.date, title: first.title } : null;
+}
+
+// The season to show today. Until the calendar year's first race is a week away the
+// site stays on the season before, which by then is closed and says when the next one
+// starts. It never steps back within a process: a failed probe after the change of
+// season must not flip the page back to last year.
+async function resolveSeasonYear(today = new Date(), probe = probeSeasonOpening, current = SEASON_YEAR) {
+  const calendarYear = today.getUTCFullYear();
+  const previous = Math.max(FIRST_SEASON_YEAR, calendarYear - 1);
+  if (current >= calendarYear || calendarYear <= previous) {
+    return Math.max(current, previous);
+  }
+  const opening = await probe(calendarYear);
+  const switchesAt = opening ? Date.parse(`${opening.date}T00:00:00Z`) - SEASON_ROLLOVER_LEAD_DAYS * SEASON_DAY_MS : Infinity;
+  return Math.max(current, today.getTime() >= switchesAt ? calendarYear : previous);
+}
+
 async function buildRaceMetadata(options = {}) {
   const startedAt = Date.now();
   const includeDeferred = options.includeDeferred === true;
   const wikiRawLoader = createWikiRawLoader();
-  const seasons = ACTIVE_SEASONS;
+  SEASON_YEAR = await resolveSeasonYear(new Date());
+  const seasons = getSeasonSources(SEASON_YEAR);
   const seasonPagesStartedAt = Date.now();
   const seasonPages = await Promise.all(
     seasons.map(async (season) => {
@@ -7717,6 +7798,13 @@ async function buildRaceMetadata(options = {}) {
   allRaces.forEach((race) => {
     race.id = getRaceId(race);
   });
+  // Once the season's last WorldTour race is over, find out when the next one opens so
+  // the closing note can say so. Not asked at all while the season is running.
+  const seasonCalendar = buildSeasonCalendar(allRaces);
+  const nextSeasonOpening =
+    seasonCalendar.races.length && !seasonCalendar.liveCount && !seasonCalendar.upcomingCount
+      ? await probeSeasonOpening(SEASON_YEAR + 1)
+      : null;
 
   const {
     recentOneDayResults,
@@ -7754,6 +7842,8 @@ async function buildRaceMetadata(options = {}) {
 
   return {
     allRaces,
+    seasonYear: SEASON_YEAR,
+    nextSeasonOpening,
     fetchedAt: new Date().toISOString(),
     buildTimings: {
       totalMs: Date.now() - startedAt,
@@ -7907,6 +7997,7 @@ async function buildRaceData(metadata, options = {}) {
   // Fire-and-forget: these races already render from Wikipedia, and their provider is
   // still in flight rather than re-requested.
   applyLateOfficialSnapshots(lateOfficialLookups, riderSeasons);
+  const seasonCalendar = buildSeasonCalendar(allRaces.filter(isWorldTourRace), todayUtc);
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -7919,7 +8010,8 @@ async function buildRaceData(metadata, options = {}) {
     europeTourLiveStageRaces: selectedEuropeTourLiveStageRaces,
     europeTourUpcomingRaces: selectedEuropeTourUpcomingRaces,
     nationalChampionships,
-    seasonCalendar: buildSeasonCalendar(allRaces.filter(isWorldTourRace), todayUtc),
+    seasonCalendar,
+    seasonCloseout: buildSeasonCloseout(seasonCalendar, metadata?.nextSeasonOpening),
     riderSeasons,
     buildTimings: {
       totalMs: Date.now() - startedAt,
@@ -8383,6 +8475,7 @@ function buildHomepageDataPayload(data) {
     upcomingRaces: data.upcomingRaces,
     nationalChampionships: data.nationalChampionships,
     seasonCalendar: data.seasonCalendar,
+    seasonCloseout: data.seasonCloseout,
   };
 }
 
@@ -10595,7 +10688,7 @@ function buildCalendarMonthMarkup(rangeStart, rangeEnd, X, top, bottom, compact)
 }
 
 function buildCalendarWindowMarkup(X, top, bottom, patternId, labelY) {
-  return NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS.map((window) => {
+  return getNationalChampionshipTypicalWindows().map((window) => {
     const xa = X(window.start);
     const xb = X(window.end);
     const label = labelY
@@ -10677,7 +10770,7 @@ function describeConfirmedNationalChampionshipDates(events) {
 
 function describeNextNationalChampionshipWindow(today = new Date()) {
   const todayIso = toIsoDay(today);
-  const next = NATIONAL_CHAMPIONSHIP_TYPICAL_WINDOWS.find((window) => window.end >= todayIso);
+  const next = getNationalChampionshipTypicalWindows().find((window) => window.end >= todayIso);
   if (next) {
     const start = new Date(`${next.start}T00:00:00Z`);
     return `Next window: ${CALENDAR_MONTH_NAMES[start.getUTCMonth()]} ${start.getUTCFullYear()}`;
@@ -10718,7 +10811,7 @@ function buildNationalChampionshipStatusMarkup(data, events, today = new Date())
           <strong class="national-status-figure">${escapeHtml(String(completed))}</strong>
         </div>
       </div>
-      <p class="meta national-status-note">${escapeHtml(describeNextNationalChampionshipWindow(today))}. ${escapeHtml(sourceUpdatedLabel)} <a href="${escapeHtml(data.sourceUrl || NATIONAL_CHAMPIONSHIPS_SOURCE_URL)}" target="_blank" rel="noreferrer">View source</a>.</p>
+      <p class="meta national-status-note">${escapeHtml(describeNextNationalChampionshipWindow(today))}. ${escapeHtml(sourceUpdatedLabel)} <a href="${escapeHtml(data.sourceUrl || getNationalChampionshipsSource().url)}" target="_blank" rel="noreferrer">View source</a>.</p>
     </div>`;
 }
 
@@ -11161,6 +11254,105 @@ function buildSeasonMonthListMarkup(calendar, presentAnchors) {
   return `${liveMarkup}${months}`;
 }
 
+// The site went up part-way through its first season, so that season's closing note
+// counts from launch day and says so. Later seasons count from their first race.
+const SEASON_CLOSEOUT_LAUNCH = {
+  2026: {
+    date: "2026-04-29",
+    sentence: "ProCyclingResults launched at the end of April, 2026, in the middle of the Tour de Romandie.",
+  },
+};
+const GRUPETTO_WINTER_ROSTER = [
+  { name: "Ambrose Bidon", role: "Chair", winter: "Descending into winter backwards, to enjoy the view." },
+  { name: "Peg Lanterne", role: "Treasurer", winter: "Still here. Somebody has to lock up." },
+  { name: "Prof. Sprocket", role: "Head of Science", winter: "Taking the tailwind in for its winter service." },
+  { name: "Old Tom Chainwhip", role: "Head of Cobbles", winter: "Has said nothing. The minutes record this as agreement." },
+  { name: "Izzy Échappée", role: "Roving Correspondent", winter: "Has not been told the season is over, and is still up the road." },
+];
+
+// The season is closed once the calendar holds races and none is live or still to come.
+// Everything the note says is read from the calendar, apart from the launch sentence.
+function buildSeasonCloseout(calendar, nextSeasonOpening) {
+  if (!calendar?.races?.length || calendar.liveCount || calendar.upcomingCount) {
+    return null;
+  }
+  const finished = calendar.races.filter((race) => race.status === "finished");
+  if (!finished.length) {
+    return null;
+  }
+  const launch = SEASON_CLOSEOUT_LAUNCH[calendar.year] || null;
+  const counted = launch ? finished.filter((race) => race.endDate >= launch.date) : finished;
+  const byEnd = [...counted].sort((left, right) => left.endDate.localeCompare(right.endDate));
+  const describe = (race) => race && { title: race.title, startDate: race.startDate, endDate: race.endDate, multiDay: race.endDate > race.startDate };
+  return {
+    year: calendar.year,
+    nextYear: calendar.year + 1,
+    raceCount: counted.length,
+    launchSentence: launch?.sentence || "",
+    firstRace: describe([...counted].sort((left, right) => left.startDate.localeCompare(right.startDate))[0]),
+    lastRace: describe(byEnd[byEnd.length - 1]),
+    nextSeasonOpening: nextSeasonOpening?.year === calendar.year + 1 ? nextSeasonOpening : null,
+  };
+}
+
+function formatCloseoutDay(isoDay, withYear = false) {
+  const date = new Date(`${isoDay}T00:00:00Z`);
+  return `${date.getUTCDate()} ${CALENDAR_MONTH_NAMES[date.getUTCMonth()]}${withYear ? ` ${date.getUTCFullYear()}` : ""}`;
+}
+
+function describeCloseoutSeason(closeout) {
+  const { firstRace, lastRace, raceCount } = closeout;
+  const until = `${lastRace.multiDay ? "the last stage of " : ""}the ${lastRace.title} on ${formatCloseoutDay(lastRace.endDate)}`;
+  const tally = `we recorded the results for ${raceCount} WorldTour race${raceCount === 1 ? "" : "s"} and had a great deal of fun doing so.`;
+  return closeout.launchSentence
+    ? `${closeout.launchSentence} From then until ${until}, ${tally}`
+    : `From the ${firstRace.title} on ${formatCloseoutDay(firstRace.startDate)} until ${until}, ${tally}`;
+}
+
+// Between the last race and a week before the next season's first, the header becomes
+// the committee's thank-you: the season's results stay below it and the menu becomes a
+// way back into them.
+function buildSeasonCloseoutHero(closeout, heroMenu) {
+  const opening = closeout.nextSeasonOpening;
+  const dateChip = opening ? formatCloseoutDay(opening.date, true) : `January ${closeout.nextYear}`;
+  const dateNote = opening
+    ? `The ${opening.title} opens the ${closeout.nextYear} season.`
+    : `The exact day goes here once the ${closeout.nextYear} WorldTour calendar is published. The season usually opens with the Tour Down Under in the second half of January.`;
+  const roster = GRUPETTO_WINTER_ROSTER.map(
+    (member) => `
+            <li><div class="who">${escapeHtml(member.name)}<small>${escapeHtml(member.role)}</small></div><div class="winter">${escapeHtml(member.winter)}</div></li>`,
+  ).join("");
+  return `
+      <section class="hero closeout-hero" aria-labelledby="closeout-title">
+        <div class="closeout-grid">
+          <div>
+            <div class="eyebrow">Pro Cycling Results · Season closed</div>
+            <h1 id="closeout-title">Thank you for a wonderful ${escapeHtml(String(closeout.year))}</h1>
+            <div class="closeout-letter">
+              <p>${escapeHtml(describeCloseoutSeason(closeout))}</p>
+              <p>The Grupetto Committee is now taking its winter break. This season's results stay here in the meantime for anyone who wants to look.</p>
+              <p>We look forward to welcoming you back for the ${escapeHtml(String(closeout.nextYear))} racing season.</p>
+            </div>
+            <div class="closeout-return">
+              <div class="closeout-date-chip"><span>First results</span>${escapeHtml(dateChip)}</div>
+              <p>${escapeHtml(dateNote)}</p>
+            </div>
+          </div>
+          <div class="closeout-side">
+            <figure class="closeout-photo">
+              <img src="/assets/grupetto-winter.jpg" width="1400" height="933" alt="The Grupetto Committee in the back room of the bakery: Ambrose Bidon standing with his bicycle and a croissant, Marguerite Lanterne with the ledger and her lantern, Professor Sprocket mid-explanation over an open notebook, Old Tom Chainwhip with his pipe, and Izzy Échappée with her camera and a map." />
+              <figcaption>The committee, at its last meeting of the season. Not a photograph — nobody in it exists, and neither does the committee.</figcaption>
+            </figure>
+            <ul class="closeout-roster">${roster}
+            </ul>
+          </div>
+        </div>
+        <nav class="closeout-lookback" aria-label="Look back at ${escapeHtml(String(closeout.year))}">
+          <div class="eyebrow">Look back at ${escapeHtml(String(closeout.year))}</div>${heroMenu}
+        </nav>
+      </section>`;
+}
+
 function buildSeasonCalendarSection(calendar, data = {}) {
   if (!calendar?.races?.length || !calendar.rangeStart || !calendar.rangeEnd) {
     return "";
@@ -11349,6 +11541,24 @@ function buildHtmlPage(data, view) {
         }`,
     )
     .join("");
+  const heroMarkup = data.seasonCloseout
+    ? buildSeasonCloseoutHero(data.seasonCloseout, heroMenu)
+    : `
+      <section class="hero">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <div class="eyebrow">UCI-Inspired Race Desk</div>
+            <h1>Pro Cycling Results</h1>
+            <p class="hero-subtitle">${escapeHtml(heroSubheader)}</p>
+            <div class="updated-row">
+              <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
+              <button type="button" class="refresh-button" data-refresh-button data-fetched-at="${escapeHtml(data.fetchedAt || "")}">${REFRESH_ICON_SVG}<span data-refresh-label>Refresh results</span></button>
+            </div>
+            <p class="refresh-status" data-refresh-status role="status" aria-live="polite" hidden></p>
+          </div>
+          <nav class="hero-menu" aria-label="Page sections">${heroMenu}</nav>
+        </div>
+      </section>`;
   const deferredSectionButtons = buildDeferredSectionButtons(deferredCompetitionGroups);
   const deferredGroupClientPayload = buildDeferredGroupClientPayload(deferredCompetitionGroups);
   const deferredSectionMounts = deferredCompetitionGroups
@@ -11701,6 +11911,178 @@ function buildHtmlPage(data, view) {
         font-size: 0.68rem;
         letter-spacing: 0.1em;
         line-height: 1.2;
+      }
+
+      /* Season closed: the header is the committee's thank-you note. */
+      .hero.closeout-hero {
+        padding: 2.2rem 2.2rem 2.6rem;
+      }
+
+      .closeout-grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 2rem;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+        align-items: start;
+      }
+
+      .closeout-hero h1 {
+        font-size: clamp(2.8rem, 5.6vw, 4.8rem);
+        text-wrap: balance;
+      }
+
+      .closeout-letter {
+        display: grid;
+        gap: 0.85rem;
+        margin-top: 1.1rem;
+      }
+
+      .hero .closeout-letter p {
+        margin: 0;
+        max-width: 36rem;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 1.02rem;
+        line-height: 1.7;
+      }
+
+      .closeout-return {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 1rem;
+        margin-top: 1.3rem;
+      }
+
+      .closeout-date-chip {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        background: var(--uci-yellow);
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .closeout-date-chip span {
+        font-size: 0.78rem;
+        letter-spacing: 0.12em;
+      }
+
+      .hero .closeout-return p {
+        flex: 1 1 16rem;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.84rem;
+        line-height: 1.5;
+      }
+
+      .closeout-side {
+        display: grid;
+        gap: 1.3rem;
+      }
+
+      .closeout-photo {
+        margin: 0;
+      }
+
+      .closeout-photo img {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        border: 6px solid rgba(255, 255, 255, 0.92);
+        border-radius: 20px;
+        box-shadow: 0 24px 60px rgba(0, 12, 40, 0.4);
+      }
+
+      .closeout-photo figcaption {
+        margin-top: 0.55rem;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.8rem;
+        font-style: italic;
+        line-height: 1.5;
+      }
+
+      .closeout-roster {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .closeout-roster li {
+        display: grid;
+        grid-template-columns: minmax(9.5rem, 0.8fr) minmax(0, 1.2fr);
+        gap: 0.2rem 1rem;
+        padding: 0.55rem 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+      }
+
+      .closeout-roster .who {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.02rem;
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .closeout-roster .who small {
+        display: block;
+        margin-top: 0.1rem;
+        color: var(--uci-yellow);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+
+      .closeout-roster .winter {
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 0.92rem;
+        line-height: 1.5;
+      }
+
+      .closeout-lookback {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.6rem;
+        margin-top: 1.8rem;
+        padding-top: 1.3rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+      }
+
+      .closeout-lookback .eyebrow {
+        margin-right: 0.3rem;
+      }
+
+      .closeout-lookback .hero-menu-link {
+        width: auto;
+        padding-inline: 1.1rem;
+      }
+
+      @media (max-width: 960px) {
+        .closeout-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .hero.closeout-hero {
+          padding: 1.2rem 1.1rem 1.8rem;
+        }
+
+        .closeout-roster li {
+          grid-template-columns: 1fr;
+        }
       }
 
       .hero-menu-link:hover {
@@ -14335,21 +14717,7 @@ function buildHtmlPage(data, view) {
   </head>
   <body${shareView.jump ? ` data-jump-to="${escapeHtml(shareView.jump)}"` : ""}>
     <main class="page">
-      <section class="hero">
-        <div class="hero-grid">
-          <div class="hero-copy">
-            <div class="eyebrow">UCI-Inspired Race Desk</div>
-            <h1>Pro Cycling Results</h1>
-            <p class="hero-subtitle">${escapeHtml(heroSubheader)}</p>
-            <div class="updated-row">
-              <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
-              <button type="button" class="refresh-button" data-refresh-button data-fetched-at="${escapeHtml(data.fetchedAt || "")}">${REFRESH_ICON_SVG}<span data-refresh-label>Refresh results</span></button>
-            </div>
-            <p class="refresh-status" data-refresh-status role="status" aria-live="polite" hidden></p>
-          </div>
-          <nav class="hero-menu" aria-label="Page sections">${heroMenu}</nav>
-        </div>
-      </section>
+${heroMarkup}
 
       ${seasonCalendarSection}
       ${competitionSections}

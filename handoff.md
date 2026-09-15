@@ -1866,6 +1866,14 @@ display who won the jerseys". The first was a bug, the second was not. Details a
   run because `data/release-notes.md` was already modified, and the push went through
   only because `main` had not moved. The site editor commits there; pull first.
 
+## Process Lessons From The 2026-09-15 Session
+
+- **Season calendar full screen.** A "Full screen" button beside "Close calendar" pins the section over the window (`is-fullscreen`); only `.season-body` scrolls, so the tooltip still positions against the fixed section. Escape, the button, closing the calendar, or clicking a bar to jump to a card all exit. The hero's "New" badge came off the calendar link; the badge mechanism is left in `heroMenu` for the next new thing.
+- **Season close-out and rollover.** Designed on a mockup first (https://claude.ai/artifact/QjRhoAiczyxkSpAmaskg8N, layout B chosen: the header becomes the note). The maintainer wrote the letter; the counts and race names in it are computed. See the two AGENTS.md bullets on `SEASON_YEAR` and `seasonCloseout` for how it hangs together.
+- **What the unit tests did not catch.** The first cut called `isWorldTourRace` from `buildRaceMetadata`, but that helper is a local inside `buildRaceData`. Every test passed and the local server sat on the warm-up page forever, because the warm-up swallows build errors. Running `buildRaceMetadata` + `buildRaceData` directly in a VM (as the tests load server.js) surfaced the ReferenceError in one step. Do that before trusting a change to the metadata build.
+- **Wikipedia answers a missing season page with 200 and a redirect stub**, not a 404, so `probeSeasonOpening` sees an empty parse and caches a miss for a day (two requests). A thrown error is retried after ten minutes instead.
+- **Still to do by hand:** a release-notes line when the note first appears (19 October 2026, the morning after the Tour of Guangxi), and a look at the site the week of the rollover (around 9 January 2027): the Cyclingnews nationals address is a guess from the pattern, the Worlds parser has only met the 2026 article, and the 2026 race-specific fixes will have stepped aside.
+
 ## Suggested First Checks For A New Agent
 
 Run these before making changes (and read `DATA-SOURCES.md` before changing anything

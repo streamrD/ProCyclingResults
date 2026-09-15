@@ -787,7 +787,7 @@ If another agent is taking over development, these are strong candidates:
 2. Add parser fixtures so Wikipedia changes can be detected quickly.
 3. Add an explicit Node engine and a minimal lockfile policy.
 4. Add health-oriented logging around upstream fetch failures and cache refreshes.
-5. Externalize season/year configuration so rolling to a new season is safer.
+5. The season year now rolls over by itself (`resolveSeasonYear`); what remains is checking each new season's Cyclingnews nationals address and Worlds article the week it happens.
 6. Move inline HTML/CSS/JS into template/static modules if the app becomes larger.
 7. Read the points and mountains tables the ASO sites publish (lavuelta.es, letour.fr) so the jersey holders and their contenders update on a live evening before Wikipedia does; today both come from Wikipedia alone, and its standings tables trail its own leadership table by a stage.
 

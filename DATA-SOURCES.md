@@ -39,7 +39,7 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. |
+| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, and once an hour after that. |
 | Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
 | Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
 | Cyclingnews | The national championships index page | At most once an hour. |
@@ -122,3 +122,13 @@ how the site fetches. The review log below is updated each time.
   the server makes no request to ProCyclingStats, the 65 race addresses were checked
   once in a browser, and the site stays out of the table above. No change to request
   counts.
+- **2026-09-15.** The site now closes the season by itself: after the last WorldTour
+  race it shows a thank-you note and says when the next season starts. That date comes
+  from next season's two WorldTour pages on Wikipedia, which we ask for only in the
+  off-season: at most once a day while they do not exist yet (usually until the
+  autumn), then once an hour through the revision query like any other page. A week
+  before the new season's first race the site moves on to that season's pages, the same
+  set of pages as before with a new year in the title. Nothing is asked while a season
+  is running, so the in-season count is unchanged. Measured the same day against
+  Wikipedia: while the 2027 pages are still redirects, the check is two requests, then
+  nothing more for a day.
