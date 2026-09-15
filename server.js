@@ -11303,7 +11303,7 @@ function formatCloseoutDay(isoDay, withYear = false) {
 function describeCloseoutSeason(closeout) {
   const { firstRace, lastRace, raceCount } = closeout;
   const until = `${lastRace.multiDay ? "the last stage of " : ""}the ${lastRace.title} on ${formatCloseoutDay(lastRace.endDate)}`;
-  const tally = `we recorded the results for ${raceCount} WorldTour race${raceCount === 1 ? "" : "s"} and had a great deal of fun doing so.`;
+  const tally = `we recorded the results for ${raceCount} WorldTour race${raceCount === 1 ? "" : "s"} and had a great deal of fun doing so. Thank you for coming along for the ride.`;
   return closeout.launchSentence
     ? `${closeout.launchSentence} From then until ${until}, ${tally}`
     : `From the ${firstRace.title} on ${formatCloseoutDay(firstRace.startDate)} until ${until}, ${tally}`;

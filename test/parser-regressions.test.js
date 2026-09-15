@@ -6422,7 +6422,7 @@ test("buildSeasonCloseout waits for the last race, then counts the first season 
   assert.equal(closeout.lastRace.title, "Tour of Chongming Island");
   assert.equal(
     describeCloseoutSeason(closeout),
-    "ProCyclingResults launched at the end of April, 2026, in the middle of the Tour de Romandie. From then until the last stage of the Tour of Chongming Island on 15 October, we recorded the results for 5 WorldTour races and had a great deal of fun doing so.",
+    "ProCyclingResults launched at the end of April, 2026, in the middle of the Tour de Romandie. From then until the last stage of the Tour of Chongming Island on 15 October, we recorded the results for 5 WorldTour races and had a great deal of fun doing so. Thank you for coming along for the ride.",
   );
 });
 
