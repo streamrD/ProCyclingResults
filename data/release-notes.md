@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 15 September 2026
+
+- **The season calendar, full screen.** A "Full screen" button beside "Close calendar" spreads the calendar across the whole window so the race names are bigger and easier to read. Press it again or hit Escape to go back.
+
 ## 13 September 2026
 
 - **A stage race's last day, in one place.** On the final day a stage race stays under Live until the last stage result is in, then moves to Completed with its winner. It had been showing in both, with an empty Completed card.

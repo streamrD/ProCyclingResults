@@ -11238,10 +11238,17 @@ function buildSeasonCalendarSection(calendar, data = {}) {
           <h2>Where we are in ${escapeHtml(String(calendar.year))}</h2>
           <p class="meta season-summary">${escapeHtml(summary)}</p>
         </div>
-        <button type="button" class="season-toggle" data-season-close aria-label="Close the season calendar">
-          <span>Close calendar</span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>
-        </button>
+        <div class="season-actions">
+          <button type="button" class="season-toggle season-fullscreen-toggle" data-season-fullscreen aria-pressed="false">
+            <span data-season-fullscreen-label>Full screen</span>
+            <svg class="season-icon-enter" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"></path></svg>
+            <svg class="season-icon-exit" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"></path></svg>
+          </button>
+          <button type="button" class="season-toggle" data-season-close aria-label="Close the season calendar">
+            <span>Close calendar</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>
+          </button>
+        </div>
       </div>
       <div class="season-body">
         <div class="season-main">
@@ -11324,7 +11331,7 @@ function buildHtmlPage(data, view) {
   const heroMenu = [
     ...competitionGroups,
     { id: "national-championships", label: "National Championships" },
-    { id: "season-calendar", label: "Season Calendar", badge: "New", opensSeasonCalendar: true },
+    { id: "season-calendar", label: "Season Calendar", opensSeasonCalendar: true },
   ]
     .map(
       (group) => `
@@ -12521,6 +12528,43 @@ function buildHtmlPage(data, view) {
 
       .season-toggle {
         flex: 0 0 auto;
+      }
+
+      .season-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+      }
+
+      .season-icon-exit,
+      .season-section.is-fullscreen .season-icon-enter {
+        display: none;
+      }
+
+      .season-section.is-fullscreen .season-icon-exit {
+        display: block;
+      }
+
+      /* Full screen fills the window: the strip takes the whole width, Up next drops
+         below it, and only the body scrolls so the header's buttons stay put. */
+      .season-section.is-fullscreen {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: flex;
+        flex-direction: column;
+        margin: 0;
+        padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
+        border: 0;
+        border-radius: 0;
+        background: #f4f8ff;
+      }
+
+      .season-section.is-fullscreen .season-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        grid-template-columns: 1fr;
       }
 
       .season-body {
@@ -14278,6 +14322,7 @@ function buildHtmlPage(data, view) {
         }
 
         .season-full,
+        .season-fullscreen-toggle,
         .national-map {
           display: none;
         }
@@ -14706,7 +14751,46 @@ function buildHtmlPage(data, view) {
           }
           section.scrollIntoView({ behavior: "smooth", block: "start" });
         };
+        const fullscreenButton = section.querySelector("[data-season-fullscreen]");
+        const fullscreenLabel = section.querySelector("[data-season-fullscreen-label]");
+        const setFullscreen = (on) => {
+          section.classList.toggle("is-fullscreen", on);
+          document.documentElement.style.overflow = on ? "hidden" : "";
+          if (fullscreenButton) {
+            fullscreenButton.setAttribute("aria-pressed", on ? "true" : "false");
+          }
+          if (fullscreenLabel) {
+            fullscreenLabel.textContent = on ? "Exit full screen" : "Full screen";
+          }
+          if (tooltip) {
+            tooltip.hidden = true;
+          }
+          if (!on && !section.hidden) {
+            section.scrollIntoView({ block: "start" });
+          }
+        };
+        if (fullscreenButton) {
+          fullscreenButton.addEventListener("click", () => {
+            setFullscreen(!section.classList.contains("is-fullscreen"));
+          });
+        }
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && section.classList.contains("is-fullscreen")) {
+            setFullscreen(false);
+          }
+        });
+        const seasonBody = section.querySelector(".season-body");
+        if (seasonBody) {
+          seasonBody.addEventListener("scroll", () => {
+            if (tooltip) {
+              tooltip.hidden = true;
+            }
+          }, { passive: true });
+        }
         const closeCalendar = () => {
+          if (section.classList.contains("is-fullscreen")) {
+            setFullscreen(false);
+          }
           section.hidden = true;
           if (window.location.hash === "#season-calendar" || window.location.pathname !== "/") {
             window.history.replaceState(null, "", "/");
@@ -14796,6 +14880,10 @@ function buildHtmlPage(data, view) {
           const target = document.getElementById(href.slice(1));
           if (!target) {
             return;
+          }
+          // The card sits behind the full-screen layer, so step out before the jump.
+          if (section.classList.contains("is-fullscreen")) {
+            setFullscreen(false);
           }
           const hiddenSlot = target.closest("[data-recent-slot][hidden]");
           if (hiddenSlot) {
