@@ -137,6 +137,8 @@ Task: <your task here>
 
 ## Notes For Future Agents
 
+**Leave what you learned behind.** A session that went into the repo to fix or improve something has almost always learned something the next one will need: why a thing is the way it is, a trap that cost time, a check that caught a bug, a decision the user made. Before finishing, write it down where the next agent will find it: a line here if every session should know it, the relevant section of `handoff.md` for detail, or a code comment if it belongs to one function. Keep each note short and say why, not just what. If you learned nothing worth recording, that is fine, but ask the question every time. This is a standing request from the maintainer (2026-09-19).
+
 Most bugs here come from upstream content drift rather than complex internal state. When race data looks wrong, inspect the relevant parser/provider path before considering broader refactors.
 During live races, distinguish between sparse Wikipedia coverage, official-provider gaps, stale cached responses, national championship source drift, and upstream rate limiting before assuming the parser is wrong.
 Giro d'Italia and Giro d'Italia Women now use separate official standings sources, so check the correct provider path before changing shared Giro parsing heuristics.
