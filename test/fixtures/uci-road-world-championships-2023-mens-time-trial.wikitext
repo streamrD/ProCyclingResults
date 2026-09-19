@@ -1,0 +1,363 @@
+{{moresources|date=August 2023}}
+{{Short description|Cycling event}}
+{{Use dmy dates|date=August 2023}}
+{{Infobox cycling race report
+| name               = Men's time trial
+| image              = 
+| image_caption      =  
+| image_size         = 
+| series             = [[2023 UCI Road World Championships]]
+| race_no            =
+| series_no          = 
+| date               = 11 August 2023
+| stages             = 
+| distance           = 47.8
+| unit               = km
+| time               = 55' 19.23
+| speed              = 
+| type               = medals
+| first              = {{flagUCIRoadathlete|[[Remco Evenepoel]]|BEL}}
+| second             = {{flagUCIRoadathlete|[[Filippo Ganna]]|ITA}}
+| third              = {{flagUCIRoadathlete|[[Joshua Tarling]]|GBR}}
+| previous           = [[2022 UCI Road World Championships&nbsp;– Men's time trial|2022]]
+| next               = [[2024 UCI Road World Championships&nbsp;– Men's time trial|2024]]
+}}
+{{2023 UCI Road World Championships}}
+
+The '''[[UCI Road World Championships&nbsp;– Men's time trial|Men's time trial]]''' of the [[2023 UCI Road World Championships]] was a cycling event that took place on 11 August 2023 in [[Stirling]], [[Scotland]]. It was the 30th edition of the championship, for which [[Tobias Foss]] of [[Norway]] was the defending champion, having won in [[2022 UCI Road World Championships&nbsp;– Men's time trial|2022]].
+
+==Participating nations==
+{{main|List of nations and cyclists in the 2023 UCI Road World Championships – Men's time trial}}
+
+78 cyclists from 49 nations will compete in the event. The number of cyclists per nation is shown in parentheses.<ref>{{cite web |title=Time Trial Men's Elite 2023 Start List |url=https://www.procyclingstats.com/race/world-championship-itt/2023/startlist/startlist |website=ProcyclingStats |access-date=10 August 2023}}</ref>
+
+{{div col|colwidth=17em}}
+* {{flagUCIRoad|AFG||2}}
+* {{flagUCIRoad|AIA||1}}
+* {{flagUCIRoad|ARG||1}}
+* {{flagUCIRoad|AUS||2}}
+* {{flagUCIRoad|AUT||2}}
+* {{flagUCIRoad|BEL||2}}
+* {{flagUCIRoad|BVI||1}}
+* {{flagUCIRoad|CAN||2}}
+* {{flagUCIRoad|CPV||2}}
+* {{flagUCIRoad|CHN||2}}
+* {{flagUCIRoad|COL||2}}
+* {{flagUCIRoad|CYP||1}}
+* {{flagUCIRoad|CZE||2}}
+* {{flagUCIRoad|DEN||2}}
+* {{flagUCIRoad|ESW||1}}
+* {{flagUCIRoad|FRA||2}}
+* {{flagUCIRoad|GER||2}}
+* {{flagUCIRoad|GHA||2}}
+* {{flagUCIRoad|GBR||2}}
+* {{flagUCIRoad|GRE||1}}
+* {{flagUCIRoad|GUM||2}}
+* {{flagUCIRoad|GUI||1}}
+* {{flagUCIRoad|ISL||1}}
+* {{flagUCIRoad|IRN||1}}
+* {{flagUCIRoad|IRL||2}}
+* {{flagUCIRoad|ITA||2}}
+* {{flagUCIRoad|KAZ||2}}
+* {{flagUCIRoad|LAT||1}}
+* {{flagUCIRoad|MLT||2}}
+* {{flagUCIRoad|MRI||2}}
+* {{flagUCIRoad|MNG||1}}
+* {{flagUCIRoad|NED||2}}
+* {{flagUCIRoad|NOR||3}}
+* {{flagUCIRoad|NZL||1}}
+* {{flagUCIRoad|PAN||1}}
+* {{flagUCIRoad|POL||1}}
+* {{flagUCIRoad|POR||2}}
+* {{flagUCIRoad|QAT||1}}
+* {{flagUCIRoad|LCA||1}}
+* {{flagUCIRoad|SRB||1}}
+* {{flagUCIRoad|SLO||1}}
+* {{flagUCIRoad|RSA||2}}
+* {{flagUCIRoad|ESP||1}}
+* {{flagUCIRoad|SUI||2}}
+* {{flagUCIRoad|UGA||1}}
+* {{flagUCIRoad|UKR||1}}
+* {{flagUCIRoad|USA||2}}
+* {{flagUCIRoad|UZB||2}}
+* [[UCI Refugee Team]] (2)
+{{div col end}}
+
+===Continental champions===
+{| class="wikitable"
+!| Name
+!| Country
+!| Reason
+|-
+| [[Tobias Foss]]
+| {{flagu|Norway}}
+| [[2022 UCI Road World Championships – Men's time trial|Incumbent World Champion]]
+|-
+| [[Charles Kagimu]]
+| {{flagu|Uganda}}
+| [[African Continental Road Cycling Championships|African Champion]]
+|-
+| [[Walter Vargas]]
+| {{flagu|Colombia}}
+| [[Pan American Road and Track Championships|Panamerican Champion]]
+|-
+| [[Yevgeniy Fedorov]]
+| {{flagu|Kazakhstan}}
+| [[2023 Asian Road Cycling Championships|Asian Champion]]
+|-
+| [[Tom Sexton (cyclist)|Tom Sexton]]
+| {{flagu|New Zealand}}
+| [[Oceania Road Cycling Championships|Oceanian Champion]]
+|}
+
+==Final classification==
+{| class="wikitable sortable"
+|-
+! Rank<ref>{{cite web|url=https://www.tissottiming.com/File/0003160200010601FFFFFFFFFFFFFF02 |title=Final Results / Résultat final: Men Time Trial |work=Tissot Timing |publisher=[[Tissot]] |access-date=13 August 2023}}</ref> !! Rider 
+! Time
+|-
+| {{gold01}} || {{flagUCIRoadathlete|[[Remco Evenepoel]]|BEL}} 
+| align="right" | 55' 19.23"
+|-
+| {{silver02}} || {{flagUCIRoadathlete|[[Filippo Ganna]]|ITA}} 
+| align="right" | + 12.28"
+|-
+| {{bronze03}} || {{flagUCIRoadathlete|[[Josh Tarling]]|GBR}} 
+| align="right" | + 48.20"
+|-
+| 4 || {{flagUCIRoadathlete|[[Brandon McNulty]]|USA}} 
+| align="right" | + 1' 26.91"
+|-
+| 5 || {{flagUCIRoadathlete|[[Wout van Aert]]|BEL}} 
+| align="right" | + 1' 37.23"
+|-
+| 6 || {{flagUCIRoadathlete|[[Nelson Oliveira (cyclist)|Nelson Oliveira]]|POR}} 
+| align="right" | + 1' 52.46”
+|-
+| 7 || {{flagUCIRoadathlete|[[Rohan Dennis]]|AUS}} 
+| align="right" | + 1' 53.66”
+|-
+| 8 || {{flagUCIRoadathlete|[[Mattia Cattaneo]]|ITA}} 
+| align="right" | + 1' 56.78"
+|-
+| 9 || {{flagUCIRoadathlete|[[Mikkel Bjerg]]|DEN}} 
+| align="right" | + 1' 58.96"
+|-
+| 10 || {{flagUCIRoadathlete|[[Geraint Thomas]]|GBR}} 
+| align="right" | + 2' 04.47"
+|-
+| 11 || {{flagUCIRoadathlete|[[Tobias Foss]]|NOR}} 
+| align="right" | + 2' 04.66"
+|-
+| 12 || {{flagUCIRoadathlete|[[Stefan Küng]]|SUI}} 
+| align="right" | + 2' 17.07"
+|-
+| 13 || {{flagUCIRoadathlete|[[Søren Wærenskjold]]|NOR}} 
+| align="right" | + 2' 24.80"
+|-
+| 14 || {{flagUCIRoadathlete|[[Kasper Asgreen]]|DEN}} 
+| align="right" | + 2' 27.52"
+|-
+| 15 || {{flagUCIRoadathlete|[[Lawson Craddock]]|USA}} 
+| align="right" | + 2' 36.58"
+|-
+| 16 || {{flagUCIRoadathlete|[[Stefan Bissegger]]|SUI}} 
+| align="right" | + 2' 43.28"
+|-
+| 17 || {{flagUCIRoadathlete|[[Derek Gee]]|CAN}} 
+| align="right" | + 2' 57.94"
+|-
+| 18 || {{flagUCIRoadathlete|[[Lennard Kämna]]|GER}} 
+| align="right" | + 3' 00.59"
+|-
+| 19 || {{flagUCIRoadathlete|[[Ryan Mullen]]|IRL}} 
+| align="right" | + 3' 02.34"
+|-
+| 20 || {{flagUCIRoadathlete|[[Bruno Armirail]]|FRA}} 
+| align="right" | + 3' 03.65"
+|-
+| 21 || {{flagUCIRoadathlete|[[Tadej Pogačar]]|SLO}} 
+| align="right" | + 3' 05.88"
+|-
+| 22 || {{flagUCIRoadathlete|[[Ryan Gibbons (cyclist)|Ryan Gibbons]]|RSA}} 
+| align="right" | + 3' 07.34"
+|-
+| 23 || {{flagUCIRoadathlete|[[João Almeida (cyclist)|João Almeida]]|POR}} 
+| align="right" | + 3' 07.62"
+|-
+| 24 || {{flagUCIRoadathlete|[[Stefan de Bod]]|RSA}} 
+| align="right" | + 3' 10.99"
+|-
+| 25 || {{flagUCIRoadathlete|[[Remi Cavagna]]|FRA}} 
+| align="right" | + 3' 12.79"
+|-
+| 26 || {{flagUCIRoadathlete|[[Ben Healy (cyclist)|Ben Healy]]|IRL}} 
+| align="right" | + 3' 14.10"
+|-
+| 27 || {{flagUCIRoadathlete|[[Iver Knotten]]|NOR}} 
+| align="right" | + 3' 14.50"
+|-
+| 28 || {{flagUCIRoadathlete|[[Jay Vine]]|AUS}} 
+| align="right" | + 3' 16.25"
+|-
+| 29 || {{flagUCIRoadathlete|[[Tom Sexton (cyclist)|Tom Sexton]]|NZL}} 
+| align="right" | + 3' 21.23"
+|-
+| 30 || {{flagUCIRoadathlete|[[Walter Vargas]]|COL}} 
+| align="right" | + 3' 33.10"
+|-
+| 31 || {{flagUCIRoadathlete|[[Maciej Bodnar]]|POL}} 
+| align="right" | + 3' 54.70"
+|-
+| 32 || {{flagUCIRoadathlete|[[Nils Politt]]|GER}} 
+| align="right" | + 3' 55.51"
+|-
+| 33 || {{flagUCIRoadathlete|[[Toms Skujiņš]]|LAT}} 
+| align="right" | + 4' 04.95"
+|-
+| 34 || {{flagUCIRoadathlete|[[Daan Hoole]]|NED}} 
+| align="right" | + 4' 10.39"
+|-
+| 35 || {{flagUCIRoadathlete|[[Harold Tejada]]|COL}} 
+| align="right" | + 4' 10.54"
+|-
+| 36 || {{flagUCIRoadathlete|[[Jos van Emden]]|NED}} 
+| align="right" | + 4' 39.63"
+|-
+| 37 || {{flagUCIRoadathlete|[[Patrick Gamper]]|AUT}} 
+| align="right" | + 4' 41.30"
+|-
+| 38 || {{flagUCIRoadathlete|[[Mathias Vacek]]|CZE}} 
+| align="right" | + 4' 53.49"
+|-
+| 39 || {{flagUCIRoadathlete|[[Yevgeniy Fedorov]]|KAZ}} 
+| align="right" | + 4' 54.12"
+|-
+| 40 || {{flagUCIRoadathlete|[[Xabier Azparren]]|ESP}} 
+| align="right" | + 5' 07.73"
+|-
+| 41 || {{flagUCIRoadathlete|[[Ognjen Ilić]]|SRB}} 
+| align="right" | + 5' 16.81"
+|-
+| 42 || {{flagUCIRoadathlete|[[Andreas Miltiadis]]|CYP}} 
+| align="right" | + 5' 44.43"
+|-
+| 43 || {{flagUCIRoadathlete|[[Miltiadis Giannoutsos]]|GRE}} 
+| align="right" | + 5' 49.59"
+|-
+| 44 || {{flagUCIRoadathlete|[[Jakub Otruba]]|CZE}} 
+| align="right" | + 5' 50.64"
+|-
+| 45 || {{flagUCIRoadathlete|[[Nickolas Zukowsky]]|CAN}} 
+| align="right" | + 6' 50.86"
+|-
+| 46 || {{flagUCIRoadathlete|[[Juan Pablo Dotti]]|ARG}} 
+| align="right" | + 7' 06.17"
+|-
+| 47 || {{flagUCIRoadathlete|[[Aleksey Fomovskiy]]|UZB}} 
+| align="right" | + 7' 09.66"
+|-
+| 48 || {{flagUCIRoadathlete|[[Igor Chzhan]]|KAZ}} 
+| align="right" | + 7' 29.29"
+|-
+| 49 || {{flagUCIRoadathlete|[[Charles Kagimu]]|UGA}} 
+| align="right" | + 7' 57.47"
+|-
+| 50 || {{flagUCIRoadathlete|[[Muradjan Khalmuratov]]|UZB}} 
+| align="right" | + 9' 05.58"
+|-
+| 51 || {{flagUCIRoadathlete|[[Felix Ritzinger]]|AUT}} 
+| align="right" | + 9' 07.48"
+|-
+| 52 || {{flagUCIRoadathlete|[[Ingvar Ómarsson]]|ISL}} 
+| align="right" | + 9' 09.41"
+|-
+| 53 || {{flagUCIRoadathlete|[[Jambaljamts Sainbayar]]|MGL}} 
+| align="right" | + 9' 10.26"
+|-
+| 54 || {{flagUCIRoadathlete|[[Ming Xue (cyclist)|Ming Xue]]|CHN}} 
+| align="right" | + 9' 19.52"
+|-
+| 55 || {{flagUCIRoadathlete|[[Randish Abdul Lorenzo]]|PAN}} 
+| align="right" | + 9' 59.14"
+|-
+| 56 || [[Amir Ansari (cyclist)|Amir Arsalan Ansari]] ([[UCI Refugee Team|REF]]) 
+| align="right" | + 10' 04.13"
+|-
+| 57 || {{flagUCIRoadathlete|[[Christopher Rougier-Lagane]]|MRI}} 
+| align="right" | + 10' 20.80"
+|-
+| 58 || {{flagUCIRoadathlete|[[Su Haoyu]]|CHN}} 
+| align="right" | + 10' 57.89"
+|-
+| 59 || {{flagUCIRoadathlete|[[Hasani Hennis]]|AIA}} 
+| align="right" | + 11' 07.88"
+|-
+| 60 || [[Ahmad Badreddin Wais]] ([[UCI Refugee Team|REF]]) 
+| align="right" | + 12' 07.44"
+|-
+| 61 || {{flagUCIRoadathlete|[[Daniel Bonello]]|MLT}} 
+| align="right" | + 12' 17.36"
+|-
+| 62 || {{flagUCIRoadathlete|[[Aidan Buttigieg]]|MLT}} 
+| align="right" | + 12' 17.85"
+|-
+| 63 || {{flagUCIRoadathlete|[[Vitalii Novakovskyi]]|UKR}} 
+| align="right" | + 12' 41.01"
+|-
+| 64 || {{flagUCIRoadathlete|[[Fadhel Al Khater]]|QAT}} 
+| align="right" | + 16' 07.11"
+|-
+| 65 || {{flagUCIRoadathlete|[[Darel Christopher]]|IVB}} 
+| align="right" | + 17' 15.30"
+|-
+| 66 || {{flagUCIRoadathlete|[[Mohammad Ganjkhanlou]]|IRI}} 
+| align="right" | + 17' 42.92"
+|-
+| 67 || {{flagUCIRoadathlete|[[Kluivert Mitchel]]|LCA}} 
+| align="right" | + 19' 05.82"
+|-
+| 68 || {{flagUCIRoadathlete|[[Edward Oingerang]]|GUM}} 
+| align="right" | + 20' 12.09"
+|-
+| 69 || {{flagUCIRoadathlete|[[Jacob Jones (cyclist)|Jacob Jones]]|GUM}} 
+| align="right" | + 20' 17.60"
+|-
+| 70 || {{flagUCIRoadathlete|[[Qais Haidari]]|AFG}} 
+| align="right" | + 20' 56.07"
+|-
+| 71 || {{flagUCIRoadathlete|[[Christopher Symonds]]|GHA}} 
+| align="right" | + 23' 33.01"
+|-
+| 72 || {{flagUCIRoadathlete|[[Ahmad Mirzaee]]|AFG}} 
+| align="right" | + 23' 42.54"
+|-
+| 73 || {{flagUCIRoadathlete|[[Bangoura Abdoulaye]]|GUI}} 
+| align="right" | + 24' 20.58"
+|-
+| 74 || {{flagUCIRoadathlete|[[Muzi Shabangu]]|SWZ}} 
+| align="right" | + 25' 40.99"
+|-
+| 75 || {{flagUCIRoadathlete|[[Wiliam Gomes]]|CPV}} 
+| align="right" | + 26' 59.65"
+|-
+| 76 || {{flagUCIRoadathlete|[[Renato Soares]]|CPV}} 
+| align="right" | + 29' 31.59"
+|-
+| 77 || {{flagUCIRoadathlete|[[Henry Tetteh Djangmah]]|GHA}} 
+| align="right" | + 30' 03.13"
+|-
+| {{hs|78}} || {{flagUCIRoadathlete|[[Alexandre Mayer]]|MRI}} 
+| align="right" | DNF
+|}
+
+==References==
+{{reflist}}
+
+{{UCI Road World Championships – Men's time trial}}
+{{UCI Road World Champions – Men's time trial}}
+
+{{DEFAULTSORT:2023 UCI Road World Championships - Men's time trial}}
+[[Category:2023 UCI Road World Championships|Men's time trial]]
+[[Category:UCI Road World Championships&nbsp;– Men's time trial]]
+[[Category:2023 in men's road cycling]]

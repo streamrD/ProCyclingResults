@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 19 September 2026
+
+- **The Worlds come first this week.** The UCI Road World Championships in Montréal now sit at the top of the page, and their button leads the menu with a "This week" tag, from a week before the first race until three days after the last.
+
 ## 15 September 2026
 
 - **The season calendar, full screen.** A "Full screen" button beside "Close calendar" spreads the calendar across the whole window so the race names are bigger and easier to read. Press it again or hit Escape to go back.

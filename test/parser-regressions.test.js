@@ -1587,12 +1587,22 @@ test("getCompetitionGroups gives the Worlds their own section, men's events firs
     startDate: new Date("2026-10-10T00:00:00Z"),
     endDate: new Date("2026-10-10T00:00:00Z"),
   };
-  const groups = getCompetitionGroups({ upcomingRaces: [...events, worldTourRace], recentResults: [], liveStageRaces: [] });
+  const data = { upcomingRaces: [...events, worldTourRace], recentResults: [], liveStageRaces: [] };
+  const groups = getCompetitionGroups(data, new Date("2026-09-07T12:00:00Z"));
 
   assert.deepEqual(
     JSON.parse(JSON.stringify(groups.map((group) => group.id))),
     ["mens-worldtour", "womens-worldtour", "world-championships"],
   );
+  assert.equal(groups[2].badge, undefined);
+
+  // From a week before the first elite event to three days after the last, the Worlds
+  // lead the page and their menu button carries a badge.
+  const order = (iso) => JSON.parse(JSON.stringify(getCompetitionGroups(data, new Date(iso)).map((group) => group.id)));
+  assert.deepEqual(order("2026-09-13T12:00:00Z"), ["world-championships", "mens-worldtour", "womens-worldtour"]);
+  assert.equal(getCompetitionGroups(data, new Date("2026-09-20T12:00:00Z"))[0].badge, "This week");
+  assert.deepEqual(order("2026-09-30T12:00:00Z"), ["world-championships", "mens-worldtour", "womens-worldtour"]);
+  assert.deepEqual(order("2026-10-01T12:00:00Z"), ["mens-worldtour", "womens-worldtour", "world-championships"]);
   const worlds = groups[2];
   assert.equal(worlds.tag, "Montreal, 20–27 September");
   assert.deepEqual(
@@ -1680,6 +1690,23 @@ test("parseWorldChampionshipEventResult keeps time-trial hundredths and the Diff
   assert.equal(empty.standings.length, 0);
 });
 
+test("parseWorldChampionshipEventResult reads the 2019-23 layout: numbered medal templates, athlete-template riders, Tissot times", () => {
+  const { parseWorldChampionshipEventResult } = loadParserExports();
+  const result = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2023-mens-time-trial.wikitext"));
+
+  assert.equal(result.podium[0].rider, "Remco Evenepoel");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(result.standings.map((entry) => [entry.place, entry.rider, entry.countryCode, entry.time, entry.gap]))),
+    [
+      ["1", "Remco Evenepoel", "BEL", "55:19.23", ""],
+      ["2", "Filippo Ganna", "ITA", "", "+0:12.28"],
+      ["3", "Josh Tarling", "GBR", "", "+0:48.20"],
+      ["4", "Brandon McNulty", "USA", "", "+1:26.91"],
+      ["5", "Wout van Aert", "BEL", "", "+1:37.23"],
+    ],
+  );
+});
+
 test("enrichWorldChampionshipResults asks for an event page from race day only and fills the podium", async () => {
   const { enrichWorldChampionshipResults, partitionRaceBuckets } = loadParserExports();
   const page = loadWorldsFixture("uci-road-world-championships-2025-mens-road-race.wikitext");
@@ -1752,7 +1779,7 @@ test("Worlds results render in their section, men first, all four cards visible"
     make("Men's time trial", "mens", "20", "Remco Evenepoel", "BEL"),
     make("Women's time trial", "womens", "20", "Marlen Reusser", "SUI"),
   ];
-  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] })[2];
+  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] }).find((group) => group.id === "world-championships");
 
   assert.deepEqual(
     JSON.parse(JSON.stringify(worlds.recentResults.map((race) => race.title))),
@@ -6301,7 +6328,9 @@ test("a stale article pool renders as a placeholder and the news endpoint waits 
   };
   const stale = [{ title: "Küng wins stage 18", publisher: "Reuters", url: "https://example.com/18" }];
   const fresh = [{ title: "Landa wins stage 20", publisher: "Cycling Weekly", url: "https://example.com/20" }];
-  const ttl = getArticleCacheTtlMs(race, new Date("2026-09-12T12:00:00Z"));
+  // The code reads the window against the real clock, so the test must too: a fixed
+  // date inside the race stopped matching once the Vuelta was two days finished.
+  const ttl = getArticleCacheTtlMs(race);
 
   // Warm and inside its window: the card renders ready from it.
   articleCache.set(race.pageTitle, { updatedAt: Date.now() - 1000, data: stale, promise: null });

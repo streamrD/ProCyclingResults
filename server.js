@@ -2050,7 +2050,8 @@ function parseWorldChampionshipEliteEvents(rawText, championship = WORLD_CHAMPIO
 // time. Medals stand in for places 1–3 in the rank column; a time trial adds a
 // separate "Diff." column, a road race writes gaps into the time column ("+ 1' 28"",
 // "s.t."). Riders ride for nations, so there is no team.
-const WORLD_CHAMPIONSHIP_MEDAL_PLACES = { gold1: "1", silver2: "2", bronze3: "3" };
+// Medal templates are {{gold1}} on the 2024-25 pages and {{gold01}} on 2019-23 ones.
+const WORLD_CHAMPIONSHIP_MEDAL_PLACES = { gold: "1", silver: "2", bronze: "3" };
 
 function parseWorldChampionshipInfoboxPodium(rawText) {
   const text = String(rawText || "");
@@ -2067,8 +2068,27 @@ function parseWorldChampionshipInfoboxPodium(rawText) {
 
 // Time-trial times carry hundredths ("43:09.34", "+ 51.89") that the shared
 // normalisers drop or reject; keep the page's own text when they cannot read it.
+// Older pages print Tissot's notation: "1h 05' 05.35"", "55' 19.23"", "+ 12.28"".
+function convertWorldChampionshipPrimeTime(text) {
+  const cleaned = String(text || "").replace(/[\u2019\u2032]/g, "'").replace(/[\u201d\u2033]/g, '"').replace(/\s+/g, " ").trim();
+  const match = cleaned.match(/^(\+\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*'\s*)?(\d+(?:\.\d+)?)\s*"$/);
+  if (!match) {
+    return cleaned;
+  }
+  const [, plus, hours, minutes, seconds] = match;
+  if (plus && !hours && !minutes && Number(seconds) === 0) {
+    return "s.t.";
+  }
+  const [wholeSeconds, fraction] = seconds.split(".");
+  const paddedSeconds = `${wholeSeconds.padStart(2, "0")}${fraction ? `.${fraction}` : ""}`;
+  const body = hours
+    ? `${Number(hours)}:${String(minutes || "0").padStart(2, "0")}:${paddedSeconds}`
+    : `${Number(minutes || 0)}:${paddedSeconds}`;
+  return `${plus ? "+" : ""}${body}`;
+}
+
 function formatWorldChampionshipTime(text) {
-  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  const cleaned = convertWorldChampionshipPrimeTime(text);
   if (/^\d+(?::\d{2}){1,2}\.\d+$/.test(cleaned)) {
     return cleaned;
   }
@@ -2076,8 +2096,13 @@ function formatWorldChampionshipTime(text) {
 }
 
 function formatWorldChampionshipGap(text) {
-  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
-  if (!cleaned) {
+  const original = String(text || "").replace(/\s+/g, " ").trim();
+  // Whole-second gaps keep the shared format ("+01:28") the other cards print.
+  const cleaned = /\d\.\d/.test(original) ? convertWorldChampionshipPrimeTime(original) : original;
+  if (/^\+\s*0+\s*"?$|^\+\s*0+'\s*0+"$/.test(cleaned)) {
+    return "s.t.";
+  }
+  if (!cleaned || /^[-\u2013\u2014]$/.test(cleaned)) {
     return "";
   }
   if (/^s\.?t\.?$/i.test(cleaned)) {
@@ -2117,16 +2142,19 @@ function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDER
       .filter((row) => row !== headerRow && !row.some((cell) => cell?.header))
       .forEach((row) => {
         const rankSource = String(row[rankIndex]?.content || "");
-        const medal = rankSource.match(/\{\{\s*(gold1|silver2|bronze3)\s*\}\}/i);
+        const medal = rankSource.match(/\{\{\s*(gold|silver|bronze)0?[123]\s*\}\}/i);
         const place = medal
           ? WORLD_CHAMPIONSHIP_MEDAL_PLACES[medal[1].toLowerCase()]
           : cleanWikiText(rankSource).match(/^\d+/)?.[0] || "";
-        const rider = cleanWikiText(row[riderIndex]?.content);
+        // Pages without a country column put the rider inside {{flagUCIRoadathlete}}.
+        const riderSource = String(row[riderIndex]?.content || "");
+        const athlete = /\{\{\s*flagUCIRoadathlete/i.test(riderSource) ? parseAthleteDetails(riderSource) : null;
+        const rider = athlete?.rider || cleanWikiText(riderSource);
         if (!place || Number(place) > maxRiders || !rider) {
           return;
         }
         const countryCode = normalizeCountryCode(
-          String(row[countryIndex]?.content || "").match(/\{\{\s*flagUCIRoad\s*\|\s*([A-Za-z]{3})/i)?.[1] || "",
+          String(row[countryIndex]?.content || "").match(/\{\{\s*flagUCIRoad\s*\|\s*([A-Za-z]{3})/i)?.[1] || athlete?.countryCode || "",
         );
         const timeText = cleanWikiText(row[timeIndex]?.content);
         const diffText = diffIndex >= 0 ? cleanWikiText(row[diffIndex]?.content) : "";
@@ -2143,6 +2171,11 @@ function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDER
   }
 
   standings.sort((left, right) => Number(left.place) - Number(right.place));
+  podium.forEach((entry, index) => {
+    if (!entry.countryCode && standings[index]?.rider === entry.rider) {
+      entry.countryCode = standings[index].countryCode;
+    }
+  });
   return { podium, standings };
 }
 
@@ -10414,7 +10447,7 @@ function buildRaceNewsMarkup(race, options = {}) {
       </div>`;
 }
 
-function getCompetitionGroups(data) {
+function getCompetitionGroups(data, now = new Date()) {
   const definitions = [
     {
       id: "mens-worldtour",
@@ -10456,7 +10489,7 @@ function getCompetitionGroups(data) {
     },
   ];
 
-  return definitions.map((definition) => ({
+  const groups = definitions.map((definition) => ({
     ...definition,
     liveStageRaces: (data[definition.liveSource || "liveStageRaces"] || []).filter(definition.predicate),
     recentResults: (data[definition.recentSource || "recentResults"] || [])
@@ -10468,6 +10501,16 @@ function getCompetitionGroups(data) {
       .sort(definition.sortUpcoming || (() => 0))
       .slice(0, definition.upcomingRacesLimit || MAX_UPCOMING_RACES),
   }));
+
+  // Worlds week is the biggest thing in the sport, so the section and its menu
+  // button lead the page from a week before the first elite event until three
+  // days after the last one; the rest of the year they sit after the WorldTour.
+  const worlds = groups.find((group) => group.id === "world-championships");
+  if (worlds && isWorldChampionshipWeek(data, now)) {
+    worlds.badge = "This week";
+    return [worlds, ...groups.filter((group) => group !== worlds)];
+  }
+  return groups;
 }
 
 // Men's events first, then women's, each in date order: the order the user asked for.
@@ -10482,6 +10525,26 @@ function compareWorldChampionshipEvents(left, right) {
 
 // "Montreal, 20–27 September": the host city and the span of the elite events we
 // show, read from the events themselves so nothing here goes stale next year.
+const WORLD_CHAMPIONSHIP_LEAD_IN_DAYS = 7;
+const WORLD_CHAMPIONSHIP_AFTERGLOW_DAYS = 3;
+
+function isWorldChampionshipWeek(data, now = new Date()) {
+  const days = [...(data?.upcomingRaces || []), ...(data?.recentResults || [])]
+    .filter(isWorldChampionshipRace)
+    .map((event) => toIsoDay(event.startDate))
+    .filter(Boolean)
+    .sort();
+  if (days.length === 0) {
+    return false;
+  }
+  const today = toIsoDay(toUtcDateOnly(now));
+  const dayOffset = (isoDay, offset) => toIsoDay(new Date(Date.parse(`${isoDay}T00:00:00Z`) + offset * SEASON_DAY_MS));
+  return (
+    today >= dayOffset(days[0], -WORLD_CHAMPIONSHIP_LEAD_IN_DAYS) &&
+    today <= dayOffset(days[days.length - 1], WORLD_CHAMPIONSHIP_AFTERGLOW_DAYS)
+  );
+}
+
 function buildWorldChampionshipTag(data) {
   const events = (data?.upcomingRaces || []).filter(isWorldChampionshipRace);
   if (events.length === 0) {
