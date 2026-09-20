@@ -2204,6 +2204,52 @@ async function loadWorldChampionshipEventPage(title, loadWikiRaw = fetchWikiRaw,
   }
 }
 
+// An event page is created a day or more after the event is ridden, but the
+// championship article's "Medal summary" carries each podium within minutes of the
+// finish and names the event by the page it will live on ({{DetailsLink}}). That
+// table is the bridge: on 2026-09-20 the men's time trial had a medal row and no
+// page of its own, so the card sat in "upcoming" all evening.
+// Rows are read from the section text rather than through parseWikiTableGrid: the
+// event cell's {{nowrap}} is left unclosed on the live article, which no cell
+// splitting survives.
+function normalizeWorldChampionshipEventKey(title) {
+  return String(title || "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/[‐-―]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function parseWorldChampionshipMedalSummary(rawText) {
+  const section = findWikiSection(rawText, /medal(?:s| summary| table)?\b/i);
+  const podiums = new Map();
+
+  section.split(/\n\|-/).forEach((row) => {
+    const eventTitle = row.match(/\{\{\s*DetailsLink\s*\|\s*([^}|]+?)\s*\}\}/i)?.[1];
+    if (!eventTitle) {
+      return;
+    }
+    const podium = [...row.matchAll(/\{\{\s*Flag[\s_]*medalist\s*\|([\s\S]+?)\}\}/gi)]
+      .slice(0, 3)
+      .map((match) => {
+        const args = splitWikiTemplateArgs(match[1]);
+        return {
+          rider: cleanWikiText(args[0] || ""),
+          countryCode: normalizeCountryCode(args[1] || ""),
+          pageTitle: extractRiderPageTitle(args[0] || ""),
+        };
+      })
+      .filter((entry) => entry.rider);
+
+    if (podium.length > 0) {
+      podiums.set(normalizeWorldChampionshipEventKey(eventTitle), podium);
+    }
+  });
+
+  return podiums;
+}
+
 function isWorldChampionshipEventOnOrAfterRaceDay(race, todayUtc) {
   const startUtc = toUtcDateOnly(race?.startDate);
   return Boolean(startUtc && todayUtc && startUtc.getTime() <= todayUtc.getTime());
@@ -2215,14 +2261,30 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
     (race) => isWorldChampionshipRace(race) && !race.winner && isWorldChampionshipEventOnOrAfterRaceDay(race, todayUtc),
   );
 
+  // The championship article is read only when an event page has not answered, and
+  // once per rebuild however many events are waiting on it.
+  let medalSummaryPromise = null;
+  const readMedalSummary = () => {
+    if (!medalSummaryPromise) {
+      medalSummaryPromise = Promise.resolve()
+        .then(() => loadWikiRaw(getWorldChampionshipsPageTitle()))
+        .then(parseWorldChampionshipMedalSummary)
+        .catch(() => new Map());
+    }
+    return medalSummaryPromise;
+  };
+
   await Promise.all(
     due.map(async (race) => {
       const raw = await loadWorldChampionshipEventPage(race.pageTitle, loadWikiRaw, now.getTime());
-      if (!raw) {
-        return;
+      const result = raw ? parseWorldChampionshipEventResult(raw) : { podium: [], standings: [] };
+      let podium = result.podium.length > 0 ? result.podium : result.standings.slice(0, 3);
+      let resultSource = "wikipedia-event-page";
+      if (!podium[0]?.rider) {
+        const summary = await readMedalSummary();
+        podium = summary.get(normalizeWorldChampionshipEventKey(race.pageTitle)) || [];
+        resultSource = "wikipedia-medal-summary";
       }
-      const result = parseWorldChampionshipEventResult(raw);
-      const podium = result.podium.length > 0 ? result.podium : result.standings.slice(0, 3);
       if (!podium[0]?.rider) {
         return;
       }
@@ -2233,7 +2295,7 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
       if (result.standings.length > 0) {
         race.resultStandings = result.standings;
       }
-      race.resultSource = "wikipedia-event-page";
+      race.resultSource = resultSource;
     }),
   );
 
@@ -7003,8 +7065,35 @@ function extractFirstXmlTag(block, tagNames) {
   return "";
 }
 
+// The Worlds are not a name a headline repeats. Quoting the card's own phrase
+// ("World Championships women's time trial") returned nothing at all from the news
+// feed, so these queries name the championship, the event and the winner loosely and
+// let isLikelyRaceArticle do the filtering.
+function buildWorldChampionshipArticleQueries(race, raceYear) {
+  const discipline = /time trial/i.test(race?.title || "") ? "time trial" : "road race";
+  const gender = getRaceDivision(race) === "women" ? "women's" : "men's";
+  const winner = cleanWikiText(race?.winner || "");
+  const yearPart = raceYear ? `${raceYear} ` : "";
+  const winnerQueries = winner
+    ? [
+        `${winner} world championships ${discipline} ${yearPart}cycling`,
+        `${winner} ${gender} ${discipline} world title ${yearPart}report`,
+      ]
+    : [];
+
+  return [
+    ...winnerQueries,
+    `"Road World Championships" ${gender} ${discipline} ${yearPart}results cycling`,
+    `world championships ${gender} ${discipline} ${yearPart}results report`,
+    `UCI Road World Championships ${yearPart}${gender} ${discipline}`,
+  ];
+}
+
 function buildRaceArticleQueries(race) {
   const raceYear = getRaceYear(race);
+  if (isWorldChampionshipRace(race)) {
+    return buildWorldChampionshipArticleQueries(race, raceYear);
+  }
   const variants = getRaceArticleVariants(race).slice(0, 8);
   const stageNumber = getRaceCoverageStageNumber(race);
   const latestStageWinner = cleanWikiText(race?.stageRace?.latestStage?.winner || "");
@@ -7075,8 +7164,44 @@ function getPublisherScore(publisher) {
   return 40;
 }
 
+// Championship week runs thirteen events, so the championship name alone does not
+// say which card a story or clip belongs to: the discipline does, and the under-23,
+// junior and mixed-relay races are none of the four elite ones.
+function matchesWorldChampionshipEvent(text, race) {
+  const normalized = normalizeSearchText(text);
+  if (!/\bchampionships?\b|\bworlds\b|\bworld title\b|\bworld champions?\b|\brainbow\b/.test(normalized)) {
+    return false;
+  }
+  if (/\brelay\b|\bu23\b|\bunder ?23\b|\bjunior/.test(normalized)) {
+    return false;
+  }
+  const wantsTimeTrial = /time trial/i.test(race?.title || "");
+  const isTimeTrial = /\btime ?-? ?trials?\b|\bitt\b/.test(normalized);
+  return wantsTimeTrial === isTimeTrial;
+}
+
 function isLikelyRaceArticle(article, race) {
   const combinedText = normalizeSearchText([article.title, article.description, article.publisher].join(" "));
+
+  // A Worlds event needs its own test. The shared token rule wants "championships"
+  // and "worlds" both present, and headlines write one or the other, so every real
+  // story from the 2026 time trials was thrown away. Match the discipline, then
+  // settle the division on the card's gender marker or its winner's name.
+  if (isWorldChampionshipRace(race)) {
+    if (!matchesWorldChampionshipEvent([article.title, article.description].join(" "), race)) {
+      return false;
+    }
+    const namesWinner =
+      Boolean(race?.winner) && combinedText.includes(normalizeSearchText(race.winner));
+    if (getRaceDivision(race) === "women") {
+      return hasWomenMarker(combinedText) || namesWinner;
+    }
+    if (hasWomenMarker(combinedText)) {
+      return false;
+    }
+    return hasMenMarker(combinedText) || namesWinner;
+  }
+
   const variants = getRaceArticleVariants(race).map((variant) => normalizeSearchText(variant));
   const raceTokens = getRaceTokens(race);
   const tokenMatches = raceTokens.filter((token) => combinedText.includes(token)).length;
@@ -8799,17 +8924,7 @@ function isLikelyFinishVideo(video, race) {
 }
 
 function isLikelyWorldChampionshipEventVideo(video, race) {
-  const titleText = normalizeSearchText(video.title);
-  if (!/\bchampionships?\b|\bworlds\b/.test(titleText)) {
-    return false;
-  }
-  // The other nine events of the week are not the one on this card.
-  if (/\brelay\b|\bu23\b|\bunder ?23\b|\bjunior/.test(titleText)) {
-    return false;
-  }
-  const wantsTimeTrial = /time trial/i.test(race?.title || "");
-  const titleIsTimeTrial = /\btime trial\b|\bitt\b/.test(titleText);
-  return wantsTimeTrial === titleIsTimeTrial;
+  return matchesWorldChampionshipEvent(video.title, race);
 }
 
 function scoreFinishVideo(video, race) {
@@ -10545,13 +10660,16 @@ function isWorldChampionshipWeek(data, now = new Date()) {
   );
 }
 
+// The championship week, not the part of it that is still to come: reading only the
+// upcoming events made the header shrink as the week went on ("Montreal, 26-27
+// September" on the evening of the time trials, which were ridden on the 20th).
 function buildWorldChampionshipTag(data) {
-  const events = (data?.upcomingRaces || []).filter(isWorldChampionshipRace);
+  const events = [...(data?.upcomingRaces || []), ...(data?.recentResults || [])].filter(isWorldChampionshipRace);
   if (events.length === 0) {
     return "";
   }
   const days = events.map((event) => toIsoDay(event.startDate)).filter(Boolean).sort();
-  const city = String(events[0].location || "").split(",")[0].trim();
+  const city = String(events.find((event) => event.location)?.location || "").split(",")[0].trim();
   const first = new Date(`${days[0]}T00:00:00Z`);
   const last = new Date(`${days[days.length - 1]}T00:00:00Z`);
   const month = first.toLocaleString("en-GB", { month: "long", timeZone: "UTC" });

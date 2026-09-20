@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 20 September 2026
+
+- **Both time trials, with the news.** The men's world time trial result now appears on race day instead of waiting for Wikipedia to write the event its own page. Every Worlds card also carries its own stories again, and the section header spans the whole championship week.
+
 ## 19 September 2026
 
 - **The Worlds come first this week.** The UCI Road World Championships in Montréal now sit at the top of the page, and their button leads the menu with a "This week" tag, from a week before the first race until three days after the last.

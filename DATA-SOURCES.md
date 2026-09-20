@@ -39,9 +39,9 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, and once an hour after that. |
+| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, while an elite event that has been ridden is still waiting on a result, its medal summary, and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, and once an hour after that. |
 | Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
-| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race, then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
+| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race (five for a World Championships event), then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
 | Cyclingnews | The national championships index page | At most once an hour. |
 | YouTube | A search for the finish highlights of a stage | Once per stage, cached for six hours (or 20 minutes for a miss). |
 | komoot | The elevation trace an organiser embeds | Once per stage, kept for a week; the traces we have are committed to this repository so they are not fetched again after a restart. |
@@ -132,3 +132,12 @@ how the site fetches. The review log below is updated each time.
   is running, so the in-season count is unchanged. Measured the same day against
   Wikipedia: while the 2027 pages are still redirects, the check is two requests, then
   nothing more for a day.
+- **2026-09-20.** Two changes during Worlds week, both to pages we already read.
+  Wikipedia creates an elite event's own page a day or more after the race — the men's
+  time trial was ridden on the 20th and had no page that evening — so when that page is
+  missing we now read the podium from the championship article's medal summary instead.
+  That article is already in the tracked set; consulting it costs nothing extra while
+  every ridden event has a page, and one revision check per rebuild in the gap. The
+  Worlds news searches were also rewritten: they quoted a phrase no headline uses and
+  found nothing, so a Worlds card now makes five searches instead of about fifteen.
+  Measured the same evening against Wikipedia and the news feed.

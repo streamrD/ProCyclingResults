@@ -78,6 +78,7 @@ function loadParserExports() {
       parseClassificationStandingsCaption,
       parseAthleteDetails,
       parseWorldChampionshipEliteEvents,
+      parseWorldChampionshipMedalSummary,
       buildUpcomingCard,
       getCompetitionGroups,
       parseWorldChampionshipEventResult,
@@ -103,6 +104,8 @@ function loadParserExports() {
       buildNationalChampionshipPodium,
       cleanWikiText,
       buildRaceArticleQueries,
+      isLikelyRaceArticle,
+      buildWorldChampionshipTag,
       scoreRaceArticle,
       selectRaceArticles,
       isCurrentEditionRaceArticle,
@@ -1732,17 +1735,25 @@ test("enrichWorldChampionshipResults asks for an event page from race day only a
   assert.equal(calls.length, 0);
   assert.equal(roadRace.winner, "");
 
-  // Race day for the time trial: it is asked for, misses, and stays upcoming as "today".
+  // Race day for the time trial: it is asked for, misses, the championship article is
+  // consulted for a medal row that is not there yet, and it stays upcoming as "today".
   await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-20T15:00:00Z"));
-  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ["2026 UCI Road World Championships – Women's time trial"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    "2026 UCI Road World Championships – Women's time trial",
+    "2026_UCI_Road_World_Championships",
+  ]);
   assert.equal(timeTrial.winner, "");
   const buckets = partitionRaceBuckets([roadRace, timeTrial], new Date("2026-09-20T15:00:00Z"));
   assert.deepEqual(JSON.parse(JSON.stringify(buckets.upcomingRaces.map((race) => race.title))), ["Elite women's time trial", "Elite men's road race"]);
   assert.equal(buckets.recentOneDayResults.length, 0);
 
-  // A missing page is not asked for again straight away.
+  // A missing page is not asked for again straight away; the championship article is,
+  // because a medal row can appear on it minutes after the finish.
   await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-20T15:05:00Z"));
-  assert.equal(calls.length, 1);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(calls.filter((title) => /Women's time trial/.test(title)))),
+    ["2026 UCI Road World Championships – Women's time trial"],
+  );
 
   // Race day for the road race: the page exists and the podium lands.
   await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-27T20:00:00Z"));
@@ -1754,10 +1765,125 @@ test("enrichWorldChampionshipResults asks for an event page from race day only a
   assert.deepEqual(JSON.parse(JSON.stringify(later.recentOneDayResults.map((race) => race.title))), ["Elite men's road race"]);
   assert.equal(later.upcomingRaces.length, 0);
   // Once filled in, the page is not asked for again by this enrichment.
-  const callsBefore = calls.length;
   await enrichWorldChampionshipResults([roadRace, timeTrial], loader, new Date("2026-09-28T09:00:00Z"));
-  assert.equal(calls.length, callsBefore + 1);
   assert.ok(calls.every((title) => !/Men's road race/.test(title) || calls.filter((entry) => entry === title).length === 1));
+});
+
+test("the championship article's medal summary stands in until an event gets its own page", async () => {
+  const { parseWorldChampionshipMedalSummary, enrichWorldChampionshipResults } = loadParserExports();
+  const championship = loadWorldsFixture("uci-road-world-championships-2026-time-trial-medals.wikitext");
+
+  // Only the two time trials had been ridden; every other row is still empty.
+  const summary = parseWorldChampionshipMedalSummary(championship);
+  assert.deepEqual([...summary.keys()], [
+    "2026 uci road world championships - men's time trial",
+    "2026 uci road world championships - women's time trial",
+  ]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(summary.get("2026 uci road world championships - men's time trial"))),
+    [
+      { rider: "Remco Evenepoel", countryCode: "BEL", pageTitle: "Remco Evenepoel" },
+      { rider: "Filippo Ganna", countryCode: "ITA", pageTitle: "Filippo Ganna" },
+      { rider: "Paul Seixas", countryCode: "FRA", pageTitle: "Paul Seixas" },
+    ],
+  );
+  // A piped medallist link keeps the article title, not the printed name.
+  assert.equal(
+    summary.get("2026 uci road world championships - women's time trial")[2].pageTitle,
+    "Franziska Koch (cyclist)",
+  );
+
+  // Wikipedia had not created the men's time trial page by the evening of the race.
+  const timeTrial = worldsEvent({
+    pageTitle: "2026 UCI Road World Championships – Men's time trial",
+    title: "Elite men's time trial",
+    startDate: new Date("2026-09-20T00:00:00Z"),
+    endDate: new Date("2026-09-20T00:00:00Z"),
+  });
+  const roadRace = worldsEvent();
+  const loader = async (title) => {
+    if (/Championships$/.test(title)) {
+      return championship;
+    }
+    throw new Error("Request failed: 404 Not Found");
+  };
+
+  await enrichWorldChampionshipResults([timeTrial, roadRace], loader, new Date("2026-09-20T23:00:00Z"));
+  assert.equal(timeTrial.winner, "Remco Evenepoel");
+  assert.equal(timeTrial.winnerCountryCode, "BEL");
+  assert.equal(timeTrial.third, "Paul Seixas");
+  assert.equal(timeTrial.resultSource, "wikipedia-medal-summary");
+  // The medal row is a podium, not a classification: no places 4-5 are invented.
+  assert.equal(timeTrial.resultStandings, undefined);
+  // A race that has not been ridden stays empty.
+  assert.equal(roadRace.winner, "");
+});
+
+test("the Worlds header keeps the whole championship week as events are ridden", () => {
+  const { buildWorldChampionshipTag } = loadParserExports();
+  const event = (title, day) =>
+    worldsEvent({
+      pageTitle: `2026 UCI Road World Championships – ${title}`,
+      title: `Elite ${title.toLowerCase()}`,
+      startDate: new Date(`2026-09-${day}T00:00:00Z`),
+      endDate: new Date(`2026-09-${day}T00:00:00Z`),
+    });
+
+  assert.equal(
+    buildWorldChampionshipTag({
+      recentResults: [event("Men's time trial", "20"), event("Women's time trial", "20")],
+      upcomingRaces: [event("Women's road race", "26"), event("Men's road race", "27")],
+    }),
+    "Montreal, 20–27 September",
+  );
+  // Still right once everything has been ridden and nothing is upcoming.
+  assert.equal(
+    buildWorldChampionshipTag({
+      recentResults: [event("Men's time trial", "20"), event("Men's road race", "27")],
+      upcomingRaces: [],
+    }),
+    "Montreal, 20–27 September",
+  );
+});
+
+test("a Worlds card searches and filters on its own event, not on the championship name", () => {
+  const { buildRaceArticleQueries, isLikelyRaceArticle } = loadParserExports();
+  const mensTimeTrial = worldsEvent({
+    pageTitle: "2026 UCI Road World Championships – Men's time trial",
+    title: "Elite men's time trial",
+    winner: "Remco Evenepoel",
+    startDate: new Date("2026-09-20T00:00:00Z"),
+    endDate: new Date("2026-09-20T00:00:00Z"),
+  });
+  const womensTimeTrial = worldsEvent({
+    pageTitle: "2026 UCI Road World Championships – Women's time trial",
+    title: "Elite women's time trial",
+    lane: "womens",
+    winner: "Marlen Reusser",
+    startDate: new Date("2026-09-20T00:00:00Z"),
+    endDate: new Date("2026-09-20T00:00:00Z"),
+  });
+
+  // No query quotes the card's own phrase: "World Championships men's time trial"
+  // appears in no headline, and the feed answered every such search with nothing.
+  const queries = JSON.parse(JSON.stringify(buildRaceArticleQueries(mensTimeTrial)));
+  assert.ok(queries.length > 0);
+  assert.ok(queries.every((query) => !/"[^"]*championships[^"]*(time trial|road race)/i.test(query)));
+  assert.ok(queries.some((query) => query.includes("Remco Evenepoel")));
+
+  const article = (title) => ({ title, description: "", publisher: "Cyclingnews" });
+
+  // Real headlines from the day, which the shared two-token rule had rejected.
+  assert.equal(isLikelyRaceArticle(article("Who Won The Men Elite Individual Time Trial At The 2026 UCI Road Worlds? Full Results Here"), mensTimeTrial), true);
+  assert.equal(isLikelyRaceArticle(article("Road World Championships: Peerless Remco Evenepoel makes it four in a row as Seixas takes impressive third in time trial"), mensTimeTrial), true);
+  assert.equal(isLikelyRaceArticle(article("Road World Championships: Marlen Reusser storms to victory in elite women's time trial"), womensTimeTrial), true);
+
+  // The other events of the same week are other cards.
+  assert.equal(isLikelyRaceArticle(article("Road World Championships: Marlen Reusser storms to victory in elite women's time trial"), mensTimeTrial), false);
+  assert.equal(isLikelyRaceArticle(article("Road World Championships: Pogacar solos clear to win the elite men's road race"), mensTimeTrial), false);
+  assert.equal(isLikelyRaceArticle(article("Junior men's time trial at the World Championships goes to the home rider"), mensTimeTrial), false);
+  assert.equal(isLikelyRaceArticle(article("Mixed team relay opens the World Championships time trial week"), mensTimeTrial), false);
+  assert.equal(isLikelyRaceArticle(article("Evenepoel wins the Renewi Tour time trial"), mensTimeTrial), false);
 });
 
 test("Worlds results render in their section, men first, all four cards visible", () => {
