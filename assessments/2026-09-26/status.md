@@ -1,0 +1,105 @@
+# Status of the 2026-09-26 findings
+
+Every finding from the report's register (section 6), with what happened to it. Update this file as items close; the next monthly report starts from it. Commits are on `main`. "Partial" means the reader-visible part shipped and something named remains. "Deferred" means the maintainer chose to wait.
+
+| ID | Status | Closed by / what remains |
+|---|---|---|
+| M1 | closed | 51770de: `logEvent`, `lastBuildError` on both caches, unhandled-rejection hook |
+| R1 | closed | b644062: one-day race stays on the page on race day, article read on the live cadence |
+| R2 | closed | fc66a6b: nationals columns mapped by header text, real page as fixture |
+| R3 | partial | 51770de: logging and `/api/data-status` counts. Open: an external uptime monitor (maintainer account) |
+| R4 | closed | 8c564a5: header-mapped season parser, real fixture, empty build refused |
+| S1 | closed | aee8018: brotli/gzip on every response |
+| S2 | partial | 295f14e: first rider name 1,180px → 1,076px on a phone. Still below the fold; S3 is the next lever |
+| A1 | closed | 295f14e: status line and Today headline in the hero, chips on phones |
+| A2 | closed | 295f14e: the competition stack's grid track (the real cause) and the long chip; smoke test guards a true 390px |
+| A3 | closed | 295f14e: tier chip, weekday and countdown, duration, last year's winner |
+| C1 | closed | 013cc62: one register across hero, sections, pills, warm-up |
+| P1 | deferred | Discoverability last, by the maintainer's decision (2026-09-26) |
+| M2 | partial | 51770de: `scripts/verify-deploy.js`, Node pinned. Open: Railway's wait-for-CI setting (maintainer) |
+| M3 | closed | 51770de: section counts and last build error in `/api/data-status` |
+| M4 | closed | 51770de: README "Accounts and secrets" section (costs still to be filled in by the maintainer) |
+| M5 | closed | 8c564a5: providers keyed by season, rollover guard test |
+| L1 | partial | fc66a6b: Data API path behind `YOUTUBE_API_KEY`. Open: the key (maintainer) or curated-only; the scrape runs until then |
+| L2 | open | Email to ASO (maintainer); code half (prefer the public rankings page) untouched |
+| R5 | closed | b644062 |
+| R6 | closed | b644062 |
+| R7 | open | Persist found finish videos; low value until L1 is settled |
+| R8 | closed | 8c564a5 |
+| S3 | open | Queue item 6 |
+| S4 | open | Queue item 4 (`woff2_compress` is installed) |
+| S5 | closed | 51770de: build at boot |
+| A4 | closed | 013cc62: Finished today / Yesterday pills on one-day cards |
+| A5 | closed | 013cc62 + 8c564a5: `sameTime` kept by the parser, "same time" printed |
+| A6 | closed | 013cc62: classification label is a button; inline top five on phones |
+| A7 | partial | 295f14e: calendar opens at this month, Worlds in the calendar, status line in the hero. Open: nothing pressing |
+| A8 | closed | 013cc62: footer and About say where results come from |
+| A9 | closed | 013cc62 |
+| A10 | open | Collapse finished stage-race cards on phones (comp first) |
+| C2 | closed | 295f14e |
+| C3 | closed | 013cc62 + 8c564a5 |
+| P2 | closed | 013cc62 |
+| P3 | closed | 013cc62: "An independent race desk", not-affiliated line |
+| P4 | closed | aee8018 |
+| P5 | open | Queue item 1 (Atom feed) |
+| P6 | closed | duplicate of A2 |
+| X1 | closed | aee8018: render cache and token bucket |
+| X2 | partial | aee8018: caps and bucket. Open: in-flight dedupe on `/api/race-stages` (queue item 3) |
+| X3 | closed | aee8018 |
+| X4 | open | GitHub token scope check (maintainer, five minutes) |
+| X5 | closed | aee8018 |
+| M6 | partial | The one clock-dependent test was fixed on 2026-09-19; no lint added |
+| M7 | open | Queue item 5 (stylesheet has 0 interpolations, client script 1) |
+| M8 | partial | 51770de: README pass. Open: split `handoff.md` into map and journal (queue item 8) |
+| M9 | open | When an ASO provider next needs a change |
+| M10 | closed | 8c564a5: season page and RSS fixtures |
+| L3 | open | Nationals from Wikipedia (maintainer decision 7) |
+| L4 | closed | fc66a6b: caps 10 live / 8 settled, page corrected |
+| L5 | closed | 013cc62 |
+| L6 | open | Ask komoot or ASO about the derived traces (maintainer) |
+| R9 | closed | 8c564a5 |
+| R10 | closed | 8c564a5 |
+| R11 | closed | 8c564a5 |
+| R12 | partial | 8c564a5: backoff and `lastIndexError`. No test |
+| R13 | closed | 8c564a5 |
+| S6 | closed | aee8018 |
+| S7 | open | Parse the rider index only on hover devices |
+| S8 | open | Queue item 2 |
+| S9 | open | With S4 |
+| S10 | closed | 77674e9: notes corrected; framed probe in the smoke test since 295f14e |
+| A11 | partial | 013cc62: chips and unit toggles have 44px hit areas; rider links unchanged |
+| A12 | closed | 013cc62 |
+| A13 | open | Queue item 1 (F23 winter states) |
+| A14 | partial | 013cc62: `<footer>`. Open: skip link, heading depth, icon `aria-hidden` |
+| A15 | closed | 013cc62 |
+| C4 | closed | 013cc62 |
+| C5 | open | Maintainer decision 5 |
+| C6 | closed | 8c564a5: result stories lead a finished race's news |
+| C7 | closed | 77674e9 |
+| C8 | open | Per-panel unit toggles |
+| C9 | open | With S3 |
+| P7 | open | Maintainer decision 4 (Worlds ordering) |
+| P8 | closed | 013cc62 |
+| P9 | deferred | With P1 |
+| X6 | closed | aee8018 |
+| X7 | closed | aee8018 |
+| X8 | closed | aee8018 |
+| X9 | closed | aee8018 |
+| X10 | closed | 51770de |
+| X11 | closed | 013cc62: privacy note; analytics tag still on error pages |
+| X12 | open | Cap upstream body size before parsing |
+| M11 | open | Maintainer decision 11 (editor saves redeploy) |
+| M12 | closed | 8c564a5 |
+| M13 | closed | 51770de |
+| M14 | closed | 51770de |
+| L7 | open | Wikitext through the API instead of `action=raw` |
+| L8 | open | Queue item 7 |
+| L9 | closed | 013cc62 |
+| L10 | closed | fc66a6b |
+| L11 | deferred | With P1 |
+| L12 | closed | fc66a6b |
+| L13 | keep | Nothing to do unless cards link to organiser pages |
+| CSP | open | Report-only CSP after M7 (nonce on inline scripts); see handoff |
+| F1, F5, F24 | closed | 295f14e, 013cc62 |
+| F2, F3, F23 | open | Queue item 1 |
+| F9 | open | Guide page |
