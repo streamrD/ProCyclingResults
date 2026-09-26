@@ -213,6 +213,24 @@ function loadParserExports() {
       extractCyclingResultBlocks,
       parseCyclingResultStandings,
       loadOfficialStageRaceSnapshotWithinBudget,
+      safeHttpUrl,
+      normalizeArticleUrl,
+      buildArticleItem,
+      extractFeedItems,
+      securityHeaders,
+      sendJson,
+      sendHtml,
+      sendStaticFile,
+      serializeJson,
+      parseAcceptEncoding,
+      chooseResponseEncoding,
+      getCachedResponseBody,
+      buildResponseCacheKey,
+      takeApiRateToken,
+      isRateLimitedApiPath,
+      getClientAddress,
+      isDebugPayloadAllowed,
+      recordSiteEditFailure,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
       logEvent,
@@ -2717,7 +2735,7 @@ test("buildFinishVideoQuery includes the race name, year, stage, and highlights"
 test("parseYouTubeSearchVideos reads videoId, title, channel, length, and verified badge from ytInitialData", () => {
   const { videos } = loadYouTubeFixtureVideos();
   assert.equal(videos.length, 8);
-  const official = videos.find((video) => video.id === "tdfOfficial21");
+  const official = videos.find((video) => video.id === "tdfOffici21");
   assert.equal(official.channel, "Tour de France");
   assert.equal(official.lengthSeconds, 616);
   assert.equal(official.verified, true);
@@ -2728,7 +2746,7 @@ test("selectFinishVideo prefers the official race channel over region-locked bro
   void parseYouTubeSearchVideos;
   const { selectFinishVideo } = loadParserExports();
   const best = selectFinishVideo(videos, TDF_STAGE21_RACE);
-  assert.equal(best.id, "tdfOfficial21");
+  assert.equal(best.id, "tdfOffici21");
 });
 
 test("isLikelyFinishVideo rejects wrong stage, wrong year, previews, and unrelated races", () => {
@@ -2736,11 +2754,11 @@ test("isLikelyFinishVideo rejects wrong stage, wrong year, previews, and unrelat
   const { videos } = loadYouTubeFixtureVideos();
   const byId = Object.fromEntries(videos.map((video) => [video.id, video]));
 
-  assert.equal(isLikelyFinishVideo(byId.tdfOfficial21, TDF_STAGE21_RACE), true);
-  assert.equal(isLikelyFinishVideo(byId.gcnWrongStage, TDF_STAGE21_RACE), false); // stage 20
-  assert.equal(isLikelyFinishVideo(byId.nbcWrongYear, TDF_STAGE21_RACE), false); // 2025
+  assert.equal(isLikelyFinishVideo(byId.tdfOffici21, TDF_STAGE21_RACE), true);
+  assert.equal(isLikelyFinishVideo(byId.gcnWrongStg, TDF_STAGE21_RACE), false); // stage 20
+  assert.equal(isLikelyFinishVideo(byId.nbcWrongYr0, TDF_STAGE21_RACE), false); // 2025
   assert.equal(isLikelyFinishVideo(byId.euroPreview, TDF_STAGE21_RACE), false); // preview
-  assert.equal(isLikelyFinishVideo(byId.giroUnrelated, TDF_STAGE21_RACE), false); // different race
+  assert.equal(isLikelyFinishVideo(byId.giroUnrelat, TDF_STAGE21_RACE), false); // different race
 });
 
 test("isLikelyFinishVideo rejects another ASO race posted on the official Tour de France channel", () => {
@@ -6894,4 +6912,328 @@ test("verify-deploy parses its arguments, defaults to production and summarises 
     describeStatus({ sections: {}, nationalsError: "Request failed: 503", lastBuildError: { message: "boom", at: "2026-09-27T10:00:00.000Z" } }),
     /nationals \? federations \(error: Request failed: 503\), last build error: boom at 2026-09-27T10:00:00\.000Z$/,
   );
+});
+
+// ---------------------------------------------------------------------------------
+// The HTTP layer (2026-09-26): compression, minified JSON, the render cache, the API
+// token bucket, the scheme allow-list, the static guard, the debug gate and the
+// editor's failure throttle. A fake response records what the helpers send; the
+// helpers read the request through response.req, as Node's ServerResponse exposes it.
+// ---------------------------------------------------------------------------------
+function makeFakeResponse(headers = {}) {
+  const out = { statusCode: 0, headers: null, body: null };
+  return {
+    out,
+    req: { headers },
+    writeHead(statusCode, responseHeaders) {
+      out.statusCode = statusCode;
+      out.headers = responseHeaders;
+    },
+    end(body) {
+      out.body = body;
+    },
+  };
+}
+
+test("sendHtml and sendJson negotiate br, then gzip, then identity, and carry the security headers", () => {
+  const { sendHtml, sendJson, securityHeaders, parseAcceptEncoding, chooseResponseEncoding } = loadParserExports();
+  const zlib = require("zlib");
+  const html = "<!doctype html><p>" + "race ".repeat(2000) + "</p>";
+
+  const brotli = makeFakeResponse({ "accept-encoding": "gzip, deflate, br" });
+  sendHtml(brotli, 200, html);
+  assert.equal(brotli.out.statusCode, 200);
+  assert.equal(brotli.out.headers["content-type"], "text/html; charset=utf-8");
+  assert.equal(brotli.out.headers["content-encoding"], "br");
+  assert.equal(brotli.out.headers.vary, "accept-encoding");
+  assert.equal(brotli.out.headers["cache-control"], "no-store");
+  assert.equal(brotli.out.headers["content-length"], brotli.out.body.length);
+  assert.ok(brotli.out.body.length < html.length / 4);
+  assert.equal(zlib.brotliDecompressSync(brotli.out.body).toString("utf8"), html);
+
+  // A weight of zero is a refusal, so this client gets gzip.
+  const gzip = makeFakeResponse({ "accept-encoding": "gzip;q=1.0, br;q=0" });
+  sendHtml(gzip, 200, html);
+  assert.equal(gzip.out.headers["content-encoding"], "gzip");
+  assert.equal(zlib.gunzipSync(gzip.out.body).toString("utf8"), html);
+
+  const plain = makeFakeResponse({});
+  sendHtml(plain, 404, html);
+  assert.equal(plain.out.statusCode, 404);
+  assert.equal(plain.out.headers["content-encoding"], undefined);
+  assert.equal(plain.out.headers["content-length"], Buffer.byteLength(html));
+  assert.equal(plain.out.body.toString("utf8"), html);
+
+  // Bodies under a kilobyte go as they are, whatever the client accepts.
+  const small = makeFakeResponse({ "accept-encoding": "br" });
+  sendJson(small, 200, { ok: true });
+  assert.equal(small.out.headers["content-encoding"], undefined);
+  assert.equal(small.out.body.toString("utf8"), '{"ok":true}');
+
+  const expected = securityHeaders();
+  assert.equal(expected["x-content-type-options"], "nosniff");
+  assert.equal(expected["x-frame-options"], "DENY");
+  assert.equal(expected["referrer-policy"], "strict-origin-when-cross-origin");
+  assert.match(expected["strict-transport-security"], /max-age=31536000; includeSubDomains/);
+  assert.match(expected["permissions-policy"], /camera=\(\)/);
+  for (const [name, value] of Object.entries(expected)) {
+    assert.equal(brotli.out.headers[name], value);
+    assert.equal(plain.out.headers[name], value);
+    assert.equal(small.out.headers[name], value);
+  }
+
+  assert.deepEqual([...parseAcceptEncoding("br;q=0.8, gzip;q=0, identity")], ["br", "identity"]);
+  assert.equal(chooseResponseEncoding({ headers: { "accept-encoding": "deflate" } }), "identity");
+  assert.equal(chooseResponseEncoding({ headers: {} }), "identity");
+  assert.equal(chooseResponseEncoding(undefined), "identity");
+});
+
+test("API JSON is minified unless ?pretty=1 asks for the indented form", () => {
+  const { sendJson, serializeJson } = loadParserExports();
+  const payload = { fetchedAt: "2026-09-26T10:00:00.000Z", recentResults: [{ id: "a", winner: "B" }] };
+  assert.equal(serializeJson(payload), JSON.stringify(payload));
+  assert.equal(serializeJson(payload, true), JSON.stringify(payload, null, 2));
+
+  const compact = makeFakeResponse({});
+  sendJson(compact, 200, payload);
+  assert.equal(compact.out.body.toString("utf8"), JSON.stringify(payload));
+  assert.equal(compact.out.headers["content-type"], "application/json; charset=utf-8");
+
+  const pretty = makeFakeResponse({});
+  sendJson(pretty, 200, payload, { pretty: true });
+  assert.equal(pretty.out.body.toString("utf8"), JSON.stringify(payload, null, 2));
+
+  const limited = makeFakeResponse({});
+  sendJson(limited, 429, { error: "slow down" }, { headers: { "retry-after": "3" } });
+  assert.equal(limited.out.statusCode, 429);
+  assert.equal(limited.out.headers["retry-after"], "3");
+});
+
+test("getCachedResponseBody renders once per payload, view and minute, and stays small", () => {
+  const { getCachedResponseBody, buildResponseCacheKey } = loadParserExports();
+  const cache = new Map();
+  let renders = 0;
+  const build = () => {
+    renders += 1;
+    return "<p>" + "x".repeat(2000) + "</p>";
+  };
+  const data = { fetchedAt: "2026-09-26T10:00:00.000Z" };
+  const at = Date.UTC(2026, 8, 26, 10, 5, 30);
+
+  const key = buildResponseCacheKey(data, "page:/", at);
+  const first = getCachedResponseBody(key, build, cache);
+  const second = getCachedResponseBody(key, build, cache);
+  assert.equal(renders, 1);
+  assert.equal(first, second);
+  // Same minute, different second: still the same copy.
+  assert.equal(getCachedResponseBody(buildResponseCacheKey(data, "page:/", at + 20000), build, cache), first);
+
+  // A new minute, a new payload or another view each render again.
+  getCachedResponseBody(buildResponseCacheKey(data, "page:/", at + 60000), build, cache);
+  getCachedResponseBody(buildResponseCacheKey({ fetchedAt: "2026-09-26T10:15:00.000Z" }, "page:/", at), build, cache);
+  getCachedResponseBody(buildResponseCacheKey(data, "page:/calendar", at), build, cache);
+  assert.equal(renders, 4);
+  assert.notEqual(buildResponseCacheKey(data, "races", at), buildResponseCacheKey(data, "races:pretty", at));
+
+  for (let index = 0; index < 20; index += 1) {
+    getCachedResponseBody("view" + index + "|" + index, build, cache);
+  }
+  assert.ok(cache.size <= 8);
+});
+
+test("the API token bucket allows a burst of sixty, refills one a second, and spares the polls", () => {
+  const { takeApiRateToken, isRateLimitedApiPath, getClientAddress } = loadParserExports();
+  const buckets = new Map();
+  const limit = { capacity: 60, refillPerSecond: 1 };
+  const start = Date.UTC(2026, 8, 26, 10, 0, 0);
+
+  for (let index = 0; index < 60; index += 1) {
+    assert.equal(takeApiRateToken("203.0.113.9", start, limit, buckets).allowed, true);
+  }
+  const refused = takeApiRateToken("203.0.113.9", start, limit, buckets);
+  assert.equal(refused.allowed, false);
+  assert.equal(refused.retryAfterSeconds, 1);
+  // Another client has its own bucket.
+  assert.equal(takeApiRateToken("198.51.100.4", start, limit, buckets).allowed, true);
+  // A second later one token is back, and only one.
+  assert.equal(takeApiRateToken("203.0.113.9", start + 1000, limit, buckets).allowed, true);
+  assert.equal(takeApiRateToken("203.0.113.9", start + 1000, limit, buckets).allowed, false);
+  // A minute idle restores the whole burst.
+  assert.equal(takeApiRateToken("203.0.113.9", start + 61000, limit, buckets).allowed, true);
+  assert.equal(buckets.get("203.0.113.9").tokens, 59);
+
+  assert.equal(isRateLimitedApiPath("/api/race-news"), true);
+  assert.equal(isRateLimitedApiPath("/api/races"), true);
+  assert.equal(isRateLimitedApiPath("/api/site-content"), true);
+  assert.equal(isRateLimitedApiPath("/api/data-status"), false);
+  assert.equal(isRateLimitedApiPath("/api/build-info"), false);
+  assert.equal(isRateLimitedApiPath("/"), false);
+  assert.equal(isRateLimitedApiPath("/assets/favicon.svg"), false);
+
+  assert.equal(
+    getClientAddress({ headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.1" }, socket: { remoteAddress: "10.0.0.2" } }),
+    "203.0.113.9",
+  );
+  assert.equal(getClientAddress({ headers: {}, socket: { remoteAddress: "10.0.0.2" } }), "10.0.0.2");
+});
+
+test("feed links that are not http(s) are dropped before they reach an href", () => {
+  const { safeHttpUrl, normalizeArticleUrl, buildArticleItem, extractFeedItems } = loadParserExports();
+  assert.equal(safeHttpUrl("https://www.cyclingnews.com/news/a-story/"), "https://www.cyclingnews.com/news/a-story/");
+  assert.equal(safeHttpUrl("http://example.com/x?y=1"), "http://example.com/x?y=1");
+  assert.equal(safeHttpUrl("javascript:alert(1)"), "");
+  assert.equal(safeHttpUrl("data:text/html;base64,PHNjcmlwdD4="), "");
+  assert.equal(safeHttpUrl("//example.com/x"), "");
+  assert.equal(safeHttpUrl("not a url"), "");
+  assert.equal(safeHttpUrl(""), "");
+  // The Bing redirect is unwrapped, and its target gets the same rule.
+  assert.equal(
+    normalizeArticleUrl("https://www.bing.com/news/apiclick.aspx?ref=FexRss&url=https%3A%2F%2Fexample.com%2Fstory"),
+    "https://example.com/story",
+  );
+  assert.equal(normalizeArticleUrl("https://www.bing.com/news/apiclick.aspx?ref=FexRss&url=javascript%3Aalert(1)"), "");
+
+  const race = { id: "2026 Tour de France", title: "Tour de France", date: "2026-07-05" };
+  const feed = [
+    "<rss><channel>",
+    "<item><title>Pogačar wins - Cyclingnews</title><link>javascript:alert(1)</link><description>Stage story</description><News:Source>Cyclingnews</News:Source></item>",
+    "<item><title>Vingegaard answers - Cyclingnews</title><link>data:text/html,hi</link><description>Stage story</description><News:Source>Cyclingnews</News:Source></item>",
+    "<item><title>Evenepoel holds on - Cyclingnews</title><link>https://www.cyclingnews.com/news/evenepoel/</link><description>Stage story</description><News:Source>Cyclingnews</News:Source></item>",
+    "</channel></rss>",
+  ].join("");
+  const items = extractFeedItems(feed).map((block) => buildArticleItem(block, race));
+  assert.deepEqual(
+    [...items.map((item) => item.url)],
+    ["", "", "https://www.cyclingnews.com/news/evenepoel/"],
+  );
+  // The pool keeps only items with an address, so the two hostile links never render.
+  const kept = items.filter((item) => item.url && item.title);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].url, "https://www.cyclingnews.com/news/evenepoel/");
+});
+
+test("finish video addresses that are not http(s) are dropped, and a YouTube id must look like one", () => {
+  const { getStageFinishVideoUrl, getRaceFinishVideoUrl, parseYouTubeSearchVideos } = loadParserExports();
+  const race = {
+    id: "2026 Nowhere Tour",
+    title: "Nowhere Tour",
+    stageRace: { completedStages: 2, latestStage: { number: 2, finishVideoUrl: "javascript:alert(1)" } },
+  };
+  assert.equal(getStageFinishVideoUrl(race, { number: 2, finishVideoUrl: "data:text/html,x" }), "");
+  assert.equal(
+    getStageFinishVideoUrl(race, { number: 2, finishVideoUrl: "https://www.youtube.com/watch?v=abcdefghijk" }),
+    "https://www.youtube.com/watch?v=abcdefghijk",
+  );
+  assert.equal(getRaceFinishVideoUrl(race), "");
+  assert.equal(
+    getRaceFinishVideoUrl({ ...race, stageRace: null, finishVideoUrl: "https://youtu.be/abcdefghijk" }),
+    "https://youtu.be/abcdefghijk",
+  );
+  // The curated map still answers, unchanged.
+  assert.equal(
+    getStageFinishVideoUrl({ pageTitle: "2026 Giro d'Italia", title: "Giro d'Italia" }, { number: 1 }),
+    "https://www.youtube.com/watch?v=k9etTDahUFo",
+  );
+
+  const html = fs.readFileSync(path.join(__dirname, "fixtures", "youtube-search-tdf-stage21.html"), "utf8");
+  assert.equal(parseYouTubeSearchVideos(html).length, 8);
+  const tampered = html.replace('"videoId": "tntStage210"', '"videoId": "x"');
+  assert.notEqual(tampered, html);
+  const videos = parseYouTubeSearchVideos(tampered);
+  assert.equal(videos.length, 7);
+  assert.ok(videos.every((video) => /^[A-Za-z0-9_-]{11}$/.test(video.id)));
+});
+
+test("the static file guard needs the assets directory plus a separator, and only text assets are compressed", async () => {
+  const { sendStaticFile } = loadParserExports();
+  const sibling = makeFakeResponse({});
+  assert.equal(await sendStaticFile(sibling, "/assets/../assets-other/x"), true);
+  assert.equal(sibling.out.statusCode, 403);
+  const escaped = makeFakeResponse({});
+  assert.equal(await sendStaticFile(escaped, "/assets/../server.js"), true);
+  assert.equal(escaped.out.statusCode, 403);
+  const missing = makeFakeResponse({});
+  assert.equal(await sendStaticFile(missing, "/assets/no-such-file.svg"), false);
+
+  const svg = makeFakeResponse({ "accept-encoding": "br" });
+  assert.equal(await sendStaticFile(svg, "/assets/favicon.svg"), true);
+  assert.equal(svg.out.statusCode, 200);
+  assert.equal(svg.out.headers["content-type"], "image/svg+xml; charset=utf-8");
+  assert.equal(svg.out.headers["content-encoding"], "br");
+  assert.equal(svg.out.headers["cache-control"], "public, max-age=31536000, immutable");
+  assert.equal(svg.out.headers["x-content-type-options"], "nosniff");
+
+  const font = makeFakeResponse({ "accept-encoding": "br" });
+  assert.equal(await sendStaticFile(font, "/assets/fonts/manrope-500.ttf"), true);
+  assert.equal(font.out.headers["content-type"], "font/ttf");
+  assert.equal(font.out.headers["content-encoding"], undefined);
+  assert.equal(font.out.headers["content-length"], font.out.body.length);
+  assert.equal(font.out.headers["x-frame-options"], "DENY");
+});
+
+test("renderMarkdown refuses protocol-relative addresses, and a figure only from /assets or https", () => {
+  const { renderMarkdown } = loadParserExports();
+  const html = renderMarkdown([
+    "[elsewhere](//evil.example/x) and [home](/about) and [http](http://example.com/x)",
+    "",
+    "![leaves](//evil.example/x.png)",
+    "",
+    "![plain](http://example.com/x.png)",
+    "",
+    "![ours](/assets/grupetto.jpg)",
+    "",
+    "![theirs](https://example.com/x.png)",
+  ].join("\n"));
+
+  assert.match(html, /\[elsewhere\]\(\/\/evil\.example\/x\)/);
+  assert.doesNotMatch(html, /href="\/\/evil/);
+  assert.match(html, /<a href="\/about">home<\/a>/);
+  assert.match(html, /<a href="http:\/\/example\.com\/x" target="_blank" rel="noreferrer">http<\/a>/);
+  assert.match(html, /<p>!\[leaves\]\(\/\/evil\.example\/x\.png\)<\/p>/);
+  // A plain-http picture is not a figure; the address is still a link, but no image loads.
+  assert.match(html, /<p>!<a href="http:\/\/example\.com\/x\.png"/);
+  assert.match(html, /<img src="\/assets\/grupetto\.jpg"/);
+  assert.match(html, /<img src="https:\/\/example\.com\/x\.png"/);
+  assert.doesNotMatch(html, /src="\/\/evil/);
+  assert.doesNotMatch(html, /src="http:/);
+});
+
+test("?debug=1 payloads need the editor token or DEBUG_PAYLOAD=1, and the build marker has no Node version", () => {
+  const { isDebugPayloadAllowed, BUILD_INFO } = loadParserExports();
+  assert.equal(isDebugPayloadAllowed({ headers: {} }, { token: "secret-key", envFlag: "" }), false);
+  assert.equal(isDebugPayloadAllowed({ headers: { authorization: "Bearer wrong" } }, { token: "secret-key", envFlag: "" }), false);
+  assert.equal(isDebugPayloadAllowed({ headers: { authorization: "Bearer secret-key" } }, { token: "secret-key", envFlag: "" }), true);
+  assert.equal(isDebugPayloadAllowed({ headers: {} }, { token: "", envFlag: "1" }), true);
+  assert.equal(isDebugPayloadAllowed({ headers: {} }, { token: "", envFlag: "" }), false);
+  assert.equal(isDebugPayloadAllowed(undefined, { token: "", envFlag: "" }), false);
+
+  assert.equal("node" in BUILD_INFO, false);
+  assert.ok(["configured", "not set"].includes(BUILD_INFO.sourceContact));
+});
+
+test("failed edit keys are free three times, then wait longer each time, then lock out for the window", () => {
+  const { recordSiteEditFailure } = loadParserExports();
+  const failures = new Map();
+  const start = Date.UTC(2026, 8, 26, 10, 0, 0);
+  const delays = [];
+  for (let index = 0; index < 9; index += 1) {
+    delays.push(recordSiteEditFailure("203.0.113.9", start + index * 1000, failures).delayMs);
+  }
+  assert.deepEqual(delays, [0, 0, 0, 1000, 2000, 4000, 8000, 16000, 30000]);
+  // Another client starts fresh.
+  assert.equal(recordSiteEditFailure("198.51.100.4", start, failures).delayMs, 0);
+
+  let last;
+  for (let index = 9; index < 21; index += 1) {
+    last = recordSiteEditFailure("203.0.113.9", start + index * 1000, failures);
+  }
+  assert.equal(last.count, 21);
+  assert.equal(last.lockedOut, true);
+  assert.ok(last.retryAfterSeconds > 0 && last.retryAfterSeconds <= 600);
+
+  // Ten minutes after the first miss the slate is clean.
+  const later = recordSiteEditFailure("203.0.113.9", start + 10 * 60 * 1000, failures);
+  assert.equal(later.count, 1);
+  assert.equal(later.delayMs, 0);
+  assert.equal(later.lockedOut, false);
 });

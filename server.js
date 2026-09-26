@@ -16,7 +16,8 @@ const BUILD_INFO = {
   branch: process.env.RAILWAY_GIT_BRANCH || "",
   deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || "",
   source: process.env.RAILWAY_GIT_COMMIT_SHA ? "railway-env" : "hardcoded-fallback",
-  node: process.version,
+  // The Node version left this marker on 2026-09-26: it told anyone what to aim at,
+  // and the deploy logs already say it.
   // Whether a contact address rides on the outbound user agent (see DATA-SOURCES.md).
   // A yes/no only: the address itself is never served.
   sourceContact: String(process.env.SOURCE_CONTACT || "").trim() ? "configured" : "not set",
@@ -7369,27 +7370,42 @@ function normalizeArticlePublisher(publisher) {
     .trim();
 }
 
+// An address that will be printed into an href may only be http(s). Feeds, search
+// results and providers are the callers; a javascript: or data: link from any of
+// them, or an address that does not parse, comes back as "" and the item is dropped
+// rather than rendered (2026-09-26).
+function safeHttpUrl(value) {
+  const text = cleanFeedText(value);
+
+  if (!text) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(text);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function normalizeArticleUrl(rawUrl) {
-  const cleanedUrl = cleanFeedText(rawUrl);
+  const cleanedUrl = safeHttpUrl(rawUrl);
 
   if (!cleanedUrl) {
     return "";
   }
 
-  try {
-    const parsed = new URL(cleanedUrl);
+  const parsed = new URL(cleanedUrl);
 
-    if (/(\.|^)bing\.com$/i.test(parsed.hostname) && /\/news\/apiclick\.aspx$/i.test(parsed.pathname)) {
-      const targetUrl = parsed.searchParams.get("url");
-      if (targetUrl) {
-        return cleanFeedText(targetUrl);
-      }
+  if (/(\.|^)bing\.com$/i.test(parsed.hostname) && /\/news\/apiclick\.aspx$/i.test(parsed.pathname)) {
+    const targetUrl = parsed.searchParams.get("url");
+    if (targetUrl) {
+      return safeHttpUrl(targetUrl);
     }
-
-    return parsed.toString();
-  } catch {
-    return cleanedUrl;
   }
+
+  return parsed.toString();
 }
 
 function scoreRaceArticle(article, race) {
@@ -7537,7 +7553,7 @@ function buildArticleItem(block, race) {
   const publisher = normalizeArticlePublisher(rawPublisher) || "News source";
   const title = normalizeArticleTitle(extractXmlTag(block, "title"), publisher);
   const description = cleanFeedText(extractXmlTag(block, "description"));
-  const url = normalizeArticleUrl(extractXmlTag(block, "link"));
+  const url = safeHttpUrl(normalizeArticleUrl(extractXmlTag(block, "link")));
   const publishedAt = cleanFeedText(extractXmlTag(block, "pubDate"));
 
   return {
@@ -8967,7 +8983,9 @@ function parseYouTubeSearchVideos(html) {
 
   return collectYouTubeVideoRenderers(data)
     .map((renderer) => ({
-      id: renderer.videoId,
+      // Eleven URL-safe characters is the only shape a YouTube id takes; anything else
+      // in this field would land in a watch?v= link, so it drops the video instead.
+      id: /^[A-Za-z0-9_-]{11}$/.test(String(renderer.videoId || "")) ? renderer.videoId : "",
       title: getYouTubeRendererText(renderer.title),
       channel: getYouTubeRendererText(renderer.ownerText) || getYouTubeRendererText(renderer.longBylineText),
       lengthSeconds: parseYouTubeDurationSeconds(getYouTubeRendererText(renderer.lengthText)),
@@ -9681,13 +9699,16 @@ async function enrichStageFinishVideos(races, now = new Date()) {
   return races;
 }
 
+// Both getters answer with an http(s) address or nothing: the curated map is ours,
+// but the provider-supplied finishVideoUrl is printed into an href and used to pass
+// through cleanFeedText only.
 function getStageFinishVideoUrl(race, stage) {
   const mapped = RACE_FINISH_VIDEO_URLS[getRaceId(race)];
   if (mapped && typeof mapped === "object" && mapped[stage?.number]) {
-    return mapped[stage.number];
+    return safeHttpUrl(mapped[stage.number]);
   }
 
-  return cleanFeedText(stage?.finishVideoUrl || "");
+  return safeHttpUrl(stage?.finishVideoUrl || "");
 }
 
 function getRaceFinishVideoUrl(race) {
@@ -9695,15 +9716,15 @@ function getRaceFinishVideoUrl(race) {
   const stageNumber = Number(race?.stageRace?.completedStages || race?.stageRace?.latestStage?.number || 0);
   if (mapped) {
     if (typeof mapped === "string") {
-      return mapped;
+      return safeHttpUrl(mapped);
     }
 
     if (mapped[stageNumber]) {
-      return mapped[stageNumber];
+      return safeHttpUrl(mapped[stageNumber]);
     }
   }
 
-  return cleanFeedText(race?.stageRace?.latestStage?.finishVideoUrl || race?.finishVideoUrl || "");
+  return safeHttpUrl(race?.stageRace?.latestStage?.finishVideoUrl || race?.finishVideoUrl || "");
 }
 
 function buildStageFinishLink(race, stage, isCurrentStage) {
@@ -16414,7 +16435,9 @@ function renderMarkdownInline(text) {
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  html = html.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^\s)]*)\)/g, (match, label, href) => {
+  // A site-relative address is one leading slash: "//host/x" is protocol-relative,
+  // would leave the site, and stays text like any other scheme (2026-09-26).
+  html = html.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/(?!\/))[^\s)]*)\)/g, (match, label, href) => {
     const external = /^https?:\/\//.test(href);
     return `<a href="${href}"${external ? ' target="_blank" rel="noreferrer"' : ""}>${label}</a>`;
   });
@@ -16460,10 +16483,11 @@ function renderMarkdown(markdown) {
       out.push("<hr />");
       continue;
     }
-    // An image alone on its line is a figure. Same address rule as a link — our own
-    // /assets or an https URL, nothing else — so a page saved from the site editor
-    // cannot smuggle a javascript: or data: source past escapeHtml.
-    const figure = line.match(/^!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]*)\)$/);
+    // An image alone on its line is a figure. Stricter than a link — our own /assets
+    // or an https URL, nothing else, never a protocol-relative "//host" — so a page
+    // saved from the site editor cannot smuggle a javascript: or data: source past
+    // escapeHtml, nor send readers' browsers to a plain-http host (2026-09-26).
+    const figure = line.match(/^!\[([^\]]*)\]\(((?:https:\/\/|\/assets\/)[^\s)]*)\)$/);
     if (figure) {
       flushParagraph();
       flushList();
@@ -16608,8 +16632,74 @@ function readRequestBody(request, limit) {
   });
 }
 
+// Failed edit keys are counted per client for ten minutes (2026-09-26). The first
+// three misses answer at once, so a typo costs nothing; after that each miss waits
+// twice as long as the last, up to thirty seconds, and past twenty the client is told
+// to come back when the window has passed without the key being compared at all. In
+// memory and bounded: clients whose window has closed are forgotten, and the map
+// never grows past SITE_EDIT_FAILURE_MAX_CLIENTS. The address itself is not logged;
+// the warning line carries a short hash so repeated attempts can be told apart in
+// the Railway logs.
+const SITE_EDIT_FAILURE_WINDOW_MS = 10 * 60 * 1000;
+const SITE_EDIT_FAILURE_FREE_MISSES = 3;
+const SITE_EDIT_FAILURE_LOCKOUT_MISSES = 20;
+const SITE_EDIT_FAILURE_MAX_DELAY_MS = 30 * 1000;
+const SITE_EDIT_FAILURE_MAX_CLIENTS = 1000;
+const siteEditFailures = new Map();
+
+function recordSiteEditFailure(clientKey, now = Date.now(), failures = siteEditFailures) {
+  for (const [key, entry] of failures) {
+    if (now - entry.firstAt >= SITE_EDIT_FAILURE_WINDOW_MS) {
+      failures.delete(key);
+    }
+  }
+  while (failures.size >= SITE_EDIT_FAILURE_MAX_CLIENTS && !failures.has(clientKey)) {
+    failures.delete(failures.keys().next().value);
+  }
+  const record = failures.get(clientKey) || { count: 0, firstAt: now };
+  record.count += 1;
+  failures.set(clientKey, record);
+  const excess = record.count - SITE_EDIT_FAILURE_FREE_MISSES;
+  return {
+    count: record.count,
+    delayMs: excess <= 0 ? 0 : Math.min(SITE_EDIT_FAILURE_MAX_DELAY_MS, 1000 * 2 ** (excess - 1)),
+    lockedOut: record.count > SITE_EDIT_FAILURE_LOCKOUT_MISSES,
+    retryAfterSeconds: Math.max(1, Math.ceil((record.firstAt + SITE_EDIT_FAILURE_WINDOW_MS - now) / 1000)),
+  };
+}
+
+function describeClientForLog(clientKey) {
+  return crypto.createHash("sha256").update(String(clientKey || ""), "utf8").digest("hex").slice(0, 12);
+}
+
 async function handleSiteContentUpdate(request, response) {
   if (!isAuthorizedSiteEdit(request.headers.authorization)) {
+    if (SITE_EDIT_TOKEN) {
+      const client = getClientAddress(request);
+      const failure = recordSiteEditFailure(client);
+      console.warn(
+        JSON.stringify({
+          event: "site-edit-auth-failed",
+          client: describeClientForLog(client),
+          failures: failure.count,
+          delayMs: failure.delayMs,
+          lockedOut: failure.lockedOut,
+          at: new Date().toISOString(),
+        }),
+      );
+      if (failure.lockedOut) {
+        sendJson(
+          response,
+          429,
+          { ok: false, error: "Too many failed edit keys. Try again later." },
+          { headers: { "retry-after": String(failure.retryAfterSeconds) } },
+        );
+        return;
+      }
+      if (failure.delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, failure.delayMs));
+      }
+    }
     sendJson(response, SITE_EDIT_TOKEN ? 401 : 403, {
       ok: false,
       error: SITE_EDIT_TOKEN ? "That edit key was not accepted." : "Editing is not enabled on this server.",
@@ -16679,6 +16769,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
         <div class="site-editor-actions">
           <button type="button" class="site-edit-button is-primary" data-site-save>Save</button>
           <button type="button" class="site-edit-button" data-site-cancel>Cancel</button>
+          <button type="button" class="site-edit-button" data-site-forget title="Forget the edit key this browser session remembered">Forget key</button>
         </div>
       </div>`
     : "";
@@ -16753,14 +16844,24 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
         var textarea = editor.querySelector("textarea");
         var saveButton = editor.querySelector("[data-site-save]");
         var cancelButton = editor.querySelector("[data-site-cancel]");
+        var forgetButton = editor.querySelector("[data-site-forget]");
         var page = editor.getAttribute("data-site-page");
         var original = textarea.value;
+        // The key lives in sessionStorage (since 2026-09-26; localStorage before): it
+        // goes when the tab closes and is asked for again next visit, so a script that
+        // later runs on this origin finds nothing once the maintainer has left. A copy
+        // an earlier build left in localStorage is cleared on sight.
         var KEY = "pcr-edit-key";
+        try {
+          window.localStorage.removeItem(KEY);
+        } catch (error) {
+          // Nothing to clear.
+        }
 
         function readKey(force) {
           var key = "";
           try {
-            key = window.localStorage.getItem(KEY) || "";
+            key = window.sessionStorage.getItem(KEY) || "";
           } catch (error) {
             key = "";
           }
@@ -16768,7 +16869,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
             key = window.prompt("Enter the edit key for this site") || "";
             try {
               if (key) {
-                window.localStorage.setItem(KEY, key);
+                window.sessionStorage.setItem(KEY, key);
               }
             } catch (error) {
               // Private mode: the key lives for this page only.
@@ -16779,7 +16880,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
 
         function forgetKey() {
           try {
-            window.localStorage.removeItem(KEY);
+            window.sessionStorage.removeItem(KEY);
           } catch (error) {
             // Nothing to forget.
           }
@@ -16814,6 +16915,13 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
           closeEditor();
           setStatus("");
         });
+
+        if (forgetButton) {
+          forgetButton.addEventListener("click", function () {
+            forgetKey();
+            setStatus("The edit key has been forgotten. You will be asked for it on the next save.");
+          });
+        }
 
         saveButton.addEventListener("click", function () {
           var key = readKey(false);
@@ -17022,27 +17130,263 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
 </html>`;
 }
 
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-  });
-  response.end(JSON.stringify(payload, null, 2));
+// ---------------------------------------------------------------------------------
+// Response helpers. Every body leaves through one of these, so the security headers,
+// the content negotiation and the byte count are set in one place.
+//
+// Compression (2026-09-26): the results page is 1.35 MB of HTML and the JSON payloads
+// are as large, and until now they all went out uncompressed. A client that accepts
+// br gets brotli at quality 5 (117 KB for the page, about 18 ms once), gzip level 6
+// otherwise (155 KB, about 29 ms); anything else gets the bytes as they are, and
+// bodies under a kilobyte are never compressed. The compression is synchronous on
+// purpose: the big bodies are cached per payload by getCachedResponseBody, so the
+// cost is paid once per rebuild rather than per request, and the rest are small.
+// ---------------------------------------------------------------------------------
+const zlib = require("zlib");
+// Taken from the module rather than the global: the test harness runs this file in a
+// VM that has no Buffer global.
+const { Buffer: NodeBuffer } = require("buffer");
+const COMPRESSIBLE_MIN_BYTES = 1024;
+const BROTLI_QUALITY = 5;
+const GZIP_LEVEL = 6;
+
+// Railway answers http:// with a 301 to https:// (checked 2026-09-26), so HSTS is safe
+// to send. No Content-Security-Policy yet: the page's scripts are inline and need a
+// per-request nonce on each <script> tag first (see handoff.md).
+function securityHeaders() {
+  return {
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  };
 }
 
-function sendHtml(response, statusCode, html) {
-  response.writeHead(statusCode, {
-    "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store",
-  });
-  response.end(html);
+function parseAcceptEncoding(headerValue) {
+  const accepted = new Set();
+  String(headerValue || "")
+    .split(",")
+    .forEach((part) => {
+      const [name, ...params] = part.trim().toLowerCase().split(";");
+      const quality = params.map((param) => param.trim()).find((param) => param.startsWith("q="));
+      const weight = quality ? Number(quality.slice(2)) : 1;
+      if (name && Number.isFinite(weight) && weight > 0) {
+        accepted.add(name);
+      }
+    });
+  return accepted;
 }
+
+function chooseResponseEncoding(request) {
+  const accepted = parseAcceptEncoding(request?.headers?.["accept-encoding"]);
+  if (accepted.has("br")) {
+    return "br";
+  }
+  if (accepted.has("gzip")) {
+    return "gzip";
+  }
+  return "identity";
+}
+
+function compressResponseBody(body, encoding) {
+  if (encoding === "br") {
+    return zlib.brotliCompressSync(body, {
+      params: {
+        [zlib.constants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+        [zlib.constants.BROTLI_PARAM_SIZE_HINT]: body.length,
+      },
+    });
+  }
+  if (encoding === "gzip") {
+    return zlib.gzipSync(body, { level: GZIP_LEVEL });
+  }
+  return body;
+}
+
+// A body ready to send under any encoding: the bytes plus a memo of each encoded form,
+// filled on first use, so a cached page is compressed once per encoding.
+function prepareResponseBody(text) {
+  const identity = NodeBuffer.isBuffer(text) ? text : NodeBuffer.from(String(text), "utf8");
+  return { identity, encoded: new Map() };
+}
+
+function encodeResponseBody(prepared, encoding) {
+  if (encoding === "identity" || prepared.identity.length < COMPRESSIBLE_MIN_BYTES) {
+    return { encoding: "identity", body: prepared.identity };
+  }
+  if (!prepared.encoded.has(encoding)) {
+    prepared.encoded.set(encoding, compressResponseBody(prepared.identity, encoding));
+  }
+  return { encoding, body: prepared.encoded.get(encoding) };
+}
+
+function sendPreparedBody(response, statusCode, contentType, prepared, options = {}) {
+  const { encoding, body } = encodeResponseBody(prepared, chooseResponseEncoding(response.req));
+  const headers = {
+    ...securityHeaders(),
+    "content-type": contentType,
+    "cache-control": options.cacheControl || "no-store",
+    vary: "accept-encoding",
+    "content-length": body.length,
+    ...(options.headers || {}),
+  };
+  if (encoding !== "identity") {
+    headers["content-encoding"] = encoding;
+  }
+  response.writeHead(statusCode, headers);
+  response.end(body);
+}
+
+// JSON goes out minified; `pretty: true` (from ?pretty=1) restores the indented form
+// for a person reading it in a browser. Pretty-printing doubled the bytes of every
+// API answer until 2026-09-26.
+function serializeJson(payload, pretty = false) {
+  return pretty ? JSON.stringify(payload, null, 2) : JSON.stringify(payload);
+}
+
+function sendJson(response, statusCode, payload, options = {}) {
+  sendPreparedBody(
+    response,
+    statusCode,
+    "application/json; charset=utf-8",
+    prepareResponseBody(serializeJson(payload, options.pretty === true)),
+    options,
+  );
+}
+
+function sendPreparedJson(response, statusCode, prepared, options = {}) {
+  sendPreparedBody(response, statusCode, "application/json; charset=utf-8", prepared, options);
+}
+
+function sendHtml(response, statusCode, html, options = {}) {
+  sendPreparedBody(response, statusCode, "text/html; charset=utf-8", prepareResponseBody(html), options);
+}
+
+function sendPreparedHtml(response, statusCode, prepared, options = {}) {
+  sendPreparedBody(response, statusCode, "text/html; charset=utf-8", prepared, options);
+}
+
+// Rendered pages and serialised payloads, kept until the payload rebuilds (2026-09-26;
+// before this, / was rendered and /api/races re-serialised on every request). The page
+// reads the clock (getCompetitionGroups tells live from upcoming by "now"), so the key
+// carries the UTC minute as well as fetchedAt: a rendered copy is reused for at most a
+// minute, which also bounds how long a late official snapshot (applied to the cached
+// data after first paint) can go unseen. /api/race-stages clears the cache outright
+// when it writes a deeper stage history back. Small and least-recently-used: a handful
+// of views, each holding its bytes plus the encodings that have been asked for.
+const RESPONSE_BODY_CACHE_LIMIT = 8;
+const responseBodyCache = new Map();
+
+function buildResponseCacheKey(data, view, now = Date.now()) {
+  return [view, data?.fetchedAt || "", Math.floor(now / 60000)].join("|");
+}
+
+function getCachedResponseBody(key, build, cache = responseBodyCache) {
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  const prepared = prepareResponseBody(build());
+  cache.set(key, prepared);
+  while (cache.size > RESPONSE_BODY_CACHE_LIMIT) {
+    cache.delete(cache.keys().next().value);
+  }
+  return prepared;
+}
+
+// Per-client token bucket for the API routes (2026-09-26): sixty requests to start
+// with, refilled at one a second. A page load fires up to ~27 news fills as the cards
+// scroll into view, so the burst is generous for a reader and still caps a loop at
+// sixty a minute. Keyed on the first x-forwarded-for address (Railway sets it) or the
+// socket. The page itself, /assets, the warm-up answers and the refresh button's polls
+// (/api/data-status every 2.5 s, /api/build-info) are never limited. Bounded: idle
+// buckets are forgotten when the map fills, oldest first if that is not enough.
+const API_RATE_LIMIT = { capacity: 60, refillPerSecond: 1 };
+const API_RATE_LIMIT_MAX_CLIENTS = 5000;
+const API_RATE_LIMIT_EXEMPT_PATHS = new Set(["/api/build-info", "/api/data-status"]);
+const apiRateBuckets = new Map();
+
+function getClientAddress(request) {
+  const forwarded = String(request?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || request?.socket?.remoteAddress || "unknown";
+}
+
+function isRateLimitedApiPath(pathname) {
+  return pathname.startsWith("/api/") && !API_RATE_LIMIT_EXEMPT_PATHS.has(pathname);
+}
+
+function pruneApiRateBuckets(now, limit, buckets) {
+  const fullAfterMs = (limit.capacity / limit.refillPerSecond) * 1000;
+  for (const [key, bucket] of buckets) {
+    if (now - bucket.updatedAt >= fullAfterMs) {
+      buckets.delete(key);
+    }
+  }
+  while (buckets.size >= API_RATE_LIMIT_MAX_CLIENTS) {
+    buckets.delete(buckets.keys().next().value);
+  }
+}
+
+function takeApiRateToken(clientKey, now = Date.now(), limit = API_RATE_LIMIT, buckets = apiRateBuckets) {
+  let bucket = buckets.get(clientKey);
+  if (!bucket) {
+    if (buckets.size >= API_RATE_LIMIT_MAX_CLIENTS) {
+      pruneApiRateBuckets(now, limit, buckets);
+    }
+    bucket = { tokens: limit.capacity, updatedAt: now };
+    buckets.set(clientKey, bucket);
+  }
+  const refill = (Math.max(0, now - bucket.updatedAt) / 1000) * limit.refillPerSecond;
+  bucket.tokens = Math.min(limit.capacity, bucket.tokens + refill);
+  bucket.updatedAt = now;
+  if (bucket.tokens >= 1) {
+    bucket.tokens -= 1;
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((1 - bucket.tokens) / limit.refillPerSecond)) };
+}
+
+// ?debug=1 on the payload routes returns cache ages, build timings and the deploy
+// marker. Public until 2026-09-26; now it needs the editor's bearer token or
+// DEBUG_PAYLOAD=1 in the environment, and anyone else asking gets the ordinary payload.
+function isDebugPayloadAllowed(request, options = {}) {
+  const envFlag = options.envFlag === undefined ? process.env.DEBUG_PAYLOAD : options.envFlag;
+  if (String(envFlag || "") === "1") {
+    return true;
+  }
+  const token = options.token === undefined ? SITE_EDIT_TOKEN : options.token;
+  return isAuthorizedSiteEdit(request?.headers?.authorization, token);
+}
+
+// Resolved lazily, like getSiteContentDir: the test harness's VM has no __dirname.
+function getServerRootDir() {
+  return typeof __dirname === "string" ? __dirname : process.cwd();
+}
+
+const STATIC_CONTENT_TYPES = {
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".ttf": "font/ttf",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".svg": "image/svg+xml; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+};
+// Text assets are negotiated like a page; fonts and images are already compressed.
+const COMPRESSIBLE_STATIC_EXTENSIONS = new Set([".css", ".js", ".svg"]);
 
 async function sendStaticFile(response, pathname) {
-  const assetRoot = path.join(__dirname, "assets");
-  const resolvedPath = path.normalize(path.join(__dirname, pathname));
+  const assetRoot = path.join(getServerRootDir(), "assets");
+  const resolvedPath = path.normalize(path.join(getServerRootDir(), pathname));
 
-  if (!resolvedPath.startsWith(assetRoot)) {
+  // The separator matters: a bare prefix test let /assets/../assets-other/x through.
+  if (!resolvedPath.startsWith(assetRoot + path.sep)) {
     sendHtml(
       response,
       403,
@@ -17054,22 +17398,19 @@ async function sendStaticFile(response, pathname) {
   try {
     const file = await fs.readFile(resolvedPath);
     const extension = path.extname(resolvedPath).toLowerCase();
-    const contentTypeByExtension = {
-      ".css": "text/css; charset=utf-8",
-      ".js": "application/javascript; charset=utf-8",
-      ".ttf": "font/ttf",
-      ".woff": "font/woff",
-      ".woff2": "font/woff2",
-      ".svg": "image/svg+xml; charset=utf-8",
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".webp": "image/webp",
-    };
+    const contentType = STATIC_CONTENT_TYPES[extension] || "application/octet-stream";
+    const cacheControl = "public, max-age=31536000, immutable";
+
+    if (COMPRESSIBLE_STATIC_EXTENSIONS.has(extension)) {
+      sendPreparedBody(response, 200, contentType, prepareResponseBody(file), { cacheControl });
+      return true;
+    }
 
     response.writeHead(200, {
-      "content-type": contentTypeByExtension[extension] || "application/octet-stream",
-      "cache-control": "public, max-age=31536000, immutable",
+      ...securityHeaders(),
+      "content-type": contentType,
+      "cache-control": cacheControl,
+      "content-length": file.length,
     });
     response.end(file);
     return true;
@@ -17115,6 +17456,19 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (!getShareView(url.pathname)) {
+      if (isRateLimitedApiPath(url.pathname)) {
+        const verdict = takeApiRateToken(getClientAddress(request));
+        if (!verdict.allowed) {
+          sendJson(
+            response,
+            429,
+            { error: "Too many requests. Try again shortly." },
+            { headers: { "retry-after": String(verdict.retryAfterSeconds) } },
+          );
+          return;
+        }
+      }
+
       if (url.pathname === "/api/build-info") {
         sendJson(response, 200, BUILD_INFO);
         return;
@@ -17138,8 +17492,18 @@ const server = http.createServer(async (request, response) => {
 
       if (url.pathname === "/api/homepage-data") {
         const data = await loadRaceData({ includeDeferred: false });
-        const debugRequested = url.searchParams.get("debug") === "1";
-        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : buildHomepageDataPayload(data));
+        const pretty = url.searchParams.get("pretty") === "1";
+        if (url.searchParams.get("debug") === "1" && isDebugPayloadAllowed(request)) {
+          sendJson(response, 200, buildRaceDataDebugPayload(data), { pretty });
+          return;
+        }
+        sendPreparedJson(
+          response,
+          200,
+          getCachedResponseBody(buildResponseCacheKey(data, pretty ? "homepage-data:pretty" : "homepage-data"), () =>
+            serializeJson(buildHomepageDataPayload(data), pretty),
+          ),
+        );
         return;
       }
 
@@ -17217,6 +17581,8 @@ const server = http.createServer(async (request, response) => {
         // render already has it, until the race-data cache next rebuilds.
         race.stageRace.stages = Array.isArray(preferredStages) ? preferredStages : race.stageRace.stages;
         attachCachedStageProfiles(race);
+        // The cached page and payloads were rendered without this history.
+        responseBodyCache.clear();
 
         sendJson(response, 200, {
           raceId: getRaceId(race),
@@ -17227,8 +17593,18 @@ const server = http.createServer(async (request, response) => {
 
       if (url.pathname === "/api/races") {
         const data = await loadRaceData({ includeDeferred: false });
-        const debugRequested = url.searchParams.get("debug") === "1";
-        sendJson(response, 200, debugRequested ? buildRaceDataDebugPayload(data) : data);
+        const pretty = url.searchParams.get("pretty") === "1";
+        if (url.searchParams.get("debug") === "1" && isDebugPayloadAllowed(request)) {
+          sendJson(response, 200, buildRaceDataDebugPayload(data), { pretty });
+          return;
+        }
+        sendPreparedJson(
+          response,
+          200,
+          getCachedResponseBody(buildResponseCacheKey(data, pretty ? "races:pretty" : "races"), () =>
+            serializeJson(data, pretty),
+          ),
+        );
         return;
       }
 
@@ -17242,12 +17618,14 @@ const server = http.createServer(async (request, response) => {
 
     const data = await loadRaceData({ includeDeferred: false });
 
-    sendHtml(
+    sendPreparedHtml(
       response,
       200,
-      buildHtmlPage(data, {
-        sharePath: url.pathname,
-      }),
+      getCachedResponseBody(buildResponseCacheKey(data, "page:" + url.pathname), () =>
+        buildHtmlPage(data, {
+          sharePath: url.pathname,
+        }),
+      ),
     );
   } catch (error) {
     logEvent("error", "request-failed", {
