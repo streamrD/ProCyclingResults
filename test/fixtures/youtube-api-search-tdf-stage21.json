@@ -7,16 +7,16 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-1",
-      "id": { "kind": "youtube#video", "videoId": "tdfOfficial21" },
+      "id": { "kind": "youtube#video", "videoId": "tdfOffici21" },
       "snippet": {
         "publishedAt": "2026-07-26T18:03:12Z",
         "channelId": "UCtdfOfficial",
         "title": "Extended Highlights - Stage 21 - Tour de France 2026",
         "description": "The final stage of the 2026 Tour de France.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/tdfOfficial21/default.jpg", "width": 120, "height": 90 },
-          "medium": { "url": "https://i.ytimg.com/vi/tdfOfficial21/mqdefault.jpg", "width": 320, "height": 180 },
-          "high": { "url": "https://i.ytimg.com/vi/tdfOfficial21/hqdefault.jpg", "width": 480, "height": 360 }
+          "default": { "url": "https://i.ytimg.com/vi/tdfOffici21/default.jpg", "width": 120, "height": 90 },
+          "medium": { "url": "https://i.ytimg.com/vi/tdfOffici21/mqdefault.jpg", "width": 320, "height": 180 },
+          "high": { "url": "https://i.ytimg.com/vi/tdfOffici21/hqdefault.jpg", "width": 480, "height": 360 }
         },
         "channelTitle": "Tour de France",
         "liveBroadcastContent": "none",
@@ -26,14 +26,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-2",
-      "id": { "kind": "youtube#video", "videoId": "tntStage21" },
+      "id": { "kind": "youtube#video", "videoId": "tntStage210" },
       "snippet": {
         "publishedAt": "2026-07-26T17:41:00Z",
         "channelId": "UCtntSportsCycling",
         "title": "EPIC FINALE! | Men&#39;s Tour de France 2026 Stage 21 Race Highlights",
         "description": "Race highlights from stage 21.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/tntStage21/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/tntStage210/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "TNT Sports Cycling",
         "liveBroadcastContent": "none",
@@ -43,14 +43,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-3",
-      "id": { "kind": "youtube#video", "videoId": "nbcStage21" },
+      "id": { "kind": "youtube#video", "videoId": "nbcStage210" },
       "snippet": {
         "publishedAt": "2026-07-26T19:10:45Z",
         "channelId": "UCnbcSports",
         "title": "Highlights: 2026 Tour de France, Stage 21 finish",
         "description": "Watch the finish of stage 21.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/nbcStage21/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/nbcStage210/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "NBC Sports",
         "liveBroadcastContent": "none",
@@ -60,14 +60,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-4",
-      "id": { "kind": "youtube#video", "videoId": "gcnWrongStage" },
+      "id": { "kind": "youtube#video", "videoId": "gcnWrongStg" },
       "snippet": {
         "publishedAt": "2026-07-25T17:30:00Z",
         "channelId": "UCgcn",
         "title": "Tour de France 2026 Stage 20 Highlights",
         "description": "Stage 20.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/gcnWrongStage/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/gcnWrongStg/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "Global Cycling Network",
         "liveBroadcastContent": "none",
@@ -77,14 +77,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-5",
-      "id": { "kind": "youtube#video", "videoId": "nbcWrongYear" },
+      "id": { "kind": "youtube#video", "videoId": "nbcWrongYr0" },
       "snippet": {
         "publishedAt": "2025-08-20T18:00:00Z",
         "channelId": "UCnbcSports",
         "title": "Tour de France 2025 Stage 21 Highlights",
         "description": "Last year's final stage.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/nbcWrongYear/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/nbcWrongYr0/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "NBC Sports",
         "liveBroadcastContent": "none",
@@ -111,14 +111,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-7",
-      "id": { "kind": "youtube#video", "videoId": "giroUnrelated" },
+      "id": { "kind": "youtube#video", "videoId": "giroUnrelat" },
       "snippet": {
         "publishedAt": "2026-06-25T17:00:00Z",
         "channelId": "UCeurosport",
         "title": "Giro d&#39;Italia 2026 Stage 21 Highlights",
         "description": "The Giro's final stage.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/giroUnrelated/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/giroUnrelat/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "Eurosport",
         "liveBroadcastContent": "none",
@@ -128,14 +128,14 @@
     {
       "kind": "youtube#searchResult",
       "etag": "fixture-8",
-      "id": { "kind": "youtube#video", "videoId": "shortClip" },
+      "id": { "kind": "youtube#video", "videoId": "shortClip00" },
       "snippet": {
         "publishedAt": "2026-07-26T18:20:00Z",
         "channelId": "UCrandomFan",
         "title": "Tour de France 2026 Stage 21 final sprint",
         "description": "Filmed from the barriers.",
         "thumbnails": {
-          "default": { "url": "https://i.ytimg.com/vi/shortClip/default.jpg", "width": 120, "height": 90 }
+          "default": { "url": "https://i.ytimg.com/vi/shortClip00/default.jpg", "width": 120, "height": 90 }
         },
         "channelTitle": "RandomFan",
         "liveBroadcastContent": "none",

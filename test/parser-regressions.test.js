@@ -2986,8 +2986,8 @@ test("fetchYouTubeApiSearchVideos maps Data API responses to the shape the searc
     return video;
   });
   assert.deepEqual(JSON.parse(JSON.stringify(withoutPublishedAt)), JSON.parse(JSON.stringify(scraped)));
-  assert.equal(mapped.find((video) => video.id === "tntStage21").title, "EPIC FINALE! | Men's Tour de France 2026 Stage 21 Race Highlights");
-  assert.equal(mapped.find((video) => video.id === "shortClip").verified, false);
+  assert.equal(mapped.find((video) => video.id === "tntStage210").title, "EPIC FINALE! | Men's Tour de France 2026 Stage 21 Race Highlights");
+  assert.equal(mapped.find((video) => video.id === "shortClip00").verified, false);
 });
 
 test("fetchYouTubeFinishVideoUrl on the Data API selects the video the search page selects", async () => {
@@ -3002,7 +3002,7 @@ test("fetchYouTubeFinishVideoUrl on the Data API selects the video the search pa
   });
 
   assert.equal(url, `https://www.youtube.com/watch?v=${selectFinishVideo(scraped, TDF_STAGE21_RACE).id}`);
-  assert.equal(url, "https://www.youtube.com/watch?v=tdfOfficial21");
+  assert.equal(url, "https://www.youtube.com/watch?v=tdfOffici21");
   // search.list first, then the two one-unit follow-ups; the key rides only as a query parameter.
   assert.deepEqual(
     stub.urls.map((requested) => new URL(requested).pathname),
@@ -3029,7 +3029,7 @@ test("fetchYouTubeFinishVideoUrl on the Data API still returns broadcaster video
 
   // No runtime and no subscriber count, so the official channel cannot be vouched for
   // and the best trusted broadcaster wins instead of nothing.
-  assert.equal(url, "https://www.youtube.com/watch?v=tntStage21");
+  assert.equal(url, "https://www.youtube.com/watch?v=tntStage210");
 });
 
 test("parseYouTubeIsoDurationSeconds and describeYouTubePublishedAge read the API's formats", () => {
@@ -3082,7 +3082,7 @@ test("resolveRaceFinishVideoUrl retries a miss every 20 minutes for six hours, t
   await at(1000);
   assert.equal(calls, 19);
 
-  answer = "https://www.youtube.com/watch?v=tdfOfficial21";
+  answer = "https://www.youtube.com/watch?v=tdfOffici21";
   assert.equal(await at(1060), answer);
   assert.equal(calls, 20);
   assert.equal(await at(1300), answer, "a hit is served from the cache");

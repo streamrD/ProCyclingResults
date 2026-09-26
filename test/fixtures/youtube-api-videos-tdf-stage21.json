@@ -6,31 +6,31 @@
     {
       "kind": "youtube#video",
       "etag": "fixture-v1",
-      "id": "tdfOfficial21",
+      "id": "tdfOffici21",
       "contentDetails": { "duration": "PT10M16S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
       "kind": "youtube#video",
       "etag": "fixture-v2",
-      "id": "tntStage21",
+      "id": "tntStage210",
       "contentDetails": { "duration": "PT9M19S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
       "kind": "youtube#video",
       "etag": "fixture-v3",
-      "id": "nbcStage21",
+      "id": "nbcStage210",
       "contentDetails": { "duration": "PT7M19S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
       "kind": "youtube#video",
       "etag": "fixture-v4",
-      "id": "gcnWrongStage",
+      "id": "gcnWrongStg",
       "contentDetails": { "duration": "PT8M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
       "kind": "youtube#video",
       "etag": "fixture-v5",
-      "id": "nbcWrongYear",
+      "id": "nbcWrongYr0",
       "contentDetails": { "duration": "PT7M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
@@ -42,13 +42,13 @@
     {
       "kind": "youtube#video",
       "etag": "fixture-v7",
-      "id": "giroUnrelated",
+      "id": "giroUnrelat",
       "contentDetails": { "duration": "PT8M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
     },
     {
       "kind": "youtube#video",
       "etag": "fixture-v8",
-      "id": "shortClip",
+      "id": "shortClip00",
       "contentDetails": { "duration": "PT48S", "dimension": "2d", "definition": "sd", "caption": "false", "licensedContent": false, "contentRating": {}, "projection": "rectangular" }
     }
   ]
