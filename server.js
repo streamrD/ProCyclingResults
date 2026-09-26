@@ -1980,54 +1980,116 @@ function seasonIncludesRace(season, race) {
   );
 }
 
+// One row of a season table: `{ header, content }` per cell, the attributes before a
+// cell's content dropped (`! scope="row" |`, `| style="…" |`). A `!` cell is a column
+// header unless it is the row's own header; `! a !! b` and `| a || b` carry several
+// cells on one line. The lines opening the table, its caption and its end are skipped.
+function splitSeasonTableRow(row) {
+  const cells = [];
+  for (const line of String(row || "").split("\n")) {
+    const isHeaderLine = line.startsWith("!");
+    if (!isHeaderLine && !/^\|(?![}+-])/.test(line)) {
+      continue;
+    }
+    line
+      .slice(1)
+      .split(isHeaderLine ? "!!" : "||")
+      .forEach((cell) => {
+        cells.push({
+          header: isHeaderLine && !/^\s*scope\s*=\s*"?row"?/i.test(cell),
+          content: cell.replace(/^\s*(?:[a-zA-Z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|"']+)\s*)+\|(?!\|)/, "").trim(),
+        });
+      });
+  }
+  return cells;
+}
+
+// Which column each field lives in. The header row names them, so a moved or inserted
+// column costs nothing; a table without a header row falls back to the season's
+// positional indexes, accepted only for rows with exactly the columns those assume.
+function resolveSeasonColumns(headerRow, season) {
+  const hasPodium = season.winnerMode === "podium";
+  if (!headerRow) {
+    const columns = {
+      race: 0,
+      date: season.dateIndex ?? 1,
+      winner: season.winnerIndex ?? 2,
+      second: hasPodium ? (season.secondIndex ?? 3) : -1,
+      third: hasPodium ? (season.thirdIndex ?? 4) : -1,
+    };
+    return { ...columns, expectedCount: Math.max(...Object.values(columns)) + 1 };
+  }
+  const names = headerRow.map((cell) => normalizeSearchText(stripWikiFootnoteTemplates(cell.content)));
+  const find = (pattern) => names.findIndex((name) => pattern.test(name));
+  const columns = {
+    race: find(/^(?:race|event|name)$/),
+    date: find(/^dates?$/),
+    winner: find(/^(?:winner|first|1st)$/),
+    second: hasPodium ? find(/^(?:second|2nd|runner ?-?up)$/) : -1,
+    third: hasPodium ? find(/^(?:third|3rd)$/) : -1,
+  };
+  return columns.race === -1 || columns.date === -1 || columns.winner === -1 ? null : { ...columns, expectedCount: 0 };
+}
+
+function buildSeasonRace(cells, columns, season, year) {
+  const cellAt = (index) => (index >= 0 ? cells[index] || "" : "");
+  const race = parseRaceCell(cellAt(columns.race));
+  const dateRange = parseDateRange(cellAt(columns.date), year);
+  const statusText = cleanWikiText(cells.filter((_, index) => index !== columns.race && index !== columns.date).join(" "));
+  const winner = parseAthleteDetails(cellAt(columns.winner));
+  const second = columns.second >= 0 ? parseAthleteDetails(cellAt(columns.second)) : { rider: "", countryCode: "" };
+  const third = columns.third >= 0 ? parseAthleteDetails(cellAt(columns.third)) : { rider: "", countryCode: "" };
+
+  return {
+    ...race,
+    series: season.label,
+    date: formatDateLabel(cellAt(columns.date), year),
+    winner: winner.rider,
+    winnerCountryCode: winner.countryCode || getRiderCountryCode(winner.rider),
+    second: second.rider,
+    secondCountryCode: second.countryCode || getRiderCountryCode(second.rider),
+    third: third.rider,
+    thirdCountryCode: third.countryCode || getRiderCountryCode(third.rider),
+    winnerPageTitle: winner.pageTitle || "",
+    secondPageTitle: second.pageTitle || "",
+    thirdPageTitle: third.pageTitle || "",
+    startDate: dateRange.start,
+    endDate: dateRange.end,
+    isCancelled: /\bcancelled\b/i.test(statusText),
+  };
+}
+
+// The season table is the root of every card. It used to be found by one exact table
+// class and read by fixed column positions, so `wikitable sortable plainrowheaders`, a
+// `style=` written before `class`, a `|- style=…` row separator or a moved column each
+// yielded no races and an empty site with every test green (R4, 2026-09-26). Any
+// wikitable carrying `plainrowheaders` now counts, rows split on any `|-` line, and the
+// header row says where the columns are. A table that still yields nothing is caught
+// one level up: buildRaceMetadata keeps its last populated build over an empty one.
 function parseSeasonRows(rawText, season, year) {
-  const tableMatches = [...String(rawText || "").matchAll(/\{\| class="wikitable plainrowheaders"[\s\S]*?\n\|\}/g)];
-  const dateIndex = season.dateIndex ?? 1;
-  const winnerIndex = season.winnerIndex ?? 2;
-  const secondIndex = season.secondIndex ?? 3;
-  const thirdIndex = season.thirdIndex ?? 4;
-  const statusStartIndex = season.statusStartIndex ?? winnerIndex;
+  const tables = [...String(rawText || "").matchAll(/\{\|[^\n]*\n[\s\S]*?\n\|\}/g)]
+    .map((match) => match[0])
+    .filter((table) => {
+      const classes = table.match(/^\{\|[^\n]*?\bclass\s*=\s*"([^"]*)"/)?.[1] || "";
+      return /\bwikitable\b/.test(classes) && /\bplainrowheaders\b/.test(classes);
+    });
 
-  return tableMatches
-    .flatMap((match) => match[0].split("\n|-\n").slice(1))
-    .map((row) => {
-      const cells = [];
-      for (const line of row.split("\n")) {
-        if (line.startsWith("!")) {
-          cells.push(line.replace(/^!\s*(?:scope="row"\s*\|\s*)?/, "").trim());
-        } else if (line.startsWith("|")) {
-          cells.push(line.replace(/^\|\s*/, "").trim());
-        }
+  return tables
+    .flatMap((table) => {
+      const rows = table
+        .split(/\n\|-(?:\s[^\n]*)?\n/)
+        .map(splitSeasonTableRow)
+        .filter((cells) => cells.length > 0);
+      const headerRow = rows.find((cells) => cells.length >= 2 && cells.every((cell) => cell.header));
+      const columns = resolveSeasonColumns(headerRow, season);
+      if (!columns) {
+        return [];
       }
-      return cells;
-    })
-    .filter((cells) => cells.length > winnerIndex)
-    .map((cells) => {
-      const race = parseRaceCell(cells[0]);
-      const dateRange = parseDateRange(cells[dateIndex], year);
-      const statusText = cleanWikiText(cells.slice(statusStartIndex).join(" "));
-      const hasPodium = season.winnerMode === "podium";
-      const winner = parseAthleteDetails(cells[winnerIndex]);
-      const second = hasPodium ? parseAthleteDetails(cells[secondIndex]) : { rider: "", countryCode: "" };
-      const third = hasPodium ? parseAthleteDetails(cells[thirdIndex]) : { rider: "", countryCode: "" };
-
-      return {
-        ...race,
-        series: season.label,
-        date: formatDateLabel(cells[dateIndex], year),
-        winner: winner.rider,
-        winnerCountryCode: winner.countryCode || getRiderCountryCode(winner.rider),
-        second: second.rider,
-        secondCountryCode: second.countryCode || getRiderCountryCode(second.rider),
-        third: third.rider,
-        thirdCountryCode: third.countryCode || getRiderCountryCode(third.rider),
-        winnerPageTitle: winner.pageTitle || "",
-        secondPageTitle: second.pageTitle || "",
-        thirdPageTitle: third.pageTitle || "",
-        startDate: dateRange.start,
-        endDate: dateRange.end,
-        isCancelled: /\bcancelled\b/i.test(statusText),
-      };
+      return rows
+        .filter((cells) => cells !== headerRow && !cells.every((cell) => cell.header))
+        .map((cells) => cells.map((cell) => cell.content))
+        .filter((cells) => cells.length > columns.winner && (!columns.expectedCount || cells.length === columns.expectedCount))
+        .map((cells) => buildSeasonRace(cells, columns, season, year));
     })
     .filter((race) => seasonIncludesRace(season, race));
 }
@@ -2334,15 +2396,23 @@ function normalizeWorldChampionshipEventKey(title) {
 }
 
 function parseWorldChampionshipMedalSummary(rawText) {
-  const section = findWikiSection(rawText, /medal(?:s| summary| table)?\b/i);
+  // Other years' editors head the table "Medallists", "Medalists" or "Medal table",
+  // name the event through {{Main|…}} and write the podium as {{FlagIOCmedalist}}; each
+  // is accepted (R9, 2026-09-26). "Medal table" is asked last because on some articles
+  // that heading is the count of medals by nation, not the podiums.
+  const section =
+    findWikiSection(rawText, /\bmedal(?:s|\s*summary)?\b(?!\s*table)|\bmedall?ists?\b/i) ||
+    findWikiSection(rawText, /\bmedal\s*table\b/i);
   const podiums = new Map();
 
   section.split(/\n\|-/).forEach((row) => {
-    const eventTitle = row.match(/\{\{\s*DetailsLink\s*\|\s*([^}|]+?)\s*\}\}/i)?.[1];
+    const eventTitle = row.match(
+      /\{\{\s*(?:DetailsLink|Main(?:\s*article)?)\s*\|\s*([^}|]+?)\s*(?:\|[^}]*)?\}\}/i,
+    )?.[1];
     if (!eventTitle) {
       return;
     }
-    const podium = [...row.matchAll(/\{\{\s*Flag[\s_]*medalist\s*\|([\s\S]+?)\}\}/gi)]
+    const podium = [...row.matchAll(/\{\{\s*Flag(?:IOC)?[\s_]*medall?ist\s*\|([\s\S]+?)\}\}/gi)]
       .slice(0, 3)
       .map((match) => {
         const args = splitWikiTemplateArgs(match[1]);
@@ -2417,6 +2487,7 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
 async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
   let lastStatus = 0;
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
+    let definitiveFailure = "";
     try {
       const response = await fetch(url, {
         headers: {
@@ -2435,7 +2506,10 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
         continue;
       }
 
-      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+      // A definitive answer — a missing page, a forbidden one — is thrown after the
+      // catch so it is never retried; only 429, 5xx and network errors are (R11,
+      // 2026-09-26: a missing Worlds page cost three requests every ten minutes).
+      definitiveFailure = `${response.status} ${response.statusText}`;
     } catch (error) {
       if (attempt >= FETCH_RETRY_DELAYS_MS.length) {
         // One line per request that gave up, after every retry: the host and the last
@@ -2450,6 +2524,10 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       }
 
       await sleep(FETCH_RETRY_DELAYS_MS[attempt]);
+    }
+
+    if (definitiveFailure) {
+      throw new Error(`Request failed: ${definitiveFailure}`);
     }
   }
 }
@@ -2504,7 +2582,12 @@ async function fetchWikiRevisionIndex(titles) {
 }
 
 // The latest known revision id for a tracked title, refreshing the whole index when it
-// is stale. Rejects when Wikipedia cannot answer, in which case the caller fetches.
+// is stale. When Wikipedia cannot answer (maxlag, an outage) the index is left as it
+// was and the failure counts as a check: until 2026-09-26 `checkedAt` stood still, so
+// every tracked page was fetched raw on every rebuild until the query recovered —
+// exactly when Wikipedia was under load (R12). A stale id serves the cached text for
+// at most the same window; a title the index never saw is fetched as before. The
+// failure is kept as `lastIndexError` on the index for the debug payload.
 async function getWikiRevision(title) {
   const now = Date.now();
   if (!wikiRevisionIndex.promise && now - wikiRevisionIndex.checkedAt >= WIKI_REVISION_INDEX_TTL_MS) {
@@ -2513,12 +2596,17 @@ async function getWikiRevision(title) {
       .then((revids) => {
         wikiRevisionIndex.revids = revids;
         wikiRevisionIndex.checkedAt = Date.now();
+        wikiRevisionIndex.lastIndexError = null;
         // Pages nobody has asked for in a day are dropped from the index and the cache.
         wikiRawCache.forEach((entry, key) => {
           if (Date.now() - entry.lastUsed > WIKI_RAW_CACHE_IDLE_MS) {
             wikiRawCache.delete(key);
           }
         });
+      })
+      .catch((error) => {
+        wikiRevisionIndex.checkedAt = Date.now();
+        wikiRevisionIndex.lastIndexError = { at: new Date().toISOString(), message: String(error?.message || error) };
       })
       .finally(() => {
         wikiRevisionIndex.promise = null;
@@ -3231,10 +3319,27 @@ function parseCyclingResultStandings(blockBody, maxRiders = MAX_RESULT_RIDERS, t
     .sort((left, right) => Number(left.place) - Number(right.place));
 }
 
-function findOverallRaceResult(blocks) {
-  const titledResult = blocks.find((block) => /\bresult\b/.test(normalizeSearchText(block.title)));
-  const fallbackResult = blocks.find((block) => parseCyclingResultStandings(block.body).length > 0);
-  const selectedBlock = titledResult || fallbackResult;
+// The one-day result among a page's {{cyclingresult}} blocks. Blocks whose title says
+// "result" are the candidates. Among them a block written for another year is skipped
+// — "2025 Result" under a "Previous edition" heading placed before this year's was
+// shown as this year's result (R10, 2026-09-26) — and, when the page text is given, a
+// block under the "Result(s)" heading is preferred. A caller that knows the race year
+// passes it; without it a titled block with no year in its title beats one with.
+function findOverallRaceResult(blocks, { rawText = "", raceYear = null } = {}) {
+  const candidates = (Array.isArray(blocks) ? blocks : []).filter((block) => block && typeof block === "object");
+  const titleYear = (block) => Number(String(block.title || "").match(/\b(?:19|20)\d{2}\b/)?.[0] || 0);
+  let titled = candidates.filter((block) => /\bresult\b/.test(normalizeSearchText(block.title)));
+  if (raceYear) {
+    titled = titled.filter((block) => !titleYear(block) || titleYear(block) === Number(raceYear));
+  } else if (titled.some((block) => !titleYear(block))) {
+    titled = titled.filter((block) => !titleYear(block));
+  }
+  const resultSection = rawText ? findWikiSection(rawText, /^==\s*(?:final\s+)?results?\s*==/i) : "";
+  const underHeading = resultSection
+    ? titled.find((block) => block.body && resultSection.includes(String(block.body).trim().slice(0, 200)))
+    : null;
+  const fallbackResult = candidates.find((block) => parseCyclingResultStandings(block.body).length > 0);
+  const selectedBlock = underHeading || titled[0] || fallbackResult;
 
   return selectedBlock ? parseCyclingResultStandings(selectedBlock.body) : [];
 }
@@ -4776,8 +4881,7 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
   const endUtc = toUtcDateOnly(race?.endDate) || new Date(Date.UTC(2026, 4, 9));
 
   if (
-    race?.pageTitle !== "2026 La Vuelta Femenina" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "La Vuelta Femenina") ||
     todayUtc.getTime() < startUtc.getTime() ||
     todayUtc.getTime() > endUtc.getTime()
   ) {
@@ -4870,8 +4974,7 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== "2026 Tour Auvergne-Rhône-Alpes" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "Tour Auvergne-Rhône-Alpes") ||
     !startUtc ||
     !endUtc ||
     todayUtc.getTime() < startUtc.getTime()
@@ -5109,8 +5212,7 @@ async function fetchAsoTourRankingsSnapshot(race, fetchHtml, source) {
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== source.pageTitle ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, source.pageTitle) ||
     !startUtc ||
     !endUtc ||
     todayUtc.getTime() < startUtc.getTime()
@@ -5607,8 +5709,7 @@ async function fetchGrandePremioAnicolorLiveSnapshot(race) {
   const endUtc = new Date(Date.UTC(2026, 4, 2));
 
   if (
-    race?.pageTitle !== "Grande Prémio Anicolor" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "Grande Prémio Anicolor") ||
     todayUtc.getTime() < startUtc.getTime() ||
     todayUtc.getTime() > endUtc.getTime()
   ) {
@@ -6525,8 +6626,7 @@ async function fetchGiroDItaliaOfficialSnapshot(race, fetchHtml = fetchText, now
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== "2026 Giro d'Italia" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "Giro d'Italia") ||
     !startUtc ||
     !endUtc ||
     todayUtc.getTime() < startUtc.getTime()
@@ -6593,8 +6693,7 @@ async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== "2026 Giro d'Italia Women" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "Giro d'Italia Women") ||
     !startUtc ||
     !endUtc ||
     todayUtc.getTime() < startUtc.getTime()
@@ -6658,8 +6757,7 @@ async function fetchTourOfGreeceOfficialSnapshot(race, fetchHtml = fetchText) {
   const endUtc = toUtcDateOnly(race?.endDate);
 
   if (
-    race?.pageTitle !== "Tour of Greece" ||
-    getRaceYear(race) !== 2026 ||
+    !matchesSeasonEdition(race, "Tour of Greece") ||
     !startUtc ||
     !endUtc ||
     todayUtc.getTime() < startUtc.getTime()
@@ -6701,75 +6799,50 @@ async function fetchTourOfGreeceOfficialSnapshot(race, fetchHtml = fetchText) {
   };
 }
 
+// The edition a provider is written for. Its markup and endpoints were checked
+// against one season's pages, and every provider used to match a literal
+// "2026 Tour de France", so the rollover would have dropped them all at once and every
+// Grand Tour would have fallen back to a Wikipedia-only card for the whole next season
+// (R8, 2026-09-26). A provider now names the race without its year and matches the
+// edition of the season the site is showing: the page title stripped of a leading
+// year, and a race year equal to SEASON_YEAR — read live, as resolveSeasonYear moves
+// it, never copied at load. The start-date gates inside each provider are unchanged.
+function stripEditionYear(title) {
+  return String(title || "")
+    .trim()
+    .replace(/^(?:19|20)\d{2}\s+/, "");
+}
+
+function matchesSeasonEdition(race, baseTitle, seasonYear = SEASON_YEAR) {
+  return stripEditionYear(race?.pageTitle) === stripEditionYear(baseTitle) && getRaceYear(race) === seasonYear;
+}
+
+function seasonEditionProvider(id, title, load) {
+  return { id, title, matches: (race, seasonYear) => matchesSeasonEdition(race, title, seasonYear), load };
+}
+
 const OFFICIAL_STAGE_RACE_PROVIDERS = [
-  {
-    id: "tour-de-romandie-prologue",
-    matches: (race) => race?.pageTitle === "2026 Tour de Romandie",
-    load: fetchTourDeRomandieOfficialSnapshot,
-  },
-  {
-    id: "la-vuelta-femenina-rankings",
-    matches: (race) => race?.pageTitle === "2026 La Vuelta Femenina",
-    load: fetchLaVueltaFemeninaOfficialSnapshot,
-  },
-  {
-    id: "grande-premio-anicolor-live",
-    matches: (race) => race?.pageTitle === "Grande Prémio Anicolor",
-    load: fetchGrandePremioAnicolorLiveSnapshot,
-  },
-  {
-    id: "vuelta-asturias",
-    matches: (race) => race?.pageTitle === "Vuelta Asturias",
-    load: fetchVueltaAsturiasOfficialSnapshot,
-  },
-  {
-    id: "tour-of-greece-results",
-    matches: (race) => race?.pageTitle === "Tour of Greece",
-    load: fetchTourOfGreeceOfficialSnapshot,
-  },
-  {
-    id: "tour-auvergne-rhone-alpes-rankings",
-    matches: (race) => race?.pageTitle === "2026 Tour Auvergne-Rhône-Alpes",
-    load: fetchTourAuvergneRhoneAlpesOfficialSnapshot,
-  },
-  {
-    id: "giro-ditalia-stage-one",
-    matches: (race) => race?.pageTitle === "2026 Giro d'Italia",
-    load: fetchGiroDItaliaOfficialSnapshot,
-  },
-  {
-    id: "tour-de-france-rankings",
-    matches: (race) => race?.pageTitle === "2026 Tour de France",
-    load: fetchTourDeFranceOfficialSnapshot,
-  },
-  {
-    id: "tour-de-france-femmes-rankings",
-    matches: (race) => race?.pageTitle === "2026 Tour de France Femmes",
-    load: fetchTourDeFranceFemmesOfficialSnapshot,
-  },
-  {
-    id: "giro-ditalia-women-rankings",
-    matches: (race) => race?.pageTitle === "2026 Giro d'Italia Women",
-    load: fetchGiroDItaliaWomenOfficialSnapshot,
-  },
-  {
-    id: "vuelta-a-espana-rankings",
-    matches: (race) => race?.pageTitle === "2026 Vuelta a España",
-    load: fetchVueltaAEspanaOfficialSnapshot,
-  },
+  seasonEditionProvider("tour-de-romandie-prologue", "Tour de Romandie", fetchTourDeRomandieOfficialSnapshot),
+  seasonEditionProvider("la-vuelta-femenina-rankings", "La Vuelta Femenina", fetchLaVueltaFemeninaOfficialSnapshot),
+  seasonEditionProvider("grande-premio-anicolor-live", "Grande Prémio Anicolor", fetchGrandePremioAnicolorLiveSnapshot),
+  seasonEditionProvider("vuelta-asturias", "Vuelta Asturias", fetchVueltaAsturiasOfficialSnapshot),
+  seasonEditionProvider("tour-of-greece-results", "Tour of Greece", fetchTourOfGreeceOfficialSnapshot),
+  seasonEditionProvider("tour-auvergne-rhone-alpes-rankings", "Tour Auvergne-Rhône-Alpes", fetchTourAuvergneRhoneAlpesOfficialSnapshot),
+  seasonEditionProvider("giro-ditalia-stage-one", "Giro d'Italia", fetchGiroDItaliaOfficialSnapshot),
+  seasonEditionProvider("tour-de-france-rankings", "Tour de France", fetchTourDeFranceOfficialSnapshot),
+  seasonEditionProvider("tour-de-france-femmes-rankings", "Tour de France Femmes", fetchTourDeFranceFemmesOfficialSnapshot),
+  seasonEditionProvider("giro-ditalia-women-rankings", "Giro d'Italia Women", fetchGiroDItaliaWomenOfficialSnapshot),
+  seasonEditionProvider("vuelta-a-espana-rankings", "Vuelta a España", fetchVueltaAEspanaOfficialSnapshot),
   {
     id: "vuelta-a-burgos-feminas-liveblog",
+    title: "Vuelta a Burgos Feminas",
     matches: (race) => isVueltaABurgosFeminasRace(race),
     load: fetchVueltaABurgosFeminasOfficialSnapshot,
   },
 ];
 
 const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
-  {
-    id: "eschborn-frankfurt",
-    matches: (race) => race?.pageTitle === "2026 Eschborn–Frankfurt",
-    load: fetchEschbornFrankfurtOfficialStandings,
-  },
+  seasonEditionProvider("eschborn-frankfurt", "Eschborn–Frankfurt", fetchEschbornFrankfurtOfficialStandings),
 ];
 
 function findOfficialRaceProvider(providers, race) {
@@ -7402,6 +7475,9 @@ function matchesWorldChampionshipEvent(text, race) {
 }
 
 function isLikelyRaceArticle(article, race) {
+  if (!article || typeof article !== "object") {
+    return false;
+  }
   const combinedText = normalizeSearchText([article.title, article.description, article.publisher].join(" "));
 
   // A Worlds event needs its own test. The shared token rule wants "championships"
@@ -7450,6 +7526,9 @@ function isLikelyRaceArticle(article, race) {
 }
 
 function isCurrentEditionRaceArticle(article, race) {
+  if (!article || typeof article !== "object") {
+    return false;
+  }
   const raceYear = getRaceYear(race);
   const combinedText = normalizeSearchText([article.title, article.description].join(" "));
   const articleTime = article.publishedAt ? new Date(article.publishedAt).getTime() : 0;
@@ -7561,6 +7640,9 @@ function normalizeArticleUrl(rawUrl) {
 }
 
 function scoreRaceArticle(article, race) {
+  if (!article || typeof article !== "object") {
+    return 0;
+  }
   const title = normalizeSearchText(article.title);
   const description = normalizeSearchText(article.description);
   const raceTokens = getRaceTokens(race);
@@ -7640,15 +7722,69 @@ function compareArticleRecency(left, right) {
   return (right.score || 0) - (left.score || 0);
 }
 
+// After a race has finished, its news line should open with the stories written about
+// the result, not with a preview that happens to carry the newest date: six days after
+// the 2026 Worlds men's time trial its card led with a pundit's pre-race quote (C6,
+// 2026-09-26). Stories are grouped before they are ordered by day — those dated on or
+// after the race's last day, in the host country's calendar, that read as result
+// coverage; then the other stories from that day on; then previews from that day on;
+// then anything older or undated — and within a group the newest day still leads and
+// the best score wins the day. A live or upcoming race is left alone: there is no
+// result to lead with yet, and a live stage race's stories are chosen on their own.
+const RESULT_COVERAGE_PATTERN =
+  /\bresults?\b|\bwins\b|\bwon\b|\bvictory\b|\bpodium\b|\breport\b|\brecap\b|\bhighlights\b|\bgallery\b|\bchampion\b|\btitle\b/i;
+const PRE_RACE_COVERAGE_PATTERN =
+  /\bpreview\b|\bcontenders\b|\bguide\b|\bhow to watch\b|\bwhere to watch\b|\bstart ?list\b|\bfavou?rites\b|\bpredictions?\b|\bahead of\b/i;
+
+function getFinishedRaceLastDay(race, now = new Date()) {
+  const endUtc = toUtcDateOnly(race?.endDate);
+  const todayUtc = toUtcDateOnly(now);
+  return endUtc && todayUtc && endUtc.getTime() < todayUtc.getTime() ? endUtc : null;
+}
+
+function isArticleOnOrAfterRaceDay(article, race, dayUtc) {
+  const publishedAt = article?.publishedAt ? new Date(article.publishedAt) : null;
+  if (!publishedAt || Number.isNaN(publishedAt.getTime()) || !dayUtc) {
+    return false;
+  }
+  return getRaceLocalDate(race, publishedAt).getTime() >= dayUtc.getTime();
+}
+
+function rankFinishedRaceArticleGroup(article, race, lastDayUtc) {
+  if (!isArticleOnOrAfterRaceDay(article, race, lastDayUtc)) {
+    return 3;
+  }
+  const title = String(article?.title || "");
+  if (PRE_RACE_COVERAGE_PATTERN.test(title)) {
+    return 2;
+  }
+  return RESULT_COVERAGE_PATTERN.test(title) ? 0 : 1;
+}
+
+function orderRaceArticlesForDisplay(articles, race, now = new Date()) {
+  const ordered = [...articles].sort(compareArticleRecency);
+  const lastDayUtc = race ? getFinishedRaceLastDay(race, now) : null;
+  if (!lastDayUtc) {
+    return ordered;
+  }
+  return ordered
+    .map((article, index) => ({ article, index, group: rankFinishedRaceArticleGroup(article, race, lastDayUtc) }))
+    .sort((left, right) => left.group - right.group || left.index - right.index)
+    .map((entry) => entry.article);
+}
+
 function selectRaceArticles(articlePool, refreshToken, race = null) {
+  // A pool of another shape must not fail the news endpoint: a missing pool is an
+  // empty one and a null entry is dropped (R13, 2026-09-26).
+  const pool = (Array.isArray(articlePool) ? articlePool : []).filter((article) => article && typeof article === "object");
   // Rank by score to choose the quality pool, but display most-recent-first so the
   // current result leads instead of an older (if higher-scored) article.
-  const rankedPool = [...articlePool]
+  const rankedPool = [...pool]
     .sort((left, right) => right.score - left.score)
     .slice(0, 32);
 
   if (rankedPool.length <= MAX_RACE_ARTICLES) {
-    return [...rankedPool].sort(compareArticleRecency);
+    return orderRaceArticlesForDisplay(rankedPool, race);
   }
 
   const hasLiveStageContext = Boolean(race && isMultiDayRace(race) && !isFinalizedStageRace(race) && getRaceCoverageStageNumber(race) > 0);
@@ -7687,9 +7823,9 @@ function selectRaceArticles(articlePool, refreshToken, race = null) {
     return selected.slice(0, MAX_RACE_ARTICLES);
   }
   // Most-recent-first; the refresh token pages through older batches.
-  const orderedPool = [...rankedPool].sort(compareArticleRecency);
+  const orderedPool = orderRaceArticlesForDisplay(rankedPool, race);
   const batchCount = Math.ceil(orderedPool.length / MAX_RACE_ARTICLES);
-  const batchIndex = refreshToken % batchCount;
+  const batchIndex = (Number(refreshToken) || 0) % batchCount;
   const startIndex = batchIndex * MAX_RACE_ARTICLES;
   const batch = orderedPool.slice(startIndex, startIndex + MAX_RACE_ARTICLES);
 
@@ -8211,20 +8347,53 @@ function findSeasonOpening(races, year) {
   return first ? { year, date: first.date, title: first.title } : null;
 }
 
+// The race-keyed caches of the season just closed — article pools, finish videos,
+// settled official snapshots, team names, missing Worlds pages, the deferred group
+// payloads and requested stage histories. Cleared once, by resolveSeasonYear when the
+// year moves; they would otherwise hold a whole season nobody asks for again (M12,
+// 2026-09-26). Left alone: the stage-profile cache (seeded from a committed file and
+// keyed by page title), the raw wikitext cache (it evicts itself after a day idle) and
+// anything keyed by year.
+function clearSeasonCaches() {
+  [
+    articleCache,
+    finishVideoCache,
+    officialSnapshotCache,
+    teamNameCache,
+    worldChampionshipMissingPages,
+    deferredGroupDataCaches,
+    stageHistoryCache,
+  ].forEach((cache) => cache.clear());
+}
+
 // The season to show today. Until the calendar year's first race is a week away the
 // site stays on the season before, which by then is closed and says when the next one
 // starts. It never steps back within a process: a failed probe after the change of
-// season must not flip the page back to last year.
+// season must not flip the page back to last year. The season's caches are cleared
+// here, and only here, the moment the year moves on.
 async function resolveSeasonYear(today = new Date(), probe = probeSeasonOpening, current = SEASON_YEAR) {
   const calendarYear = today.getUTCFullYear();
   const previous = Math.max(FIRST_SEASON_YEAR, calendarYear - 1);
+  let resolved;
   if (current >= calendarYear || calendarYear <= previous) {
-    return Math.max(current, previous);
+    resolved = Math.max(current, previous);
+  } else {
+    const opening = await probe(calendarYear);
+    const switchesAt = opening ? Date.parse(`${opening.date}T00:00:00Z`) - SEASON_ROLLOVER_LEAD_DAYS * SEASON_DAY_MS : Infinity;
+    resolved = Math.max(current, today.getTime() >= switchesAt ? calendarYear : previous);
   }
-  const opening = await probe(calendarYear);
-  const switchesAt = opening ? Date.parse(`${opening.date}T00:00:00Z`) - SEASON_ROLLOVER_LEAD_DAYS * SEASON_DAY_MS : Infinity;
-  return Math.max(current, today.getTime() >= switchesAt ? calendarYear : previous);
+  if (resolved !== current) {
+    clearSeasonCaches();
+  }
+  return resolved;
 }
+
+// The last metadata build that found any race. A build that finds none — a table whose
+// class or columns changed, a truncated page, an outage upstream — never replaces it:
+// the site would go empty with no error, as the season-table parser could until
+// 2026-09-26 (R4). The kept build is handed out again marked `rejectedEmptyBuildAt`
+// so the debug payload can say so.
+let lastPopulatedRaceMetadata = null;
 
 async function buildRaceMetadata(options = {}) {
   const startedAt = Date.now();
@@ -8246,6 +8415,13 @@ async function buildRaceMetadata(options = {}) {
 
   const allRaces = [...seasonPages.flat(), ...worldChampionshipEvents]
     .filter((race) => race.pageTitle && race.startDate && race.endDate && !race.isCancelled);
+  if (allRaces.length === 0 && lastPopulatedRaceMetadata) {
+    return {
+      ...lastPopulatedRaceMetadata,
+      rejectedEmptyBuildAt: new Date().toISOString(),
+      buildTimings: { ...lastPopulatedRaceMetadata.buildTimings, totalMs: Date.now() - startedAt, seasonPagesMs },
+    };
+  }
   allRaces.forEach((race) => {
     race.id = getRaceId(race);
   });
@@ -8256,6 +8432,23 @@ async function buildRaceMetadata(options = {}) {
     seasonCalendar.races.length && !seasonCalendar.liveCount && !seasonCalendar.upcomingCount
       ? await probeSeasonOpening(SEASON_YEAR + 1)
       : null;
+  if (allRaces.length > 0) {
+    lastPopulatedRaceMetadata = {
+      allRaces,
+      seasonYear: SEASON_YEAR,
+      nextSeasonOpening,
+      fetchedAt: new Date().toISOString(),
+      buildTimings: {
+        totalMs: 0,
+        seasonPagesMs,
+        locationEnrichmentMs: 0,
+        locationEnrichmentMode: "background",
+        seasonCount: seasons.length,
+        displayRaceCount: 0,
+        allRaceCount: allRaces.length,
+      },
+    };
+  }
 
   const {
     recentOneDayResults,
