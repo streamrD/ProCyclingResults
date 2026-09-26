@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<iframe id="f" src="home.html" style="width:390px;height:844px;border:0"></iframe><pre id="out"></pre>
+<script>
+const f=document.getElementById('f');
+f.addEventListener('load',()=>{
+  const d=f.contentDocument; const lines=[];
+  const root=d.querySelector('.national-almanac-grid');
+  const all=[...root.querySelectorAll('*')];
+  // leaf culprits: elements wider than 380 whose children are all narrower than 380
+  const culprits=all.filter(e=>{const r=e.getBoundingClientRect(); if(r.width<=380) return false; return [...e.children].every(c=>c.getBoundingClientRect().width<=380);});
+  culprits.slice(0,15).forEach(e=>{const r=e.getBoundingClientRect(); const cs=f.contentWindow.getComputedStyle(e); lines.push(e.tagName.toLowerCase()+'.'+String(e.className).split(' ').slice(0,2).join('.')+' w='+Math.round(r.width)+' display='+cs.display+' flexWrap='+cs.flexWrap+' gridCols='+cs.gridTemplateColumns.slice(0,60)+' minW='+cs.minWidth+' text='+(e.textContent||'').trim().slice(0,60).replace(/\s+/g,' '));});
+  const cs=f.contentWindow.getComputedStyle(root); lines.push('almanac grid cols='+cs.gridTemplateColumns+' width='+root.getBoundingClientRect().width);
+  const sec=d.querySelector('#national-championships'); lines.push('section width='+sec.getBoundingClientRect().width+' overflow='+f.contentWindow.getComputedStyle(sec).overflow);
+  document.getElementById('out').textContent=lines.join('\n');
+});
+</script></body></html>

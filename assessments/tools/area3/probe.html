@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}</style></head><body>
+<iframe id="f" src="home.html" style="width:390px;height:844px;border:0"></iframe>
+<pre id="out"></pre>
+<script>
+const f=document.getElementById('f');
+f.addEventListener('load',()=>{
+  const d=f.contentDocument, w=f.contentWindow;
+  const lines=[];
+  lines.push('clientWidth='+d.documentElement.clientWidth+' scrollWidth='+d.documentElement.scrollWidth+' bodyScrollWidth='+d.body.scrollWidth+' pageHeight='+d.documentElement.scrollHeight);
+  const wide=[...d.querySelectorAll('body *')].filter(e=>{const r=e.getBoundingClientRect();return r.right>d.documentElement.clientWidth+1 && r.width>0 && !e.closest('[hidden]')});
+  lines.push('elements past right edge='+wide.length);
+  wide.slice(0,25).forEach(e=>{const r=e.getBoundingClientRect();lines.push('  '+e.tagName.toLowerCase()+'.'+String(e.className).split(' ').slice(0,3).join('.')+' right='+Math.round(r.right)+' w='+Math.round(r.width)+' top='+Math.round(r.top+w.scrollY))});
+  for(const sel of ['.hero','.hero-menu','#season-calendar','#world-championships','#world-championships article','#world-championships .competition-block:last-child','#mens-worldtour','#mens-worldtour article','#mens-worldtour [id^=race-vuelta]','#womens-worldtour','#womens-worldtour article','#national-championships','.national-groups','footer','.site-footer']){
+    const e=d.querySelector(sel); if(!e){lines.push(sel+' -> none');continue;}
+    const r=e.getBoundingClientRect(); lines.push(sel+' top='+Math.round(r.top+w.scrollY)+' h='+Math.round(r.height)+' screens='+((r.top+w.scrollY)/844).toFixed(1));
+  }
+  // tap targets: interactive elements under 44px
+  const inter=[...d.querySelectorAll('a,button,summary,input,[tabindex]')].filter(e=>!e.closest('[hidden]'));
+  const small=inter.filter(e=>{const r=e.getBoundingClientRect();return r.height>0 && (r.height<32||r.width<32)});
+  lines.push('interactive='+inter.length+' small(<32px)='+small.length);
+  const byClass={};small.forEach(e=>{const k=e.tagName.toLowerCase()+'.'+String(e.className).split(' ')[0];const r=e.getBoundingClientRect();byClass[k]=byClass[k]||{n:0,h:Math.round(r.height),w:Math.round(r.width)};byClass[k].n++});
+  Object.entries(byClass).sort((a,b)=>b[1].n-a[1].n).slice(0,20).forEach(([k,v])=>lines.push('  '+k+' n='+v.n+' h='+v.h+' w='+v.w));
+  // headings
+  lines.push('h1='+d.querySelectorAll('h1').length+' h2='+d.querySelectorAll('h2').length+' h3='+d.querySelectorAll('h3').length+' h4='+d.querySelectorAll('h4').length);
+  lines.push('svg total='+d.querySelectorAll('svg').length+' svg[aria-hidden]='+d.querySelectorAll('svg[aria-hidden="true"]').length+' svg[role=img]='+d.querySelectorAll('svg[role="img"]').length+' svg[aria-label]='+d.querySelectorAll('svg[aria-label]').length);
+  lines.push('landmarks: main='+d.querySelectorAll('main').length+' nav='+d.querySelectorAll('nav').length+' header='+d.querySelectorAll('header').length+' footer='+d.querySelectorAll('footer').length+' skip-link='+d.querySelectorAll('a[href="#main"],.skip-link').length);
+  lines.push('lang='+d.documentElement.lang);
+  document.getElementById('out').textContent=lines.join('\n');
+});
+</script></body></html>

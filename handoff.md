@@ -347,8 +347,9 @@ occupies space until a reader asks for it.
 - The hatched national-championship windows appear here too, so the two features share
   one explanation of why the championships section goes quiet by September.
 
-Known gap: the hero and page already overflow a 390px viewport in headless Chrome on
-production; this section did not cause it and does not fix it.
+Known gap, corrected 2026-09-26: the hero fits a true 390px viewport. What overflows is the
+National Championships almanac grid, clipped by its section (assessment finding A2 in
+`assessments/2026-09-26/`); this section did not cause it and does not fix it.
 
 ## Editable Site Pages
 
@@ -632,7 +633,7 @@ under `pcr-profile-view` and applies it to every measured profile on the page. P
 and the start and finish towns run into the caption, so the button is hidden there and
 `applyProfileView` refuses the class while `matchMedia("(max-width: 720px)")` matches
 (decided 2026-09-05). The stored choice is kept, so rotating a tablet back restores it;
-`test/browser-smoke.test.js` runs a second Chrome pass at 390px to guard this. A stage without one gets the `STAGE_TYPE_GLYPHS` icon for its type — the
+`test/browser-smoke.test.js` runs a second Chrome pass at `--window-size=390,844` to guard this (which this machine's Chrome lays out at 500px, see 2026-09-26 below, so it guards the 500px layout). A stage without one gets the `STAGE_TYPE_GLYPHS` icon for its type — the
 same icon for every stage of that type, in a dashed box, with the note "no elevation
 profile is available" — because a plausible-looking silhouette was tried first and read
 as a real profile (the user spotted three Tour mountain stages drawn nearly alike). Do
@@ -1510,7 +1511,7 @@ stage that has not happened, so the two carry different titles.
 - Retired section support still exists as hooks and archived config, but there are no active deferred groups.
 - YouTube finish-video search and official providers (e.g. letour.fr) depend on third-party page structure; expect occasional parser drift there too.
 - There is no schema validation for upstream payloads.
-- The hero and page overflow a 390px viewport in headless Chrome, on production as well as locally. Noticed on 2026-09-04 while checking the season calendar's phone layout; not caused by it and not yet fixed.
+- Corrected 2026-09-26: the hero does not overflow a true 390px viewport; the earlier note came from headless Chrome's 500px minimum window. The National Championships almanac grid does overflow at 390px and is clipped (assessment finding A2), not yet fixed.
 - Every save from the site editor is a commit to `main` and therefore a Railway redeploy (about 30s, then a short warm-up during which `/` serves the warm-up page and `/api/homepage-data` returns 202). Two saves within seconds can make the second one hit a GitHub 409; the server re-reads the file version and retries once.
 - When you push, another commit may already be on `origin/main` from the site editor. Always `git pull --rebase origin main` before `git push`; a hand edit to `data/release-notes.md` can conflict with an edit the maintainer made on the site.
 - CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer, the refresh button against a stubbed fetch) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
@@ -1661,10 +1662,12 @@ README, this file and the `DATA-SOURCES.md` review log in the same commit.
 
 Traps that cost time:
 
-- Headless Chrome will not open a window narrower than about 500px in the old headless
-  mode; a `--window-size=390,…` screenshot comes out 390 wide but laid out at ~500 and
-  looks clipped. `--headless=new` honours the width. The smoke test's phone run was
-  already on the new mode and is fine.
+- Headless Chrome will not open a window narrower than about 500px; a
+  `--window-size=390,…` screenshot comes out 390 wide but laid out at ~500 and looks
+  clipped. Measured 2026-09-26 on Chrome 153: `--headless=new` and `--headless` both
+  report `innerWidth` 500 at that size, so the smoke test's phone pass is a 500px pass.
+  For a true 390px layout host the saved page in a 390px iframe
+  (`assessments/tools/area2/frame.sh`, `assessments/tools/area3/frame390.html`).
 - `git pull --rebase` refuses with unstaged changes; commit first, then pull, then push
   (the site editor may have committed to `main` in the meantime).
 
@@ -1881,6 +1884,14 @@ display who won the jerseys". The first was a bug, the second was not. Details a
 - **What the unit tests did not catch.** The first cut called `isWorldTourRace` from `buildRaceMetadata`, but that helper is a local inside `buildRaceData`. Every test passed and the local server sat on the warm-up page forever, because the warm-up swallows build errors. Running `buildRaceMetadata` + `buildRaceData` directly in a VM (as the tests load server.js) surfaced the ReferenceError in one step. Do that before trusting a change to the metadata build.
 - **Wikipedia answers a missing season page with 200 and a redirect stub**, not a 404, so `probeSeasonOpening` sees an empty parse and caches a miss for a day (two requests). A thrown error is retried after ten minutes instead.
 - **Still to do by hand:** a release-notes line when the note first appears (19 October 2026, the morning after the Tour of Guangxi), and a look at the site the week of the rollover (around 9 January 2027): the Cyclingnews nationals address is a guess from the pattern, the Worlds parser has only met the 2026 article, and the 2026 race-specific fixes will have stepped aside.
+
+## Process Lessons From The 2026-09-26 Session
+
+- The Worlds women's road race day. The medal-summary fallback worked (podium, video and eight stories while the event page was a red link), and it exposed that every 2026 event page heads the rider column "Athlete"; fixed in `9dc326f` (see "World Championships" above).
+- The first full project assessment was run the same evening: nine areas in parallel, read-only, against `9dc326f`. The report, the per-area findings with evidence, the recheck tools and the cadence are under `assessments/` (start at `assessments/README.md`). Findings keep their IDs from one report to the next; the plan's Phase 0 is due before Il Lombardia on 10 October.
+- Three things from it that the next race-day session should know before it is reported: a one-day WorldTour race has no card on its own race day and its winner arrives on the hourly metadata cadence (finding R1; the Worlds-only exception is `isWorldChampionshipEventAwaitingResult`); on production that evening 3 of 44 cards carried a finish video, all Worlds, and no WorldTour card or stage did (R7, and the YouTube search is a robots-disallowed scrape, L1); ten of fourteen finished one-day cards showed three names because `HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT` counts Worlds events it then skips (R6).
+- CI is advisory: the five red runs on 2026-09-15 all deployed. Until Railway's wait-for-CI is on, `npm test` before pushing is the only gate.
+- The "hero overflows at 390px" note was a headless-Chrome artefact (both headless modes lay out at 500px on this machine); the nationals grid clipping is real. Corrected above.
 
 ## Suggested First Checks For A New Agent
 

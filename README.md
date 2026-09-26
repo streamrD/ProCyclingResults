@@ -20,6 +20,8 @@ Use `handoff.md` alongside this README when transferring the project to another 
 
 The app is a live race desk for the current season's selected UCI calendars (2026 at launch; the season year rolls over by itself, see "Season Year And Close-Out" below). It surfaces:
 
+**Who it is for.** The reader is a recreational road cyclist who rides at weekends, watches the Tour and a few classics on television, and follows a handful of riders by name. They know the big races and the big names but not every jersey, abbreviation or series. They visit on a phone, in a spare minute, most days during a Grand Tour or the Worlds and once or twice a week otherwise. They want three things: a picture of the race landscape ahead, today's result as soon as it is available, and a reason to look forward to what is next. Every change is judged against those three jobs (adopted 2026-09-26; see `assessments/`).
+
 - Recent one-day race results
 - Live multi-stage race standings
 - Finalized stage-race classifications
