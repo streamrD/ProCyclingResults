@@ -5575,7 +5575,7 @@ test("buildStageRaceCard lists the jersey holders under the general classificati
   assert.match(gcSection, /class="jersey-holders"/);
   assert.match(gcSection, /Jersey holders</);
   assert.equal((gcSection.match(/class="jersey-item"/g) || []).length, 4);
-  assert.match(gcSection, /<span class="jersey-classification">Points<\/span>\s*<span class="jersey-holder rider-name"><span class="country-flag" title="Belgium"/);
+  assert.match(gcSection, /<span class="jersey-classification" title="Points: sprint and intermediate points">Points<\/span>\s*<span class="jersey-holder rider-name"><span class="country-flag" title="Belgium"/);
   assert.match(gcSection, /aria-label="dark green jersey"/);
   // Polka dots are drawn as dots on white; an unnamed jersey is an outlined blank.
   assert.match(gcSection, /aria-label="blue polkadot jersey"[^]*?fill="#ffffff"[^]*?<circle[^>]*fill="#0a63c9"/);
@@ -6456,11 +6456,13 @@ test("the jersey list carries its contenders card, priced in whatever the classi
   // The classification carries the card, not the rider beside it: the rider's name
   // already opens the rider card.
   assert.equal((html.match(/<template class="jersey-card-source">/g) || []).length, 2);
-  assert.match(html, /<span class="jersey-classification has-contenders" data-jersey-contenders>Points<\/span>/);
+  // With a card the label is a button (a tap or Enter opens the top five too, since
+  // 2026-09-26) with a one-line gloss of what the classification is scored on.
+  assert.match(html, /<button type="button" class="jersey-classification has-contenders" data-jersey-contenders aria-expanded="false" title="Points: sprint and intermediate points">Points<\/button>/);
   assert.match(html, /<span class="jersey-classification">Polish rider<\/span>/);
   // The swatch beside a classification with a card is a second way onto it; beside
   // one without, it stays a plain swatch.
-  assert.match(html, /<svg class="jersey-swatch has-contenders" data-jersey-contenders-swatch [^>]*aria-label="dark green jersey">[\s\S]*?<span class="jersey-classification has-contenders" data-jersey-contenders>Points<\/span>/);
+  assert.match(html, /<svg class="jersey-swatch has-contenders" data-jersey-contenders-swatch [^>]*aria-label="dark green jersey">[\s\S]*?<button type="button" class="jersey-classification has-contenders" data-jersey-contenders[^>]*>Points<\/button>/);
   assert.match(html, /<svg class="jersey-swatch" viewBox[^>]*>[\s\S]*?<span class="jersey-classification">Polish rider<\/span>/);
   assert.ok(!/Polish rider<\/span>[\s\S]*?<template/.test(html));
 
@@ -6543,7 +6545,7 @@ test("every card links out to the full placings on ProCyclingStats", () => {
     winner: "Remco Evenepoel",
     finishVideoUrl: "https://www.youtube.com/watch?v=quebec",
   });
-  assert.match(oneDay, /<div class="race-links">\s*<a class="race-finish-link" href="https:\/\/www\.youtube\.com\/watch\?v=quebec"[\s\S]*?<a class="race-results-link" href="https:\/\/www\.procyclingstats\.com\/race\/gp-quebec\/2026\/result" target="_blank" rel="noreferrer">Full results<\/a><\/div>/);
+  assert.match(oneDay, /<div class="race-links">\s*<a class="race-finish-link" href="https:\/\/www\.youtube\.com\/watch\?v=quebec"[\s\S]*?<a class="race-results-link" href="https:\/\/www\.procyclingstats\.com\/race\/gp-quebec\/2026\/result" target="_blank" rel="noreferrer">Full results on ProCyclingStats ↗<\/a><\/div>/);
 
   // A stage panel links its own stage.
   const stageRace = {
@@ -6585,8 +6587,9 @@ test("every card links out to the full placings on ProCyclingStats", () => {
   };
   const card = buildStageRaceCard(stageRace, { live: true });
   const [, stageOnePanel = "", stageTwoPanel = ""] = card.split(/id="2026-vuelta-a-espana-stage-\d"/);
-  assert.match(stageOnePanel, /race\/vuelta-a-espana\/2026\/stage-1" target="_blank" rel="noreferrer">Full stage results</);
-  assert.match(stageTwoPanel, /race\/vuelta-a-espana\/2026\/stage-2" target="_blank" rel="noreferrer">Full stage results</);
+  // The button names where it goes: every one leaves the page for ProCyclingStats.
+  assert.match(stageOnePanel, /race\/vuelta-a-espana\/2026\/stage-1" target="_blank" rel="noreferrer">Full stage results on ProCyclingStats ↗</);
+  assert.match(stageTwoPanel, /race\/vuelta-a-espana\/2026\/stage-2" target="_blank" rel="noreferrer">Full stage results on ProCyclingStats ↗</);
 
   // The jersey card ends with the classification's PCS page; the team jersey, whose
   // classification has no page there, carries no link.
@@ -6663,4 +6666,120 @@ test("resolveSeasonYear moves to the new season a week before its first race and
       2027,
     ),
   }, opening);
+});
+
+// A one-day card says when it is today's, on the host country's calendar day, the way
+// a stage-race card already did (audience assessment A4, 2026-09-26).
+test("a one-day card wears a Finished today or Yesterday pill judged on the host country's day", () => {
+  const { buildRaceCard } = loadParserExports();
+  const montreal = {
+    id: "2026 Grand Prix Cycliste de Montréal",
+    pageTitle: "2026 Grand Prix Cycliste de Montréal",
+    title: "Grand Prix Cycliste de Montréal",
+    series: "Men's WorldTour",
+    date: "13 September 2026",
+    location: "Canada",
+    countryCode: "CAN",
+    endDate: new Date("2026-09-13T00:00:00Z"),
+    winner: "Tadej Pogačar",
+  };
+  const pill = /<span class="status-pill status-pill-finished">([^<]*)<\/span>/;
+
+  // 23:30 in Montréal on race day is 03:30 UTC the next day: still today's result there.
+  assert.equal(buildRaceCard(montreal, new Date("2026-09-14T03:30:00Z")).match(pill)[1], "Finished today");
+  assert.equal(buildRaceCard(montreal, new Date("2026-09-13T21:00:00Z")).match(pill)[1], "Finished today");
+  assert.equal(buildRaceCard(montreal, new Date("2026-09-14T15:00:00Z")).match(pill)[1], "Yesterday");
+  assert.doesNotMatch(buildRaceCard(montreal, new Date("2026-09-15T15:00:00Z")), pill);
+  assert.doesNotMatch(buildRaceCard(montreal, new Date("2026-09-12T15:00:00Z")), pill);
+  // The pill sits in the kicker line, after the series.
+  assert.match(buildRaceCard(montreal, new Date("2026-09-13T21:00:00Z")), /<div class="card-kicker">Men's WorldTour <span class="status-pill status-pill-finished">Finished today<\/span><\/div>/);
+  // A Worlds card gets the same pill.
+  assert.match(
+    buildRaceCard({ ...montreal, series: "UCI Road World Championships", title: "Elite women's road race", countryCode: "CAN" }, new Date("2026-09-13T21:00:00Z")),
+    /data-championship="worlds"[\s\S]*?Finished today/,
+  );
+  // With no end date the flag the build computed stands in; without either, no pill.
+  assert.match(buildRaceCard({ ...montreal, endDate: undefined, finishedToday: true }), /Finished today/);
+  assert.doesNotMatch(buildRaceCard({ ...montreal, endDate: undefined }), pill);
+});
+
+// A rider on the winner's time reads "same time", spelled out with a tooltip, wherever
+// the zero gap is known; a row with no time at all still shows nothing (A5/C3).
+test("a rider on the winner's time reads same time, spelled out, and an unknown time stays blank", () => {
+  const { buildPodiumMarkup, buildRiderMarkup } = loadParserExports();
+  const sameTime = /<span class="standing-delta standing-same-time" title="Same time as the winner">same time<\/span>/;
+
+  // Stage rows: the row's time equals the winner's, or the source's marker survived.
+  const stage = buildPodiumMarkup(
+    [
+      { place: "1", rider: "Jasper Philipsen", time: "4:29:53" },
+      { place: "2", rider: "Mads Pedersen", time: "4:29:53" },
+      { place: "3", rider: "Biniam Girmay", sameTime: true },
+      { place: "4", rider: "Arnaud De Lie" },
+    ],
+    { metricContext: "stage" },
+  );
+  assert.match(stage, /Mads Pedersen<\/a><span class="standing-gap">4:29:53<\/span><span class="standing-delta standing-same-time" title="Same time as the winner">same time<\/span>/);
+  assert.match(stage, /Biniam Girmay<\/a><span class="standing-gap">4:29:53<\/span><span class="standing-delta standing-same-time"/);
+  assert.match(stage, /Arnaud De Lie<\/a><\/span>/);
+  assert.doesNotMatch(stage, /s\.t\./);
+  // Never for the winner, whose row carries the time alone.
+  assert.match(stage, /Jasper Philipsen<\/a><span class="standing-gap">4:29:53<\/span><\/span>/);
+
+  // A one-day podium (default context) honours the marker and otherwise stays blank.
+  assert.match(buildRiderMarkup({ place: "2", rider: "Paul Seixas", sameTime: true }), sameTime);
+  assert.match(buildRiderMarkup({ place: "2", rider: "Paul Seixas" }), /Paul Seixas<\/a><\/span>$/);
+  assert.match(buildRiderMarkup({ place: "3", rider: "Julian Alaphilippe", gap: "+00:27" }), /standing-gap">\+00:27</);
+  assert.doesNotMatch(buildRiderMarkup({ place: "1", rider: "Tadej Pogačar", sameTime: true }), sameTime);
+});
+
+// A team name in a team-classification row links to a PCS search and opens no rider
+// card; a rider the page placed but never counted keeps the best placing it saw (C4).
+test("the rider index records a best placing for riders with no tally, and team links carry no rider key", () => {
+  const { buildRiderSeasonIndex, buildRiderMarkup } = loadParserExports();
+
+  assert.match(buildRiderMarkup({ rider: "Tadej Pogačar", countryCode: "SLO" }), /data-rider-key="tadej pogacar"/);
+  assert.doesNotMatch(buildRiderMarkup({ rider: "Lidl–Trek" }), /data-rider-key/);
+  assert.doesNotMatch(buildRiderMarkup({ rider: "UAE Team Emirates XRG" }), /data-rider-key/);
+  assert.match(buildRiderMarkup({ rider: "Lidl–Trek" }), /search\.php\?term=Lidl%20Trek/);
+
+  const vuelta = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    resultStandings: [
+      { place: "1", rider: "Enric Mas", countryCode: "ESP" },
+      { place: "5", rider: "Giulio Pellizzari", countryCode: "ITA" },
+    ],
+    stageRace: {
+      stages: [
+        { number: 21, label: "Stage 21", standings: [{ place: "1", rider: "Enric Mas" }, { place: "4", rider: "Paul Seixas", countryCode: "FRA" }, { place: "5", rider: "Giulio Pellizzari" }] },
+        { number: 3, label: "Stage 3", standings: [{ place: "1", rider: "Enric Mas" }, { place: "6", rider: "Paul Seixas" }] },
+      ],
+    },
+  };
+  const index = buildRiderSeasonIndex([{ title: "Il Lombardia", winner: "Enric Mas", winnerCountryCode: "ESP" }], [vuelta]);
+
+  // The lowest place wins, with its stage; a top-five row without a stage says "overall".
+  assert.deepEqual(JSON.parse(JSON.stringify(index["paul seixas"].bestPlacing)), { place: 4, race: "Vuelta a España", stage: "Stage 21" });
+  assert.deepEqual(JSON.parse(JSON.stringify(index["giulio pellizzari"].bestPlacing)), { place: 5, race: "Vuelta a España", stage: "Stage 21" });
+  // A rider with something to count carries no fallback.
+  assert.equal(index["enric mas"].wins, 1);
+  assert.equal(index["enric mas"].bestPlacing, undefined);
+
+  // Two spellings of one rider share the lowest placing across both.
+  const merged = buildRiderSeasonIndex([], [
+    {
+      id: "2026 Tour de Pologne",
+      title: "Tour de Pologne",
+      stageRace: {
+        stages: [
+          { number: 1, label: "Stage 1", standings: [{ place: "1", rider: "A B" }, { place: "5", rider: "Oscar Onley" }] },
+          { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "A B" }, { place: "4", rider: "Edgar Oscar Onley" }] },
+        ],
+      },
+    },
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(merged["oscar onley"].bestPlacing)), { place: 4, race: "Tour de Pologne", stage: "Stage 2" });
+  assert.deepEqual(JSON.parse(JSON.stringify(merged["edgar oscar onley"].bestPlacing)), { place: 4, race: "Tour de Pologne", stage: "Stage 2" });
 });

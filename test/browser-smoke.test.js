@@ -31,7 +31,7 @@ function loadServer() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup, buildSiteContentPage };`,
+    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup, buildSiteContentPage, buildRaceCard, buildStageRaceCard, buildNationalChampionshipsSection, parseNationalChampionshipsIndex };`,
     sandbox,
   );
   return {
@@ -39,6 +39,10 @@ function loadServer() {
     buildRaceNewsMarkup: sandbox.__SMOKE__.buildRaceNewsMarkup,
     buildJerseyHoldersMarkup: sandbox.__SMOKE__.buildJerseyHoldersMarkup,
     buildSiteContentPage: sandbox.__SMOKE__.buildSiteContentPage,
+    buildRaceCard: sandbox.__SMOKE__.buildRaceCard,
+    buildStageRaceCard: sandbox.__SMOKE__.buildStageRaceCard,
+    buildNationalChampionshipsSection: sandbox.__SMOKE__.buildNationalChampionshipsSection,
+    parseNationalChampionshipsIndex: sandbox.__SMOKE__.parseNationalChampionshipsIndex,
     style: serverSource.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@font-face\s*\{[^}]*\}/g, ""),
     // The homepage script is the block that defines the unit preference; the warm-up
     // page carries a later, unrelated block. Its one server-side expression is the
@@ -166,6 +170,35 @@ function runProbe(chrome, page, chromeArgs = []) {
   return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
 }
 
+// Headless Chrome lays a page out at 500px wide at the narrowest, whatever
+// --window-size asks for (measured on this machine in both headless modes on
+// 2026-09-26), so a true phone width needs the page hosted in a 390px iframe. The
+// probe runs in the host page and reads the frame's DOM, which
+// --allow-file-access-from-files permits between two file:// documents.
+function runFramedProbe(chrome, page, hostProbe, width = 390) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pcr-smoke-frame-"));
+  fs.writeFileSync(path.join(dir, "frame.html"), page);
+  fs.writeFileSync(
+    path.join(dir, "host.html"),
+    `<!doctype html><meta charset="utf-8"><style>html,body{margin:0}iframe{display:block;width:${width}px;height:844px;border:0}</style>
+<body><iframe id="f" src="frame.html"></iframe><pre id="smoke"></pre>
+<script>document.getElementById('f').addEventListener('load', () => setTimeout(() => { ${hostProbe} }, 300));</script>`,
+  );
+  let dom = "";
+  try {
+    dom = execFileSync(
+      chrome,
+      ["--headless", "--disable-gpu", "--no-sandbox", "--allow-file-access-from-files", "--virtual-time-budget=6000", `--window-size=${width + 110},844`, "--dump-dom", `file://${path.join(dir, "host.html")}`],
+      { encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "ignore"] },
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const match = dom.match(/<pre id="smoke">([\s\S]*?)<\/pre>/);
+  assert.ok(match && match[1].trim(), "the framed probe never reported: the frame did not load or the host could not read it");
+  return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+}
+
 test("the stage card's client script works in a real browser", (t) => {
   const chrome = findChrome();
   if (!chrome) {
@@ -267,6 +300,10 @@ test("the refresh button reports when there is nothing newer instead of reloadin
     const out = { errors: window.__errors };
     const button = document.querySelector('[data-refresh-button]');
     const status = document.querySelector('[data-refresh-status]');
+    // The timestamp is rewritten in the reader's own zone from the ISO stamp on the
+    // button; the server's Eastern text is only the no-script fallback.
+    out.updatedText = document.querySelector('.updated').textContent;
+    out.updatedExpected = 'Updated ' + new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date('2026-09-06T15:32:07.658Z'));
     button.click();
     out.busyLabel = button.querySelector('[data-refresh-label]').textContent;
     out.disabledWhileChecking = button.disabled;
@@ -282,6 +319,9 @@ test("the refresh button reports when there is nothing newer instead of reloadin
   const out = runProbe(chrome, buildPage({ probe, setup, markup }));
 
   assert.deepEqual(out.errors, []);
+  assert.notEqual(out.updatedText, "Updated now");
+  assert.ok(out.updatedText.startsWith(out.updatedExpected + " "), `timestamp in the reader's zone: ${out.updatedText}`);
+  assert.doesNotMatch(out.updatedText, /Eastern Time/);
   assert.equal(out.busyLabel, "Checking for newer results…");
   assert.equal(out.disabledWhileChecking, true);
   assert.deepEqual(out.fetches, [{ url: "/api/data-status", cache: "no-store" }]);
@@ -393,14 +433,59 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(out.swatchOpened, "Points classification");
   assert.equal(out.keptAcross, true);
 
-  // A phone keeps the plain list: no card, and no cursor or underline inviting one.
+  // A phone never gets the floating card from a hover it cannot make, but the label is
+  // a button and a tap opens the same top five inline under the list (since
+  // 2026-09-26; before, a phone reader saw only each jersey's leader).
   const touch = runProbe(chrome, page, [HOVER_OFF]);
 
   assert.deepEqual(touch.errors, []);
   assert.equal(touch.hoverMedia, false);
   assert.equal(touch.opened, false);
-  assert.equal(touch.cursor, "auto");
+  assert.equal(touch.cursor, "pointer");
   assert.equal(touch.swatchCursor, "auto");
+
+  const tapProbe = `
+    const out = { errors: window.__errors };
+    const label = document.querySelector('[data-jersey-contenders]');
+    out.tag = label.tagName.toLowerCase();
+    out.gloss = label.getAttribute('title');
+    label.click();
+    const inline = document.querySelector('.jersey-holders [data-jersey-inline]');
+    out.inlineOpened = Boolean(inline);
+    out.inlineRows = inline ? inline.querySelectorAll('.contender-row').length : 0;
+    out.inlineName = inline && inline.querySelector('.jersey-card-name').textContent;
+    out.expanded = label.getAttribute('aria-expanded');
+    out.afterList = inline && inline.previousElementSibling.classList.contains('jersey-list');
+    out.floating = document.querySelectorAll('body > .jersey-card').length;
+    // Inline means inside the card's column, not past it.
+    const card = document.querySelector('article.card');
+    out.fits = inline ? inline.getBoundingClientRect().right <= card.getBoundingClientRect().right : false;
+    // The swatch opens the same panel; the label closes it again; Escape closes too.
+    label.click();
+    out.closedAgain = !document.querySelector('[data-jersey-inline]');
+    out.collapsed = label.getAttribute('aria-expanded');
+    document.querySelector('[data-jersey-contenders-swatch]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    out.viaSwatch = Boolean(document.querySelector('[data-jersey-inline]'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    out.escaped = !document.querySelector('[data-jersey-inline]');
+    document.getElementById('smoke').textContent = JSON.stringify(out);
+  `;
+  const tap = runProbe(chrome, buildPage({ markup: `<article class="card">${buildJerseyHoldersMarkup(race)}</article>`, probe: tapProbe }), [HOVER_OFF, "--window-size=390,844"]);
+
+  assert.deepEqual(tap.errors, []);
+  assert.equal(tap.tag, "button");
+  assert.equal(tap.gloss, "Points: sprint and intermediate points");
+  assert.equal(tap.inlineOpened, true);
+  assert.equal(tap.inlineRows, 5);
+  assert.equal(tap.inlineName, "Points classification");
+  assert.equal(tap.expanded, "true");
+  assert.equal(tap.afterList, true);
+  assert.equal(tap.floating, 0);
+  assert.equal(tap.fits, true);
+  assert.equal(tap.closedAgain, true);
+  assert.equal(tap.collapsed, "false");
+  assert.equal(tap.viaSwatch, true);
+  assert.equal(tap.escaped, true);
 });
 
 test("a picture on a site page fills the window on a click and goes back on the next one", (t) => {

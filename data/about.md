@@ -1,3 +1,9 @@
+## Where the results come from
+
+Results are read from Wikipedia and the official race sites within minutes of the finish, and during a live race the page rebuilds itself every minute. Full placings, and every rider's name, open ProCyclingStats in a new tab; we link to it and never read from it. There are no ads, and the site is not affiliated with the UCI, any race organiser or ProCyclingStats. What we fetch, how often and how we cache it is written down in [How we fetch](https://github.com/streamrD/ProCyclingResults/blob/main/DATA-SOURCES.md).
+
+A self-hosted, cookieless page counter records page views, the referring page, the browser and the country, and nothing that identifies you. Your browser keeps two display preferences of its own (kilometres or miles, and whether stage profiles open expanded) and sends them nowhere.
+
 ![The Grupetto Committee in the back room of the bakery: Ambrose Bidon standing with his bicycle and a croissant, Marguerite Lanterne with the ledger and her lantern, Professor Sprocket mid-explanation over an open notebook, Old Tom Chainwhip with his pipe, and Izzy Échappée with her camera and a map.](/assets/grupetto.jpg)
 
 *The committee, left to right, on a Tuesday. Not a photograph — nobody in it exists, and neither does the committee.*
