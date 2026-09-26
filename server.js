@@ -274,11 +274,13 @@ function getNationalChampionshipTypicalWindows(year = SEASON_YEAR) {
     { start: `${year}-06-18`, end: `${year}-06-29`, label: "Nationals week · Europe & N. America" },
   ];
 }
+// The chip says the same thing as the column heading: the reader is not expected to
+// know "RR" or "TT" (audience assessment A9, 2026-09-26). The row wraps on a phone.
 const NATIONAL_CHAMPIONSHIP_TABLE_COLUMNS = [
-  { key: "meRoadRace", label: "Men's road race", chip: "Men RR" },
-  { key: "meItt", label: "Men's time trial", chip: "Men TT" },
-  { key: "weRoadRace", label: "Women's road race", chip: "Women RR" },
-  { key: "weItt", label: "Women's time trial", chip: "Women TT" },
+  { key: "meRoadRace", label: "Men's road race", chip: "Men's road race" },
+  { key: "meItt", label: "Men's time trial", chip: "Men's time trial" },
+  { key: "weRoadRace", label: "Women's road race", chip: "Women's road race" },
+  { key: "weItt", label: "Women's time trial", chip: "Women's time trial" },
 ];
 // The season calendar emphasises a fixed, hand-curated set: three Grand Tours per
 // series and the Monuments (with their women's editions). Everything else is drawn by
@@ -779,8 +781,16 @@ function mergeRiderNameVariants(index) {
       // The shortest spelling that Wikipedia actually linked is the article title.
       wikiTitle: (entries.filter((entry) => entry.wikiTitle).sort((a, b) => a.wikiTitle.length - b.wikiTitle.length)[0] || {}).wikiTitle || "",
     };
+    // The best placing across the spellings, lowest place first.
+    const bestPlacing = entries.map((entry) => entry.bestPlacing).filter(Boolean).sort((a, b) => a.place - b.place)[0] || null;
     members.forEach((key) => {
-      Object.assign(index.get(key), totals);
+      const entry = index.get(key);
+      Object.assign(entry, totals);
+      if (bestPlacing) {
+        entry.bestPlacing = bestPlacing;
+      } else {
+        delete entry.bestPlacing;
+      }
     });
   });
 
@@ -901,6 +911,22 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
   const index = new Map();
   const spellings = new Map();
   const titles = new Map();
+  const bests = new Map();
+  // The best placing the page saw for a rider, so the card of a rider with no win or
+  // podium to count can still say something true: "Best on this site: 4th, Vuelta a
+  // España stage 21". Kept for every rider here and published only for the ones with
+  // an empty tally (see the end of this function).
+  const placed = (entry, name, place, raceTitle, stageLabel = "") => {
+    const number = Number(place);
+    if (!entry || !Number.isFinite(number) || number < 1 || !raceTitle) {
+      return;
+    }
+    const key = foldRiderKey(String(name || "").replace(/\s+/g, " ").trim());
+    const current = bests.get(key);
+    if (!current || number < current.place) {
+      bests.set(key, { place: number, race: String(raceTitle), ...(stageLabel ? { stage: String(stageLabel) } : {}) });
+    }
+  };
   const touch = (name, countryCode, pageTitle) => {
     const rider = String(name || "").replace(/\s+/g, " ").trim();
     if (!rider || !isDirectRiderLinkCandidate(rider)) {
@@ -931,16 +957,17 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
       return;
     }
     [
-      [race.winner, race.winnerCountryCode, race.winnerPageTitle, true],
-      [race.second, race.secondCountryCode, race.secondPageTitle, false],
-      [race.third, race.thirdCountryCode, race.thirdPageTitle, false],
-    ].forEach(([name, code, pageTitle, isWin]) => {
+      [race.winner, race.winnerCountryCode, race.winnerPageTitle, true, 1],
+      [race.second, race.secondCountryCode, race.secondPageTitle, false, 2],
+      [race.third, race.thirdCountryCode, race.thirdPageTitle, false, 3],
+    ].forEach(([name, code, pageTitle, isWin, place]) => {
       const entry = touch(name, code, pageTitle);
       if (entry) {
         entry.podiums += 1;
         if (isWin) {
           entry.wins += 1;
         }
+        placed(entry, name, place, race.title);
       }
     });
   });
@@ -953,6 +980,7 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
     }
     seenRaces.add(raceId);
     (race?.stageRace?.stages || []).forEach((stage) => {
+      const stageLabel = stage?.label || (Number.isFinite(Number(stage?.number)) ? `Stage ${stage.number}` : "");
       (stage?.standings || []).forEach((standing, position) => {
         const entry = standing?.rider ? touch(standing.rider, standing.countryCode, standing.pageTitle) : null;
         if (entry && position === 0) {
@@ -961,12 +989,15 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
         if (entry && position <= 2 && Number(standing.place) <= 3) {
           entry.stagePodiums += 1;
         }
+        placed(entry, standing?.rider, standing?.place, race.title, stageLabel);
       });
     });
-    // Top fives and GC rows add no tally, but they can carry a rider's article title.
+    // Top fives and GC rows add no tally, but they can carry a rider's article title
+    // and the best placing the card falls back on.
     [...(race?.resultStandings || []), ...(race?.stageRace?.generalClassification?.standings || [])].forEach((standing) => {
       if (standing?.rider) {
-        touch(standing.rider, standing.countryCode, standing.pageTitle);
+        const entry = touch(standing.rider, standing.countryCode, standing.pageTitle);
+        placed(entry, standing.rider, standing.place, race.title, race?.stageRace ? "overall" : "");
       }
     });
   });
@@ -978,8 +1009,18 @@ function buildRiderSeasonIndex(allRaces, stageRaces) {
   index.forEach((entry, key) => {
     entry.wikiTitle = pickMostLinkedTitle(titles.get(key));
     entry.name = pickRiderSpelling(spellings.get(key), entry.wikiTitle) || entry.name;
+    if (bests.has(key)) {
+      entry.bestPlacing = bests.get(key);
+    }
   });
   mergeRiderNameVariants(index);
+  // Only a rider with nothing to count needs the fallback; for the rest it would
+  // just be payload on every page.
+  index.forEach((entry) => {
+    if (entry.wins + entry.podiums + entry.stageWins + entry.stagePodiums > 0) {
+      delete entry.bestPlacing;
+    }
+  });
 
   return Object.fromEntries([...index.entries()].sort(([left], [right]) => left.localeCompare(right)));
 }
@@ -1148,11 +1189,14 @@ function getStageResultsTarget(stage) {
   return number > 0 ? `stage-${number}` : number === 0 ? "prologue" : "";
 }
 
+// The button names where it goes: every one of these leaves the page for
+// ProCyclingStats, and a reader who values the ad-free page should know that before
+// the tap (positioning assessment P8, 2026-09-26).
 function buildResultsLink(url, label) {
   if (!url) {
     return "";
   }
-  return `<a class="race-results-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+  return `<a class="race-results-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)} on ProCyclingStats ↗</a>`;
 }
 
 // The links at the foot of a card or a stage panel share one row: the finish video
@@ -5632,6 +5676,25 @@ function parseSpanishStageNumber(text) {
   return 0;
 }
 
+// A gap the source writes as zero — `+ 0"`, `+ 0:00`, `+ 0' 00"`, "s.t.", "same time" —
+// is not a missing gap: the rider finished on the winner's time. normalizeStandingGap
+// returns "" for it (a zero gap prints nothing as a gap), so the fact was lost between
+// the parser and the card, and place 2 on a bunch finish showed a blank where place 3
+// showed "+00:27" (assessment A5/C3, 2026-09-26). The entry carries `sameTime` instead.
+function isSameTimeMarker(value) {
+  const cleaned = cleanFeedText(String(value || ""))
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return false;
+  }
+  if (/^(?:s\.?\s*t\.?|same time|m\.?\s*t\.?)$/i.test(cleaned)) {
+    return true;
+  }
+  return /^\+?\s*(?:0+\s*h\s*)?(?:0+\s*'\s*)?0+\s*(?:''|")?$/.test(cleaned) || /^\+?\s*0+(?::0+){1,2}(?:\.0+)?$/.test(cleaned);
+}
+
 function normalizeStandingGap(value) {
   const cleaned = cleanFeedText(String(value || ""))
     .replace(/\u00a0/g, " ")
@@ -5702,6 +5765,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "")
           countryCode: normalizeCountryCode(rider.countryCode || getRiderCountryCode(rider.rider)),
           gap: normalizeStandingGap(rider.gap || ""),
           time: normalizeStandingTime(rider.time || ""),
+          sameTime: isSameTimeMarker(rider.gap || ""),
           pageTitle: String(rider.pageTitle || "").trim(),
         }
       : {
@@ -5709,6 +5773,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "")
           countryCode: normalizeCountryCode(countryCode || getRiderCountryCode(rider)),
           gap: normalizeStandingGap(gap),
           time: normalizeStandingTime(time),
+          sameTime: isSameTimeMarker(gap),
         };
 
   return details.rider
@@ -5717,6 +5782,7 @@ function buildStandingEntry(place, rider, countryCode = "", gap = "", time = "")
         rider: details.rider,
         ...(details.countryCode ? { countryCode: details.countryCode } : {}),
         ...(details.gap ? { gap: details.gap } : {}),
+        ...(details.sameTime && String(place) !== "1" ? { sameTime: true } : {}),
         ...(details.time ? { time: details.time } : {}),
         ...(details.pageTitle ? { pageTitle: details.pageTitle } : {}),
       }
@@ -9035,7 +9101,7 @@ function getStageStandingMetrics(entry, winnerSeconds) {
     return { time: formatClock(winnerSeconds + gapSeconds), gap };
   }
 
-  if (!time && !gap && winnerSeconds !== null && /^(s\.?t\.?|same time)$/i.test(rawGap)) {
+  if (!time && !gap && winnerSeconds !== null && (entry?.sameTime === true || isSameTimeMarker(rawGap))) {
     return { time: formatClock(winnerSeconds), gap: "s.t." };
   }
 
@@ -10545,7 +10611,7 @@ function buildStageRaceCard(race, options = {}) {
   const statusBadge = options.live
     ? `<span class="status-pill">${liveDay?.kind === "rest-day" ? "Rest day" : "Live stage race"}</span>`
     : isFinalized
-      ? `<span class="status-pill status-pill-finished">${escapeHtml(race.finishedToday ? "Finished today" : "Final stage race")}</span>`
+      ? `<span class="status-pill status-pill-finished">${escapeHtml(race.finishedToday ? "Finished today" : "Finished")}</span>`
       : "";
   const statusNote = options.live
     ? liveDayNote
@@ -10627,7 +10693,26 @@ function buildStageRaceCard(race, options = {}) {
     </article>`;
 }
 
-function buildRaceCard(race) {
+// "Finished today" or "Yesterday" on a one-day card, judged on the host country's
+// calendar day (a Montréal finish is still today's at 23:00 there, though it is
+// tomorrow in UTC). Older results carry no pill: the date line says when.
+function describeOneDayRecency(race, now = new Date()) {
+  const end = race?.endDate instanceof Date ? race.endDate : race?.endDate ? new Date(race.endDate) : null;
+  const today = getRaceLocalDate(race, now);
+  if (!end || Number.isNaN(end.getTime()) || !today) {
+    return race?.finishedToday ? "Finished today" : "";
+  }
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (end.getTime() === today.getTime()) {
+    return "Finished today";
+  }
+  if (end.getTime() === today.getTime() - dayMs) {
+    return "Yesterday";
+  }
+  return "";
+}
+
+function buildRaceCard(race, now = new Date()) {
   if (isMultiDayRace(race) && race.stageRace) {
     return buildStageRaceCard(race);
   }
@@ -10642,9 +10727,11 @@ function buildRaceCard(race) {
   );
 
   const championshipAttribute = isWorldChampionshipRace(race) ? ` data-championship="worlds"` : "";
+  const recency = describeOneDayRecency(race, now);
+  const statusBadge = recency ? ` <span class="status-pill status-pill-finished">${escapeHtml(recency)}</span>` : "";
   return `
     <article class="card result-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
-      <div class="card-kicker">${escapeHtml(race.series)}</div>
+      <div class="card-kicker">${escapeHtml(race.series)}${statusBadge}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
@@ -10801,11 +10888,12 @@ function buildJerseyContendersMarkup(entry, race = null) {
         contenders.metric === "count"
           ? row.value || ""
           : row.time || row.gap || (Number(row.place) > 1 ? "same time" : "");
+      const valueTitle = value === "same time" ? ` title="Same time as the leader"` : "";
       const flag = getCountryFlagEmoji(normalizeCountryCode(row.countryCode));
 
       return `<li class="contender-row"><span class="contender-place">${escapeHtml(row.place)}</span><span class="contender-name">${
         flag ? `<span class="country-flag" aria-hidden="true">${escapeHtml(flag)}</span>` : ""
-      }${escapeHtml(row.rider)}</span><span class="contender-value">${escapeHtml(value)}</span></li>`;
+      }${escapeHtml(row.rider)}</span><span class="contender-value"${valueTitle}>${escapeHtml(value)}</span></li>`;
     })
     .join("");
 
@@ -10822,6 +10910,16 @@ function buildJerseyContendersMarkup(entry, race = null) {
     stage,
   )}</span><span>${escapeHtml(metricLabel)}</span></div><ol class="contender-list">${items}</ol>${links}</template>`;
 }
+
+// One line on what each classification is scored on, as the label's tooltip. The
+// reader knows the big names, not the jersey system (audience assessment A9).
+const CLASSIFICATION_GLOSSES = {
+  general: "General: the overall race on total time",
+  points: "Points: sprint and intermediate points",
+  mountains: "Mountains: points on classified climbs",
+  young: "Young rider: best under-25 rider on time",
+  team: "Team: sum of each team's best three riders per stage",
+};
 
 // The jersey holders listed beneath the GC podium: one row per classification the
 // leadership table names, in the table's own column order. Labelled with its stage only
@@ -10843,14 +10941,21 @@ function buildJerseyHoldersMarkup(race, options = {}) {
   const items = entries
     .map((entry) => {
       const card = buildJerseyContendersMarkup(entry, race);
+      const gloss = CLASSIFICATION_GLOSSES[entry.key] || "";
+      const glossAttribute = gloss ? ` title="${escapeHtml(gloss)}"` : "";
       // The classification carries the card, not the rider beside it: the rider's name
       // already opens the rider card, and two tooltips racing for one element helps
       // nobody. The jersey swatch is a second way onto the same card (asked for on
       // 2026-09-12: the label alone was a small target in the stack). A classification
       // with no standings table stays a plain span and a plain swatch.
+      //
+      // With a card it is a real button: hover opens the card on a pointer device,
+      // and a click, a tap or Enter opens it too, inline under the list on a phone —
+      // before 2026-09-26 the top five was hover-only, so no phone or keyboard
+      // reader ever saw it (audience assessment A6).
       const classification = card
-        ? `<span class="jersey-classification has-contenders" data-jersey-contenders>${escapeHtml(entry.label)}</span>`
-        : `<span class="jersey-classification">${escapeHtml(entry.label)}</span>`;
+        ? `<button type="button" class="jersey-classification has-contenders" data-jersey-contenders aria-expanded="false"${glossAttribute}>${escapeHtml(entry.label)}</button>`
+        : `<span class="jersey-classification"${glossAttribute}>${escapeHtml(entry.label)}</span>`;
 
       return `
           <li class="jersey-item">
@@ -10881,15 +10986,30 @@ function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
   const flagMarkup = flag
     ? `<span class="country-flag" title="${escapeHtml(countryName)}" aria-hidden="true">${escapeHtml(flag)}</span>`
     : "";
+  // A rider on the winner's time reads "same time", spelled out: the reader is not
+  // assumed to know "s.t.". It is printed only when the zero gap is known — the row's
+  // time equals the winner's, or the source's same-time marker survived as
+  // entry.sameTime — and never inferred from a row that carries no time at all, which
+  // during a live race can be a time an editor has not typed yet.
+  const sameTime = `<span class="standing-delta standing-same-time" title="Same time as the winner">same time</span>`;
+  const isWinner = String(entry?.place || "") === "1";
   let gapMarkup = "";
   if (options.metricContext === "stage" && options.winnerSeconds !== undefined) {
     const metrics = getStageStandingMetrics(entry, options.winnerSeconds);
+    if (!isWinner && !metrics.time && !metrics.gap && entry?.sameTime === true) {
+      metrics.time = options.winnerSeconds !== null ? formatClock(options.winnerSeconds) : "";
+      metrics.gap = "s.t.";
+    }
     gapMarkup =
       (metrics.time ? `<span class="standing-gap">${escapeHtml(metrics.time)}</span>` : "") +
-      (metrics.gap ? `<span class="standing-delta">${escapeHtml(metrics.gap)}</span>` : "");
+      (metrics.gap === "s.t." ? sameTime : metrics.gap ? `<span class="standing-delta">${escapeHtml(metrics.gap)}</span>` : "");
   } else {
     const metric = getStandingMetric(entry, options.metricContext || "default");
-    gapMarkup = metric ? `<span class="standing-gap">${escapeHtml(metric)}</span>` : "";
+    gapMarkup = metric
+      ? `<span class="standing-gap">${escapeHtml(metric)}</span>`
+      : !isWinner && entry?.sameTime === true
+        ? sameTime
+        : "";
   }
 
   return `<span class="${escapeHtml(className)} rider-name">${flagMarkup}${buildRiderLinkMarkup(rider)}${gapMarkup}</span>`;
@@ -10897,12 +11017,16 @@ function buildRiderMarkup(entry, className = "podium-rider", options = {}) {
 
 // The name itself is the link, in the same ink with a dotted underline (chosen from
 // three comps on 2026-09-07). Opens in a new tab; the card stays where it is.
+// A team or a lone surname links to the PCS search page and carries no rider key: the
+// season index never holds one (its touch() rejects the same names), so the hover card
+// could only ever say "no win or podium" about Lidl-Trek. No key, no card.
 function buildRiderLinkMarkup(rider) {
   const url = getRiderProfileUrl(rider);
   if (!url) {
     return `<span class="rider-text">${escapeHtml(rider)}</span>`;
   }
-  return `<a class="rider-text rider-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${escapeHtml(rider)} on ProCyclingStats" data-rider-key="${escapeHtml(foldRiderKey(rider))}">${escapeHtml(rider)}</a>`;
+  const keyAttribute = isDirectRiderLinkCandidate(rider) ? ` data-rider-key="${escapeHtml(foldRiderKey(rider))}"` : "";
+  return `<a class="rider-text rider-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="${escapeHtml(rider)} on ProCyclingStats"${keyAttribute}>${escapeHtml(rider)}</a>`;
 }
 
 function formatTimestamp(timestamp) {
@@ -11007,25 +11131,25 @@ function getCompetitionGroups(data, now = new Date()) {
     {
       id: "mens-worldtour",
       label: "Men's WorldTour",
-      tag: "Top Tier Men",
-      description: "Live stage races, latest results, and upcoming events from the men's WorldTour calendar.",
+      tag: "Men's races",
+      description: "The season's top-level races for men: whatever is being raced now, the latest results and what comes next.",
       predicate: (race) => race.series === "Men's WorldTour",
       recentSource: "recentResults",
       recentResultsLimit: WORLDTOUR_RECENT_RESULTS,
       recentBlockTitle: "Recent Results",
-      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
+      recentBlockDescription: "Recent one-day races and finished stage races.",
       recentGridClass: "competition-grid-three",
     },
     {
       id: "womens-worldtour",
       label: "Women's WorldTour",
-      tag: "Top Tier Women",
-      description: "Live stage races, latest results, and upcoming events from the women's WorldTour calendar.",
+      tag: "Women's races",
+      description: "The season's top-level races for women: whatever is being raced now, the latest results and what comes next.",
       predicate: (race) => race.series === "Women's WorldTour",
       recentSource: "recentResults",
       recentResultsLimit: WORLDTOUR_RECENT_RESULTS,
       recentBlockTitle: "Recent Results",
-      recentBlockDescription: "Recent one-day races and finalized stage races, arranged in a three-column grid on larger screens.",
+      recentBlockDescription: "Recent one-day races and finished stage races.",
       recentGridClass: "competition-grid-three",
     },
     {
@@ -11410,7 +11534,7 @@ function buildNationalChampionshipStatusMarkup(data, events, today = new Date())
       : upcoming > 0
       ? `${upcoming} title${upcoming === 1 ? "" : "s"} still to come`
       : total > 0 && reporting / total >= 0.75
-      ? "Essentially complete"
+      ? "Almost all decided"
       : "In progress";
   const sourceUpdatedLabel = data.sourceLastModified
     ? `Source updated ${formatTimestamp(data.sourceLastModified)} Eastern Time.`
@@ -11471,7 +11595,7 @@ function buildNationalChampionshipGroupMarkup(group) {
       </summary>
       <div class="national-table-wrap">
         <table class="national-table">
-          <thead><tr><th scope="col">Federation</th>${head}</tr></thead>
+          <thead><tr><th scope="col">Country</th>${head}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -12133,14 +12257,10 @@ function buildHtmlPage(data, view) {
     .join("");
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
   const seasonCalendarSection = buildSeasonCalendarSection(data.seasonCalendar, data);
-  const heroSubheader = [
-    "RACE RESULTS",
-    "SEASON CALENDAR",
-    "WATCH THE FINISH",
-    "STAGE PROFILES",
-    "RACE NEWS",
-    "NATIONAL CHAMPIONSHIPS",
-  ].join(" • ");
+  // One plain sentence in the release-notes register, not a feature list: the reader
+  // has already arrived (audience assessment A9/C1, 2026-09-26).
+  const heroSubheader =
+    "Results, standings and the finish, minutes after the line, for the men's and women's WorldTour, the Worlds and the national championships.";
   const heroMenu = [
     ...competitionGroups,
     { id: "national-championships", label: "National Championships" },
@@ -12168,7 +12288,7 @@ function buildHtmlPage(data, view) {
       <section class="hero">
         <div class="hero-grid">
           <div class="hero-copy">
-            <div class="eyebrow">UCI-Inspired Race Desk</div>
+            <div class="eyebrow">An independent race desk</div>
             <h1>Pro Cycling Results</h1>
             <p class="hero-subtitle">${escapeHtml(heroSubheader)}</p>
             <div class="updated-row">
@@ -13880,7 +14000,9 @@ function buildHtmlPage(data, view) {
 
       .card-kicker {
         margin-bottom: 0.65rem;
-        color: var(--uci-blue-bright);
+        /* A shade under the bright blue: 5.5:1 on the panel tint, where the bright
+           blue was 4.4:1 (assessment A12). */
+        color: #0067b8;
         font-size: 0.75rem;
       }
 
@@ -13928,17 +14050,19 @@ function buildHtmlPage(data, view) {
         background: linear-gradient(180deg, #0047d4 0%, #0033a0 100%);
       }
 
+      /* Each gradient's light stop keeps white numerals at 4.5:1 or better; the
+         earlier stops (#0b84d9, #ff4f5e, #93a4c7) fell to 2.5-4:1 (assessment A12). */
       .place-2 {
-        background: linear-gradient(180deg, #0b84d9 0%, #0067b8 100%);
+        background: linear-gradient(180deg, #0a74c2 0%, #0067b8 100%);
       }
 
       .place-3 {
-        background: linear-gradient(180deg, #ff4f5e 0%, #d92c3a 100%);
+        background: linear-gradient(180deg, #e0202f 0%, #c51d2b 100%);
       }
 
       .place-4,
       .place-5 {
-        background: linear-gradient(180deg, #93a4c7 0%, #64779f 100%);
+        background: linear-gradient(180deg, #62759d 0%, #4f6288 100%);
       }
 
       .podium-rider {
@@ -14162,6 +14286,42 @@ function buildHtmlPage(data, view) {
         text-transform: uppercase;
       }
 
+      /* A classification with a top five is a button: the button chrome is reset so it
+         reads as the label it was, and the dotted underline says it opens something on
+         every device, not only where a pointer can hover. */
+      button.jersey-classification {
+        appearance: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        text-align: left;
+        cursor: pointer;
+        text-decoration: underline dotted rgba(0, 51, 160, 0.35);
+        text-underline-offset: 0.22em;
+      }
+
+      button.jersey-classification:focus-visible {
+        outline: 2px solid var(--uci-blue-bright);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
+      button.jersey-classification[aria-expanded="true"] {
+        color: var(--uci-blue-bright);
+        text-decoration-color: var(--uci-blue-bright);
+      }
+
+      /* The top five opened in place under the jersey list (a tap, or a click where
+         nothing can hover); the same rows the floating card carries. */
+      .jersey-inline-card {
+        margin-top: 0.55rem;
+        padding: 0.7rem 0.8rem 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
       /* Inline flow rather than the flex row the podium uses: in a narrow column a flex
          flag would sit alone on its line while the name wraps beneath it. */
       .jersey-holder {
@@ -14340,7 +14500,7 @@ function buildHtmlPage(data, view) {
         border-style: dashed;
         border-color: var(--line);
         background: transparent;
-        color: rgba(9, 33, 76, 0.32);
+        color: rgba(9, 33, 76, 0.5);
         cursor: default;
       }
 
@@ -15206,6 +15366,45 @@ function buildHtmlPage(data, view) {
         text-align: center;
       }
 
+      .site-footer .footer-note {
+        max-width: 46rem;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.5;
+      }
+
+      .site-footer .footer-note a {
+        color: var(--uci-blue-deep);
+        font-weight: 700;
+        text-decoration: underline;
+        text-underline-offset: 0.16em;
+      }
+
+      /* "same time" beside a rider on the winner's time reads quieter than a gap. */
+      .standing-same-time {
+        font-style: italic;
+        font-weight: 500;
+      }
+
+      /* Where nothing can hover, a finger is the pointer: the stage chips keep their
+         size and gain a 44px-tall hit area through a pseudo-element, and the km/mi
+         options take more padding (assessment A11). */
+      @media (hover: none) {
+        .stage-chip {
+          position: relative;
+        }
+
+        .stage-chip::after {
+          content: "";
+          position: absolute;
+          inset: -0.45rem -0.15rem;
+        }
+
+        .unit-option {
+          padding: 0.45rem 0.7rem;
+        }
+      }
+
       .footer-links {
         display: flex;
         justify-content: center;
@@ -15289,9 +15488,12 @@ function buildHtmlPage(data, view) {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
+        /* minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), so a wide child
+           (the schedule strip, a long note) pushed the grid past the section's edge
+           and the section's overflow clip cut the text mid-word at 390px. */
         .national-almanac-grid,
         .season-body {
-          grid-template-columns: 1fr;
+          grid-template-columns: minmax(0, 1fr);
         }
 
         .national-results-head {
@@ -15346,8 +15548,10 @@ ${heroMarkup}
       ${deferredSectionButtons}
       ${deferredSectionMounts}
 
-      <p class="footer-note">WorldTour data refreshes from live season pages when the server cache expires. National champions update from the current championship index.</p>
-      ${buildSiteFooterLinks("/")}
+      <footer class="site-footer">
+        <p class="footer-note">Results are read from Wikipedia and the official race sites within minutes of the finish; during a live race the page rebuilds itself every minute, and full placings are on ProCyclingStats. No ads, no tracking beyond a self-hosted cookieless page counter, and no affiliation with the UCI, any race organiser or ProCyclingStats. <a href="${escapeHtml(SOURCE_POLICY_URL)}" target="_blank" rel="noreferrer">How we fetch ↗</a></p>
+        ${buildSiteFooterLinks("/")}
+      </footer>
     </main>
     ${buildRiderSeasonsScript(data.riderSeasons)}
     <script>
@@ -16252,7 +16456,7 @@ ${heroMarkup}
       // so moving between the two keeps one card open instead of closing and reopening.
       function bindHoverCards(selector, className, buildMarkup, resolveTarget) {
         if (!window.matchMedia || !window.matchMedia("(hover: hover)").matches) {
-          return;
+          return null;
         }
         const resolve = (node) => (node && resolveTarget ? resolveTarget(node) : node);
         let card = null;
@@ -16339,6 +16543,7 @@ ${heroMarkup}
         });
         window.addEventListener("scroll", hideCard, { passive: true });
         window.addEventListener("resize", hideCard);
+        return { show: showCard, hide: hideCard };
       }
 
       // The five riders closest to a jersey, written into a template beside the
@@ -16346,19 +16551,81 @@ ${heroMarkup}
       // a flag or a standing is spelled.
       // The swatch beside the classification opens the same card, resolved onto the
       // label so the card is anchored, and kept, in one place.
+      //
+      // Hover is one way in, not the only one (since 2026-09-26): the label is a
+      // button, and a click, a tap or Enter opens the same top five. On a pointer
+      // device with room it is the floating card; on a phone, or without hover, the
+      // template's content opens inline under the jersey list, where the same label
+      // (or Escape) closes it again. One inline panel per list.
       function bindJerseyContenderCards() {
-        bindHoverCards(
-          "[data-jersey-contenders], [data-jersey-contenders-swatch]",
-          "rider-card jersey-card",
-          (label) => {
-            const source = label.parentElement && label.parentElement.querySelector(".jersey-card-source");
-            return source ? source.innerHTML : "";
-          },
-          (node) =>
-            node.hasAttribute("data-jersey-contenders-swatch")
-              ? node.parentElement && node.parentElement.querySelector("[data-jersey-contenders]")
-              : node,
-        );
+        const selector = "[data-jersey-contenders], [data-jersey-contenders-swatch]";
+        const resolveLabel = (node) =>
+          node.hasAttribute("data-jersey-contenders-swatch")
+            ? node.parentElement && node.parentElement.querySelector("[data-jersey-contenders]")
+            : node;
+        const readMarkup = (label) => {
+          const source = label.parentElement && label.parentElement.querySelector(".jersey-card-source");
+          return source ? source.innerHTML : "";
+        };
+        const hoverCards = bindHoverCards(selector, "rider-card jersey-card", readMarkup, resolveLabel);
+
+        function closeInline(panel) {
+          if (panel.__opener) {
+            panel.__opener.setAttribute("aria-expanded", "false");
+          }
+          panel.remove();
+        }
+
+        function toggleInline(label) {
+          const list = label.closest(".jersey-list");
+          const holders = label.closest(".jersey-holders") || (list && list.parentElement);
+          if (!list || !holders) {
+            return;
+          }
+          const existing = holders.querySelector("[data-jersey-inline]");
+          const wasOpen = Boolean(existing && existing.__opener === label);
+          if (existing) {
+            closeInline(existing);
+          }
+          if (wasOpen) {
+            return;
+          }
+          const markup = readMarkup(label);
+          if (!markup) {
+            return;
+          }
+          const panel = document.createElement("div");
+          panel.className = "jersey-inline-card";
+          panel.setAttribute("data-jersey-inline", "");
+          panel.setAttribute("role", "region");
+          panel.setAttribute("aria-label", label.textContent.trim() + " classification top five");
+          panel.innerHTML = markup;
+          panel.__opener = label;
+          list.insertAdjacentElement("afterend", panel);
+          label.setAttribute("aria-expanded", "true");
+        }
+
+        document.addEventListener("click", (event) => {
+          const node = event.target.closest(selector);
+          if (!node) {
+            return;
+          }
+          const label = resolveLabel(node);
+          if (!label) {
+            return;
+          }
+          event.preventDefault();
+          if (hoverCards && !narrowViewport.matches) {
+            hoverCards.show(label);
+            return;
+          }
+          toggleInline(label);
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            document.querySelectorAll("[data-jersey-inline]").forEach(closeInline);
+          }
+        });
       }
 
       // What this site holds about a rider's season, and the two outward links.
@@ -16383,9 +16650,33 @@ ${heroMarkup}
           return count > 0 ? "<span><strong>" + count + "</strong>" + (count === 1 ? singular : plural) + "</span>" : "";
         }
 
+        function ordinal(number) {
+          const rest = number % 100;
+          const suffix = rest >= 11 && rest <= 13 ? "th" : ["th", "st", "nd", "rd"][number % 10] || "th";
+          return number + suffix;
+        }
+
+        // A rider with nothing to count still gets the best placing the page saw, from
+        // the same top fives the index reads ("Best on this site: 4th, Vuelta a España
+        // stage 21"); only a rider the page never placed gets the empty line.
+        function describeBestPlacing(best) {
+          if (!best || !Number.isFinite(Number(best.place)) || !best.race) {
+            return "";
+          }
+          return (
+            "Best on this site: " + ordinal(Number(best.place)) + ", " + escapeText(best.race) +
+            (best.stage ? " " + escapeText(String(best.stage).toLowerCase()) : "") + "."
+          );
+        }
+
         function buildCardMarkup(link) {
+          // A team or a lone surname carries no key (its link is a PCS search): no card.
+          if (!link.hasAttribute("data-rider-key")) {
+            return "";
+          }
           const key = link.getAttribute("data-rider-key") || "";
           const entry = index[key] || null;
+          const best = entry ? describeBestPlacing(entry.bestPlacing) : "";
           const name = entry ? entry.name : link.textContent.trim();
           const flagNode = link.previousElementSibling;
           const flag = flagNode && flagNode.classList.contains("country-flag") ? flagNode.textContent : "";
@@ -16404,7 +16695,7 @@ ${heroMarkup}
             '<div class="rider-card-kicker">This season on this site</div>' +
             (tally
               ? '<div class="rider-card-tally">' + tally + "</div>"
-              : '<p class="rider-card-empty">No win or podium on this site this season.</p>') +
+              : '<p class="rider-card-empty">' + (best || "No win or podium on this site this season.") + "</p>") +
             '<div class="rider-card-links">' +
             '<a href="' + escapeText(link.href) + '" target="_blank" rel="noreferrer">ProCyclingStats \u2197</a>' +
             '<a href="' + escapeText(wikipedia) + '" target="_blank" rel="noreferrer">Wikipedia \u2197</a>' +
@@ -16415,6 +16706,27 @@ ${heroMarkup}
         bindHoverCards(".rider-link", "rider-card", buildCardMarkup);
       }
 
+      // The build time in the reader's own time zone. The server prints it in Eastern
+      // Time, which stays as the no-script fallback; the ISO stamp on the refresh
+      // button is the same instant. Two formatters because dateStyle and timeZoneName
+      // cannot share one.
+      function localizeUpdatedTimestamp() {
+        const button = document.querySelector("[data-refresh-button][data-fetched-at]");
+        const row = button ? button.closest(".updated-row") : null;
+        const updated = row ? row.querySelector(".updated") : null;
+        const stamp = button ? new Date(button.getAttribute("data-fetched-at") || "") : null;
+        if (!updated || !stamp || Number.isNaN(stamp.getTime()) || !window.Intl || !Intl.DateTimeFormat) {
+          return;
+        }
+        try {
+          const when = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(stamp);
+          const zone = (new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(stamp).find((part) => part.type === "timeZoneName") || {}).value || "";
+          updated.textContent = "Updated " + when + (zone ? " " + zone : "");
+        } catch (error) {
+          // An unsupported locale option: the server's Eastern Time text stands.
+        }
+      }
+
       bindLoadMoreRaces();
       bindRaceNews();
       bindRiderCards();
@@ -16423,6 +16735,7 @@ ${heroMarkup}
       bindNationalChampionshipMap();
       bindSeasonCalendar();
       bindShareJump();
+      localizeUpdatedTimestamp();
       bindRefreshButton();
     </script>
   </body>
@@ -16550,9 +16863,9 @@ function buildWarmupPage(shareView = SHARE_VIEWS["/"]) {
   <body>
     <main>
       <section class="panel">
-        <div class="eyebrow">Live Race Desk</div>
+        <div class="eyebrow">An independent race desk</div>
         <h1>Pro Cycling Results</h1>
-        <p>Loading today’s live race data. First load can take a few seconds during active stage races while we warm up results from current season and race sources.</p>
+        <p>Reading today’s results. The first load after a restart takes a few seconds while the season’s race pages are fetched; the page opens on its own when they are in.</p>
         <div class="loader" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="status" id="warmup-status">Checking for fresh race data…</div>
       </section>
