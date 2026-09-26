@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 26 September 2026
+
+- **Places 4 and 5 on the Worlds cards.** The Montréal result tables list riders under a heading the site did not recognise, so every world championship card stopped at the podium. The full top five now shows wherever Wikipedia has written the event its own page.
+
 ## 20 September 2026
 
 - **Both time trials, with the news.** The men's world time trial result now appears on race day instead of waiting for Wikipedia to write the event its own page. Every Worlds card also carries its own stories again, and the section header spans the whole championship week.

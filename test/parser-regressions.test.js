@@ -1710,6 +1710,39 @@ test("parseWorldChampionshipEventResult reads the 2019-23 layout: numbered medal
   );
 });
 
+test("parseWorldChampionshipEventResult reads the 2026 layout: an Athlete column, bare nation templates, one Time column on road races", () => {
+  const { parseWorldChampionshipEventResult } = loadParserExports();
+  const rows = (result) =>
+    JSON.parse(JSON.stringify(result.standings.map((entry) => [entry.place, entry.rider, entry.countryCode, entry.time, entry.gap])));
+
+  // Time trial: "Rank !! Athlete !! Nation !! Time !! Time Gap", nations as {{BEL}} / {{GBR2}}.
+  const timeTrial = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2026-mens-time-trial.wikitext"));
+  assert.deepEqual(stripPageTitles(timeTrial.podium), [
+    { rider: "Remco Evenepoel", countryCode: "BEL" },
+    { rider: "Filippo Ganna", countryCode: "ITA" },
+    { rider: "Paul Seixas", countryCode: "FRA" },
+  ]);
+  assert.deepEqual(rows(timeTrial), [
+    ["1", "Remco Evenepoel", "BEL", "44:53.13", ""],
+    ["2", "Filippo Ganna", "ITA", "45:50.44", "+0:57.31"],
+    ["3", "Paul Seixas", "FRA", "46:06.17", "+1:13.04"],
+    ["4", "Brandon McNulty", "USA", "46:18.40", "+1:25.27"],
+    ["5", "Jakob Söderqvist", "SWE", "46:19.31", "+1:26.18"],
+  ]);
+
+  // Road race, same editors: a single Time column holding the winner's time and the
+  // others' gaps, and a second table of DNFs beside it that must not be read.
+  const roadRace = parseWorldChampionshipEventResult(loadWorldsFixture("uci-road-world-championships-2026-mens-under-23-road-race.wikitext"));
+  assert.deepEqual(rows(roadRace), [
+    ["1", "Ashlin Barry", "USA", "4:17:35", ""],
+    ["2", "Héctor Álvarez", "ESP", "", "+00:53"],
+    ["3", "Jesper Stiansen", "NOR", "", "s.t."],
+    ["4", "Aubin Sparfel", "FRA", "", "s.t."],
+    ["5", "Niels Driesen", "BEL", "", "+00:55"],
+  ]);
+  assert.equal(roadRace.standings[1].pageTitle, "Héctor Álvarez (cyclist)");
+});
+
 test("enrichWorldChampionshipResults asks for an event page from race day only and fills the podium", async () => {
   const { enrichWorldChampionshipResults, partitionRaceBuckets } = loadParserExports();
   const page = loadWorldsFixture("uci-road-world-championships-2025-mens-road-race.wikitext");

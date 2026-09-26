@@ -1,0 +1,400 @@
+{{Short description|Cycling event}}
+{{Infobox cycling race report
+| name               = Men's under-23 road race
+| image              =
+| image_caption      = 
+| image_size         =
+| series             = [[2026 UCI Road World Championships]]
+| date               = 25 September 2026
+| distance           = 134
+| unit               = km
+| time               = 3:49.10
+| type               = medals
+| first              = {{flagUCIRoadathlete|[[Ashlin Barry]]|USA}}
+| second             = {{flagUCIRoadathlete|[[Héctor Álvarez (cyclist)|Héctor Álvarez]]|ESP}}
+| third              = {{flagUCIRoadathlete|[[Jesper Stiansen]]|NOR}}
+| previous           = [[2025 UCI Road World Championships&nbsp;– Men's under-23 road race|2025]]
+| next               = [[2027 UCI Road World Championships&nbsp;– Men's under-23 road race|2027]]
+}}
+{{2026 UCI Road World Championships}}
+
+The '''[[UCI Road World Championships&nbsp;– Men's under-23 road race|Men's under-23 road race]]''' of the [[2026 UCI Road World Championships]] was a cycling event that took place on 25 September 2026 in [[Montreal]], [[Canada]]. It was the 5th edition of the championship, for which [[Lorenzo Finn]] of [[Italy]] was the defending champion, having won in [[2025 UCI Road World Championships&nbsp;– Men's under-23 road race|2025]].<ref>{{cite web|url=https://www.montreal2026.org/en/challenge/mens-u23-road-race/|title=Men's Under-23 Road Race|accessdate=25 September 2026}}</ref><ref>{{cite news|url=https://www.cyclingnews.com/pro-cycling/racing/uci-road-world-championships-ashlin-barry-powers-to-under-23-mens-title-with-30-kilometre-solo-attack/|title=UCI Road World Championships: Ashlin Barry powers to under-23 men's title with 30-kilometre solo attack
+|publisher=CyclingNews|first1=Kirsten|last1=Frattini|first2=Laura|last2=Weislo|date=25 September 2026|accessdate=25 September 2026}}</ref>
+
+== Final classification ==
+{{small|Source: }}<ref>[https://prod.server.tissottiming.com/file/0003190212010201FFFFFFFFFFFFFF03 Tissot Timing - UCI Men's under-23 time trial - Results]</ref>
+
+{{col-begin}}
+{{col-break|width=40%}}
+{| class="wikitable sortable" style="text-align:center"
+! Rank !! Athlete !! Nation !! Time 
+|-
+|  {{gold1}} || align=left| [[Ashlin Barry]] || align=left| {{USA}} || 4h 17' 35"
+|-
+|  {{silver2}} || align=left| [[Héctor Álvarez (cyclist)|Héctor Álvarez]] || align=left| {{ESP}} || + 53"
+|-
+|  {{bronze3}} || align=left| [[Jesper Stiansen]] || align=left| {{NOR}} || s.t.
+|-
+| 4 || align=left| [[Aubin Sparfel]] || align=left| {{FRA}} || s.t.
+|-
+| 5 || align=left| [[Niels Driesen]] || align=left| {{BEL}} || + 55"
+|-
+| 6 || align=left| [[Matteo Scalco]] || align=left| {{ITA}} || s.t.
+|-
+| 7 || align=left| [[Mattia Negrente]] || align=left| {{ITA}} || + 1' 19"
+|-
+| 8 || align=left| [[Richard Riška]] || align=left| {{SVK}} || s.t.
+|-
+| 9 || align=left| [[Erazem Valjavec]] || align=left| {{SLO}} || s.t.
+|-
+| 10 || align=left| [[Jack Ward (cyclist)|Jack Ward]] || align=left| {{AUS}} || s.t.
+|-
+| 11 || align=left| {{ill|Daan Dijkman|fr}} || align=left| {{NED}} || s.t. 
+|-
+| 12 || align=left| [[Marcis Shelton]] || align=left| {{USA}} || s.t.
+|-
+| 13 || align=left| {{ill|Bogdan Zabelinskiy|fr}} || align=left| {{CYP}} || s.t. 
+|-
+| 14 || align=left| [[Daniel Moreira (cyclist)|Daniel Moreira]] || align=left| {{POR}} || s.t.
+|-
+| 15 || align=left| {{ill|Jurgen Zomermaand|fr}} || align=left| {{NED}} || s.t. 
+|-
+| 16 || align=left| [[Matisse van Kerckhove]] || align=left| {{BEL}} || s.t.
+|-
+| 17 || align=left| [[Matteo Vanhuffel]] || align=left| {{BEL}} || s.t.
+|-
+| 18 || align=left| [[Mateo Ramírez (cyclist)|Mateo Ramírez]] || align=left| {{ECU}} || s.t.
+|-
+| 19 || align=left| [[Henrique Ribeiro]] || align=left| {{BRA}} || s.t.
+|-
+| 20 || align=left| [[Melk Zumstein]] || align=left| {{SUI}} || s.t. 
+|-
+| 21 || align=left| {{ill|Moritz Mauss|de}} || align=left| {{GER}} || + 1' 30"
+|-
+| 22 || align=left| {{ill|Patrick Frydkjaer|fr}} || align=left| {{DEN}} || + 1' 31"
+|-
+| 23 || align=left| [[Viktor Soenens]] || align=left| {{BEL}} || + 1' 33"
+|-
+| 24 || align=left| [[Elliot Rowe]] || align=left| {{GBR}} || + 2' 29"
+|-
+| 25 || align=left| [[David Haverdings]] || align=left| {{NED}} || s.t.
+|-
+| 26 || align=left| {{ill|Luke Valenti|fr}} || align="left" | {{CAN}} || s.t.
+|-
+| 27 || align=left| [[Kasper Borremans]] || align=left| {{FIN}} || s.t. 
+|-
+| 28 || align=left| {{ill|Remi Arsac|fr}} || align=left| {{FRA}} || s.t.
+|-
+| 29 || align=left| {{ill|Balint Feldhoffer|fr}} || align=left| {{HUN}} || s.t. 
+|-
+| 30 || align=left| [[Cameron Rogers (cyclist)|Cameron Rogers]] || align=left| {{AUS}} || s.t. 
+|-
+| 31 || align=left| {{ill|Guus van den Eijnden|fr}}|| align="left" | {{NED}} || s.t.
+|-
+| 32 || align=left| [[Bert Bolle]]|| align="left" | {{BEL}} || s.t.
+|-
+| 33 || align=left| [[Neriah Meunier Sow]] || align=left| {{SEN}} || s.t.
+|-
+| 34 || align=left| [[Nicolas Halter]] || align=left| {{SUI}} || s.t.
+|-
+| 35 || align=left| [[Jose Cisneros (cyclist)|Jose Cisneros]]|| align="left" | {{MEX}} || s.t.
+|-
+| 36 || align=left| [[Jan Jackowiak]] || align=left| {{POL}} || s.t.
+|-
+| 37 || align=left| [[Sven Aleksander Mernik]] || align=left| {{SLO}} || s.t.
+|-
+| 38 || align=left| [[Alessandro Cattani]] || align=left| {{ITA}} || s.t.
+|-
+| 39 || align=left| [[Ugo Fabries]] || align=left| {{FRA}} || s.t.
+|-
+| 40 || align=left| [[Max Bock (cyclist)|Max Bock]] || align=left| {{GER}} || s.t.
+|-
+| 41 || align=left| [[Rafael Barbas]] || align=left| {{POR}} || s.t.
+|-
+| 42 || align=left| [[Paul Fietzke]] || align=left| {{GER}} || + 2' 48"
+|-
+| 43 || align=left| [[Juan Diego Quintero]] || align=left| {{COL}} || + 3' 44"
+|-
+| 44 || align=left| [[Daniel Lima (cyclist)|Daniel Lima]]|| align="left" | {{POR}} || + 3' 45"
+|-
+| 45 || align=left| {{ill|Kevin Biehl|da}} || align=left| {{DEN}} || + 3' 52"
+|-
+| 46 || align=left| {{ill|Kasper Haugland|fr}} || align=left| {{NOR}} || + 4' 56"
+|-
+| 47 || align=left| [[Riccardo Lorello (cyclist)|Riccardo Lorello]] || align=left| {{ITA}} || + 5' 12"
+|-
+| 48 || align=left| [[Enea Sambinello]] || align=left| {{ITA}} || s.t.
+|-
+| 49 || align=left| [[Nicolas Ginter]] || align=left| {{SUI}} || s.t.
+|-
+| 50 || align=left| {{ill|Mil Morang|da}} || align=left| {{LUX}} || s.t.
+|-
+| 51 || align=left| {{ill|Timothée Coudière-Cantin|fr}} || align=left| {{FRA}} || s.t.
+|-
+| 52 || align=left| {{ill|Victor Loulergue|fr}} || align=left| {{FRA}} || s.t.
+|-
+| 53 || align=left| [[Jasper Schoofs]] || align=left| {{BEL}} || s.t.
+|-
+| 54 || align=left| [[Kristian Egholm]] || align="left" | {{DEN}} || + 5' 59"
+|-
+| 55 || align=left| {{ill|Jermaine Zemke|de}} || align=left| {{GER}} || + 7' 27"
+|-
+| 56 || align=left| {{ill|Eñaut Urkaregi|fr}} || align=left| {{ESP}} || + 8' 33"
+|-
+| 57 || align=left| [[Jacob Bush]] || align=left| {{GBR2}} || s.t.
+|-
+| 58 || align=left| [[Alberto Monti]] || align=left| {{CZE}} || s.t.
+|-
+| 59 || align=left| [[Mattie Dodd]] || align=left| {{GBR2}} || s.t.
+|-
+| 60 || align=left| [[Adam Rafferty (cyclist)|Adam Rafferty]] || align=left| {{IRL}} || s.t.
+|-
+| 61 || align=left| [[Wil Holmes]] || align=left| {{AUS}} || s.t.
+|-
+| 62 || align=left| [[Mads Landbo]] || align=left| {{DEN}} || s.t.
+|-
+| 63 || align=left| {{ill|Patryk Goszczurny|pl}} || align=left| {{CAN}} || s.t.
+|-
+| 64 || align=left| {{ill|Halvor Dolven|fr}} || align=left| {{NOR}} || s.t.
+|-
+| 65 || align=left| [[Louis Leidert]] || align=left| {{GER}} || s.t.
+|-
+| 66 || align=left| [[William Heffernan (cycist)|William Heffernan]] || align=left| {{AUS}} || s.t.
+|-
+| 67 || align=left| [[William Smith (cyclist, born 2004)|William Smith]] || align=left| {{GBR2}} || s.t.
+|-
+| 68 || align=left| [[Anatol Friedl]] || align=left| {{AUT}} || s.t.
+|-
+| 69 || align=left| [[Tomaš Pridal]] || align=left| {{CZE}} || + 9' 20"
+|-
+| 70 || align=left| [[Gavin Sherry]] || align=left| {{USA}} || + 9' 57"
+|-
+| 71 || align=left| [[Adam Smith (cyclist)|Adam Smith]] || align=left| {{CAN}} || + 10' 24"
+|-
+| 72 || align=left| [[Emil Nielsen (cyclist)|Emil Nielsen]] || align=left| {{DEN}} || + 10' 44"
+|-
+| 73 || align=left| [[Dawid Lewandowski]] || align=left| {{POL}} || s.t.
+|-
+| 74 || align=left| [[Kevin Messel]] || align=left| {{NOR}} || s.t.
+|-
+| 75 || align=left| [[Cesar Cisneros]] || align=left| {{MEX}} || + 10' 48"
+|-
+| 76 || align=left| [[Jonas Walton]] || align=left| {{CAN}} || s.t.
+|-
+| 77 || align=left| {{ill|Ciro Pérez|fr}} || align=left| {{URU}} || s.t.
+|-
+| 78 || align=left| [[Sebastian Castro (cyclist)|Sebastian Castro]] || align=left| {{CRC}} || s.t.
+|-
+| 79 || align=left| [[Vladislav Bashlykov]] || align=left| {{KAZ}} || + 11' 54"
+|-
+| 80 || align=left| [[Diego Casagrandre]] || align=left| {{SUI}} || s.t.
+|-
+| 81 || align=left| [[Michael Zarate]] || align=left| {{MEX}} || s.t.
+|-
+| 82 || align=left| [[Samuel Novak]] || align=left| {{SVK}} || + 12' 41"
+|-
+| 83 || align=left| [[Václav Ježek (cyclist)|Václav Ježek]] || align=left| {{CZE}} || s.t.
+|-
+| 84 || align=left| [[Liam O'Brien (cyclist)|Liam O'Brien]] || align=left| {{IRL}} || + 13' 30"
+|-
+| 85 || align=left| [[Ben Wiggins]] || align=left| {{GBR2}} || + 14' 18"
+|-
+| 86 || align=left| [[Jan Huber]] || align=left| {{SUI}} || s.t.
+|-
+| 87 || align=left| [[Noah Andersen]] || align=left| {{DEN}} || s.t.
+|-
+| 88 || align=left| [[Jerome Gauthier]] || align=left| {{CAN}} || + 15' 30"
+|-
+| 89 || align=left| [[Oliver Matik]] || align=left| {{EST}} || + 16' 00"
+|-
+| 90 || align=left| [[David Gaffney (cyclist)|David Gaffney]] || align=left| {{IRL}} || s.t.
+|-
+| 91 || align=left| [[Miguel Ángel Marín]] || align=left| {{COL}} || s.t.
+|-
+| 92 || align=left| [[Robert Andrés Plazas]] || align=left| {{COL}} || s.t.
+|-
+| 93 || align=left| {{ill|Jaka Marolt|fr}} || align=left| {{SLO}} || + 17' 10"
+|-
+| 94 || align=left| [[Adrià Regada]] || align=left| {{AND}} || + 17' 11"
+|-
+| 95 || align=left| {{ill|Anže Ravbar|fr}} || align=left| {{SLO}} || + 17' 35"
+|-
+| 96 || align=left| [[Mattia Proietti Gagliardoni]] || align=left| {{ITA}} || + 20' 15"
+|}
+{{col-break}}
+{| class="wikitable sortable" style="text-align:center"
+! Rank !! Athlete !! Nation !! Time 
+|-
+| || align=left| [[Flavio Astolfi]] || align=left| {{LUX}} || DNF
+|-
+| || align=left| [[Mario Sánchez (cyclist)|Mario Sánchez]] || align=left| {{BOL}} || DNF
+|-
+| || align=left| [[Filip Surdyk]] || align=left| {{POL}} || DNF
+|-
+| || align=left| [[Francisco Fernández (cyclist)|Francisco Fernández]] || align=left| {{ESP}} || DNF
+|-
+| || align=left| [[Jonas Kind Høydahl]] || align=left| {{NOR}} || DNF
+|-
+| || align=left| {{ill|Jaider Muñoz|fr}} || align=left| {{COL}} || DNF
+|-
+| || align=left| [[Gabriel Baptista]] || align=left| {{POR}} || DNF
+|-
+| || align=left| [[Pierre Henry Basset]] || align=left| {{FRA}} || DNF
+|-
+| || align=left| [[Thomas Waites (cyclist)|Thomas Waites]] || align=left| {{AUS}} || DNF
+|-
+| || align=left| [[Yevhen Testsov]] || align=left| {{UKR}} || DNF
+|-
+| || align=left| [[Nicholas van der Merwe]] || align=left| {{BUL}} || DNF
+|-
+| || align=left| [[William Colorado]] || align=left| {{COL}} || DNF
+|-
+| || align=left| [[Lachlan McNabb]] || align=left| {{NZL}} || DNF
+|-
+| || align=left| [[José Antonio Prieto]] || align=left| {{MEX}} || DNF
+|-
+| || align=left| [[Teodor de Luca]] || align=left| {{SWE}} || DNF
+|-
+| || align=left| {{ill|José Juan Prieto|fr}} || align=left| {{MEX}} || DNF
+|-
+| || align=left| [[Nahom Efriem]] || align=left| {{ERI}} || DNF
+|-
+| || align=left| [[Ferhat Emisci]] || align=left| {{TUR}} || DNF
+|-
+| || align=left| [[Chen Yusheng]] || align=left| {{CHN}} || DNF
+|-
+| || align=left| [[Alejandro Granados (cyclist)|Alejandro Granados]] || align=left| {{CRC}} || DNF
+|-
+| || align=left| [[Daniel Cepa]] || align=left| {{ESP}} || DNF
+|-
+| || align=left| [[Markel Aranaz]] || align=left| {{ESP}} || DNF
+|-
+| || align=left| [[Davio Jonsson]] || align=left| {{ISL}} || DNF
+|-
+| || align=left| [[Melvin Torres]] || align=left| {{GUA}} || DNF
+|-
+| || align=left| [[Jadian Neaves]] || align=left| {{TTO}} || DNF
+|-
+| || align=left| [[Valentin Hofer]] || align=left| {{AUT}} || DNF
+|-
+| || align=left| [[Taito Shindo]] || align=left| {{JPN}} || DNF
+|-
+| || align=left| [[Kade Kreikemeier]] || align=left| {{USA}} || DNF
+|-
+| || align=left| [[Manuel Sanroma (cyclist, born 2005)|Manuel Sanroma]] || align=left| {{ESP}} || DNF
+|-
+| || align=left| [[Blaine Kieck]] || align=left| {{RSA}} || DNF
+|-
+| || align=left| [[Seth Dunwoody]] || align=left| {{IRL}} || DNF
+|-
+| || align=left| [[Rastko Nikacevic]] || align=left| {{SRB}} || DNF
+|-
+| || align=left| [[Isshin Yamasato]] || align=left| {{JPN}} || DNF
+|-
+| || align=left| [[Romet Pajur]] || align=left| {{EST}} || DNF
+|-
+| || align=left| [[Mohamed Amine Hamzaoui]] || align=left| {{ALG}} || DNF
+|-
+| || align=left| [[Judah Thompson]] || align=left| {{THA}} || DNF
+|-
+| || align=left| [[Michiel Mouris]] || align=left| {{NED}} || DNF
+|-
+| || align=left| [[Frank Aron Ragilo]] || align=left| {{EST}} || DNF
+|-
+| || align=left| [[Nathan Cusack]] || align=left| {{USA}} || DNF
+|-
+| || align=left| [[Joshua Dike]] || align=left| {{RSA}} || DNF
+|-
+| || align=left| [[Liu Zhicheng (cyclist)|Liu Zhicheng]] || align=left| {{CHN}} || DNF
+|-
+| || align=left| [[Amaniel Desta]] || align=left| {{ETH}} || DNF
+|-
+| || align=left| [[Ruben Rodrigues]] || align=left| {{POR}} || DNF
+|-
+| || align=left| [[Rizky Ridho Riyadiyanto]] || align=left| {{INA}} || DNF
+|-
+| || align=left| [[Pablo Escajadillo]] || align=left| {{PER}} || DNF
+|-
+| || align=left| [[Cheung Shi Ho]] || align=left| {{HKG}} || DNF
+|-
+| || align=left| [[Kevin Nshutiraguma]] || align=left| {{RWA}} || DNF
+|-
+| || align=left| [[Alexander Erasmus]] || align=left| {{RSA}} || DNF
+|-
+| || align=left| [[Jaylen Briceno]] || align=left| {{BIZ}} || DNF
+|-
+| || align=left| [[Jeremy Raboude]] || align=left| {{MRI}} || DNF
+|-
+| || align=left| [[Zhang Rongqi]] || align=left| {{CHN}} || DNF
+|-
+| || align=left| [[Samuel Quevauvilliers]] || align=left| {{MRI}} || DNF
+|-
+| || align=left| [[Wilson Sanon]] || align=left| {{HAI}} || DNF
+|-
+| || align=left| [[Ramiro Videla]] || align=left| {{ARG}} || DNF
+|-
+| || align=left| [[Temuulen Khadbaatar]] || align=left| {{MGL}} || DNF
+|-
+| || align=left| [[Danylo Kozoriz]] || align=left| {{UKR}} || DNF
+|-
+| || align=left| [[Mohammed Alaleeli]] || align=left| {{UAE}} || DNF
+|-
+| || align=left| [[Mohamed Aziz Dellai]] || align=left| {{TUN}} || DNF
+|-
+| || align=left| [[Marouane Kharbouchi]] || align=left| {{MAR}} || DNF
+|-
+| || align=left| [[Deska Raya Adya]] || align=left| {{INA}} || DNF
+|-
+| || align=left| [[Aditya Suryadi Putra]] || align=left| {{INA}} || DNF
+|-
+| || align=left| [[Mousa Al Naghaf]] || align=left| {{KSA}} || DNF
+|-
+| || align=left| [[Hareb Almarzooqi]] || align=left| {{UAE}} || DNF
+|-
+| || align=left| [[Daniel Orellana]] || align=left| {{ESA}} || DNF
+|-
+| || align=left| [[Goran Gabourel]] || align=left| {{BIZ}} || DNF
+|-
+| || align=left| [[Khalil Francis (cyclist)|Khalil Francis]] || align=left| {{JAM}} || DNF
+|-
+| || align=left| [[Anthony Coque]] || align=left| {{ECU}} || DNF
+|-
+| || align=left| [[John Muchiri (cyclist)|John Muchiri]] || align=left| {{KEN}} || DNF
+|-
+| || align=left| [[Kaden Sutherland]] || align=left| {{BIZ}} || DNF
+|-
+| || align=left| [[Prateek Ravla]] || align=left| {{ZIM}} || DNF
+|-
+| || align=left| [[Denver Alphonse]] || align=left| {{LCA}} || DNF
+|-
+| || align=left| [[Mustafa Tarakci]] || align=left| {{TUR}} || DNF
+|-
+| || align=left| [[Arda Tekirdag]] || align=left| {{TUR}} || DNF
+|-
+| || align=left| [[Tekle Alemayo]] || align=left| {{ETH}} || DNF
+|-
+| || align=left| [[Aron Tekle]] || align=left| {{ETH}} || DNF
+|-
+| || align=left| [[Oliver Sims (cyclist)|Oliver Sims]] || align=left| {{AUS}} || DNF
+|-
+| || align=left| [[Milkiyas Maekele]] || align=left| {{ERI}} || DNF
+|-
+| || align=left| [[Jexon Ledezma]] || align=left| {{CRC}} || DNF
+|-
+| || align=left| [[Bernardo Cambareri]] || align=left| {{ARG}} || DNF
+|-
+| || align=left| [[Mateo Kalejman]] || align=left| {{ARG}} || DNF
+|}
+{{col-end}}
+
+==References==
+{{reflist}}
+
+{{UCI Road World Championships&nbsp;– Men's under-23 road race}}
+{{UCI Road World Champions – Men's under-23 road race}}
+
+{{DEFAULTSORT:2026 UCI Road World Championships - Men's under-23 road race}}
+[[Category:2026 UCI Road World Championships|Men's under-23 road race]]
+[[Category:UCI Road World Championships&nbsp;– Men's under-23 road race]]
+[[Category:2026 in men's road cycling]]
+[[Category:Men's sports in Canada]]

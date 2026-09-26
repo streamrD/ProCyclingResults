@@ -2130,7 +2130,9 @@ function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDER
     const headerText = (cell) => cleanWikiText(stripWikiFootnoteTemplates(String(cell?.content || "").replace(/<ref[\s\S]*?(?:<\/ref>|\/>)/gi, "")));
     const columnIndex = (pattern) => headerRow.findIndex((cell) => cell?.header && pattern.test(headerText(cell)));
     const rankIndex = columnIndex(/^rank$/i);
-    const riderIndex = columnIndex(/^rider$/i);
+    // 2019-25 pages head the column "Rider"; the 2026 pages write "Athlete" (and older
+    // ones "Name"), which cost every 2026 card its places 4-5 until 26 September.
+    const riderIndex = columnIndex(/^(rider|athlete|name|cyclist)$/i);
     const countryIndex = columnIndex(/^(country|nation)$/i);
     const timeIndex = columnIndex(/^time$/i);
     const diffIndex = columnIndex(/diff|behind|gap/i);
@@ -2153,8 +2155,14 @@ function parseWorldChampionshipEventResult(rawText, maxRiders = MAX_RESULT_RIDER
         if (!place || Number(place) > maxRiders || !rider) {
           return;
         }
+        // The nation cell is {{flagUCIRoad|SUI}} on 2025 pages and a bare country
+        // template on 2026 ones: {{SUI}}, or {{GBR2}} for the Union Flag variant.
+        const countrySource = String(row[countryIndex]?.content || "");
         const countryCode = normalizeCountryCode(
-          String(row[countryIndex]?.content || "").match(/\{\{\s*flagUCIRoad\s*\|\s*([A-Za-z]{3})/i)?.[1] || athlete?.countryCode || "",
+          countrySource.match(/\{\{\s*flag(?:UCIRoad|country|icon|IOC|u)?\s*\|\s*([A-Za-z]{3})\b/i)?.[1] ||
+            countrySource.match(/\{\{\s*([A-Za-z]{3})\d?\s*\}\}/)?.[1] ||
+            athlete?.countryCode ||
+            "",
         );
         const timeText = cleanWikiText(row[timeIndex]?.content);
         const diffText = diffIndex >= 0 ? cleanWikiText(row[diffIndex]?.content) : "";

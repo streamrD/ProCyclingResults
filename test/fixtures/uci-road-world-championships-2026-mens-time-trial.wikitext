@@ -1,0 +1,163 @@
+{{Short description|Cycling event}}
+{{Infobox cycling race report
+| name               = Men's time trial
+| image              =
+| image_caption      = 
+| image_size         =
+| series             = [[2026 UCI Road World Championships]]
+| date               = 20 September 2026
+| distance           = 39.2
+| unit               = km
+| time               = 44:53.13
+| type               = medals
+| first              = {{flagUCIRoadathlete|[[Remco Evenepoel]]|BEL}}
+| second             = {{flagUCIRoadathlete|[[Filippo Ganna]]|ITA}}
+| third              = {{flagUCIRoadathlete|[[Paul Seixas]]|FRA}}
+| previous           = [[2025 UCI Road World Championships&nbsp;– Men's time trial|2025]]
+| next               = [[2027 UCI Road World Championships&nbsp;– Men's time trial|2027]]
+}}
+{{2026 UCI Road World Championships}}
+
+The '''[[UCI Road World Championships&nbsp;– Men's time trial|Men's time trial]]''' of the [[2026 UCI Road World Championships]] was a cycling event that took place on 20 September 2026 in [[Montreal]], [[Canada]]. It was the 33nd edition of the championship, for which [[Remco Evenepoel]] of [[Belgium]] was the defending champion, having won in [[2025 UCI Road World Championships&nbsp;– Men's time trial|2025]].<ref>{{cite web|url=https://ucikigali2025.rw/competition-program/men-elite-2/|title=Men's Elite Time Trial|accessdate=20 September 2026}}</ref><ref>{{cite news|url=https://www.cyclingnews.com/pro-cycling/record-breaking-remco-evenepoel-makes-it-four-in-a-row-with-blistering-time-trial-performance-in-montreal/|title=Road World Championships: Record-breaking Remco Evenepoel makes it four in a row with blistering time trial performance in Montreal|publisher=CyclingNews|first=Katy|last=Madgwick|date=20 September 2026|accessdate=20 September 2026}}</ref>
+
+== Final classification ==
+
+<ref> [https://prod.server.tissottiming.com/file/0003190212010601FFFFFFFFFFFFFF02 Tissot Timing - UCI Men's elite time trial - Results]</ref>
+
+{| class="wikitable sortable" style="text-align:center"
+! Rank !! Athlete !! Nation !! Time !! Time Gap
+|-
+|  {{gold1}} || align=left| [[Remco Evenepoel]] || align=left| {{BEL}} || 44:53.13 || –
+|-
+|  {{silver2}} || align=left| [[Filippo Ganna]] || align=left| {{ITA}} || 45:50.44 || + 57.31
+|-
+|  {{bronze3}} || align=left| [[Paul Seixas]] || align=left| {{FRA}} || 46:06.17 || + 1:13.04
+|-
+| 4 || align=left| [[Brandon McNulty]] || align=left| {{USA}} || 46:18.40 || + 1:25.27
+|-
+| 5 || align=left| [[Jakob Söderqvist]] || align=left| {{SWE}} || 46:19.31 || + 1:26.18
+|-
+| 6 || align=left| [[Isaac del Toro]] || align=left| {{MEX}} || 46:31.96 || + 1:38.83
+|-
+| 7 || align=left| [[Stefan Küng]] || align=left| {{SUI}} || 46:37.57 || + 1:44.44
+|-
+| 8 || align=left| [[Kasper Asgreen]] || align=left| {{DEN}} || 46:41.67 || + 1:48.54
+|-
+| 9 || align=left| [[Daan Hoole]] || align=left| {{NED}} || 46:55.34 || + 2:02.21
+|-
+| 10 || align=left| [[Callum Thornley]] || align=left| {{GBR2}} || 46:55.92 || + 2:02.79
+|-
+| 11 || align=left| [[Alec Segaert]] || align=left| {{BEL}} || 46:56.90 || + 2:03.77
+|-
+| 12 || align=left| [[Mikkel Bjerg]] || align=left| {{DEN}} || 46:59.23 || + 2:06.10
+|-
+| 13 || align=left| [[Michael Leonard (cyclist)|Michael Leonard]] || align=left| {{CAN}} || 47:02.78 || + 2:09.65
+|-
+| 14 || align=left| [[Jasha Sutterlin]] || align=left| {{GER}} || 47:04.01 || + 2:10.88
+|-
+| 15 || align=left| [[Iván Romeo]] || align=left| {{ESP}} || 47:06.26 || + 2:13.13
+|-
+| 16 || align=left| [[Mattia Cattaneo]] || align=left| {{ITA}} || 47:07.52 || + 2:14.39
+|-
+| 17 || align=left| [[Jan Tratnik]] || align=left| {{SLO}} || 47:09.00 || + 2:15.87
+|-
+| 18 || align=left| [[Ethan Hayter]] || align=left| {{GBR2}} || 47:11.92 || + 2:18.79
+|-
+| 19 || align=left| [[Artem Shmidt]] || align=left| {{USA}} || 47:13.57 || + 2:20.44
+|-
+| 20 || align=left| [[Nelson Oliveira (cyclist)|Nelson Oliveira]] || align=left| {{POR}} || 47:16.37 || + 2:23.24
+|-
+| 21 || align=left| [[Ivo Oliveira]] || align=left| {{POR}} || 47:21.74 || + 2:28.61
+|-
+| 22 || align=left| [[Tobias Foss]] || align=left| {{NOR}} || 47:22.31 || + 2:29.18
+|-
+| 23 || align=left| [[Michał Kwiatkowski]] || align=left| {{POL}} || 47:26.91 || + 2:33.78
+|-
+| 24 || align=left| [[Pablo Castrillo]] || align=left| {{ESP}} || 47:34.74 || + 2:41.61
+|-
+| 25 || align=left| [[Byron Munton]] || align=left| {{RSA}} || 47:37.44 || + 2:44.31
+|-
+| 26 || align=left| [[Bruno Armirail]]|| align="left" | {{FRA}} || 47:38.27 || + 2:45.14
+|-
+| 27 || align=left| [[Max Walscheid]] || align=left| {{GER}} || 47:40.65 || + 2:47.52
+|-
+| 28 || align=left| [[Stefan Bissegger]] || align=left| {{SUI}} || 47:47.40 || + 2:54.27
+|-
+| 29 || align=left| [[Mathias Vacek]] || align=left| {{CZE}} || 47:53.11 || + 2:59.98
+|-
+| 30 || align=left| [[Arthur Kluckers]] || align=left| {{LUX}} || 48:04.65 || + 3:11.52
+|-
+| 31 || align=left| [[Nickolas Zukowsky]]|| align="left" | {{CAN}} || 48:12.29 || + 3:19.16
+|-
+| 32 || align=left| [[Andreas Leknessund]]|| align="left" | {{NOR}} || 48:15.75 || + 3:22.62
+|-
+| 33 || align=left| [[Conor Leahy]] || align=left| {{AUS}} || 48:16.67 || + 3:23.54
+|-
+| 34 || align=left| [[Rune Herregodts]] || align=left| {{BEL}} || 48:21.81 || + 3:28.68
+|-
+| 35 || align=left| [[Ognjen Ilić]]|| align="left" | {{SRB}} || 48:33.65 || + 3:40.52
+|-
+| 36 || align=left| [[Ryan Mullen]] || align=left| {{IRL}} || 48:41.40 || + 3:48.27
+|-
+| 37 || align=left| [[Walter Vargas]] || align=left| {{COL}} || 48:41.74 || + 3:48.61
+|-
+| 38 || align=left| [[János Pelikán]] || align=left| {{HUN}} || 49:15.57 || + 4:22.44
+|-
+| 39 || align=left| [[Henrique Avancini]] || align=left| {{BRA}} || 49:22.18 || + 4:29.05
+|-
+| 40 || align=left| [[Kaden Hopkins]] || align=left| {{BER}} || 49:40.64 || + 4:47.51
+|-
+| 41 || align=left| [[Barnabás Peák]] || align=left| {{HUN}} || 50:10.90 || + 5:17.77
+|-
+| 42 || align=left| [[Anton Kuzmin]] || align=left| {{KAZ}} || 50:24.20 || + 5:31.07
+|-
+| 43 || align=left| [[Jo Hashikawa]] || align=left| {{JPN}} || 50:38.94 || + 5:45.81
+|-
+| 44 || align=left| [[Amir Ansari (cyclist)|Amir Ansari]]|| align="left" | {{ART}} || 50:41.90 || + 5:48.77
+|-
+| 45 || align=left| [[Brandon Rivera]] || align=left| {{COL}} || 50:46.65 || + 5:53.52
+|-
+| 46 || align=left| {{ill|Nicholas Narraway|fr}} || align=left| {{BER}} || 51:10.21 || + 6:17.08
+|-
+| 47 || align=left| [[Cory Lewis (cyclist)|Cory Lewis]] || align=left| {{BIZ}} || 51:19.11 || + 6:25.98
+|-
+| 48 || align=left| [[Batmönkhiin Maral-Erdene]] || align=left| {{MGL}} || 52:00.60 || + 7:07.47
+|-
+| 49 || align=left| [[Alexandre Mayer]] || align=left| {{MRI}} || 52:04.28 || + 7:11.15
+|-
+| 50 || align=left| [[Cao Houwang]] || align=left| {{CHN}} || 52:20.14 || + 7:27.01
+|-
+| 51 || align=left| [[Liu Chenglu]] || align=left| {{CHN}} || 52:25.10 || + 7:31.97
+|-
+| 52 || align=left| [[Daniil Marukhin]] || align=left| {{KAZ}} || 52:26.73 || + 7:33.60
+|-
+| 53 || align=left| {{ill|Derrick Chavarria|fr}} || align=left| {{BIZ}} || 53:07.49 || + 8:14.36
+|-
+| 54 || align=left| {{ill|Fredd Matute|fr}} || align=left| {{HON}} || 53:33.09 || + 8:39.96
+|-
+| 55 || align=left| {{ill|Majid Abu Harrah|fr}} || align=left| {{JOR}} || 53:50.94 || + 8:57.81
+|-
+| 56 || align=left| [[Ahmad Badreddin Wais]] || align=left| {{ART}} || 54:19.86 || + 9:26.73
+|-
+| 57 || align=left| [[Daniel Yon Hin]] || align=left| {{MRI}} || 55:13.28 || + 10:20.15
+|-
+| 58 || align=left| [[Chris Bodden]] || align=left| {{CAY}} || 59:24.86 || + 14:31.73
+|-
+| 59 || align=left| [[Apolinário Cá]] || align=left| {{GBS}} || 1:08:07.08 || + 23:13.95
+|-
+| 60 || align=left| [[Gil Gomes (cyclist)|Gil Gomes]] || align=left| {{GBS}} || 1:09:27.51 || + 24:34.38
+|-
+| || align=left| [[Arvin Moazzami]] || align=left| {{IRI}} || colspan=2|Did not start
+|}
+
+==References==
+{{reflist}}
+
+{{UCI Road World Championships&nbsp;– Men's time trial}}
+{{UCI Road World Champions – Men's time trial}}
+
+{{DEFAULTSORT:2026 UCI Road World Championships - Men's time trial}}
+[[Category:2026 UCI Road World Championships|Men's time trial]]
+[[Category:UCI Road World Championships&nbsp;– Men's time trial]]
+[[Category:2026 in men's road cycling]]
+[[Category:Men's sports in Canada]]
