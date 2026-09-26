@@ -898,6 +898,7 @@ function applyCanonicalRiderNames(riderSeasons, stageRaces, seasonRaces) {
     rename(race, "winner");
     rename(race, "second");
     rename(race, "third");
+    rename(race, "previousWinner");
   });
 
   return renamed;
@@ -8398,6 +8399,54 @@ async function resolveSeasonYear(today = new Date(), probe = probeSeasonOpening,
 // so the debug payload can say so.
 let lastPopulatedRaceMetadata = null;
 
+// Last year's winner for the upcoming cards ("Last year: Tadej Pogačar"), read from the
+// previous season's two WorldTour pages through the ordinary Wikipedia path, once per
+// process: a settled season's page does not change, so the revision index keeps the
+// cost to the two raw reads at boot. A miss or a failure leaves the cards without the
+// line; nothing is guessed. Keyed by series and title, so a renamed race gets no line.
+const previousSeasonWinnersCache = new Map();
+
+function previousSeasonWinnerKey(race) {
+  return `${race?.series || ""}|${race?.title || ""}`;
+}
+
+async function loadPreviousSeasonWinners(year, loadWikiRaw = fetchWikiRaw) {
+  if (previousSeasonWinnersCache.has(year)) {
+    return previousSeasonWinnersCache.get(year);
+  }
+  const winners = new Map();
+  try {
+    const pages = await Promise.all(
+      getSeasonSources(year).map(async (season) => parseSeasonRows(await loadWikiRaw(season.pageTitle), season, year)),
+    );
+    pages.flat().forEach((race) => {
+      if (race.title && race.winner) {
+        winners.set(previousSeasonWinnerKey(race), {
+          winner: race.winner,
+          countryCode: race.winnerCountryCode || "",
+          pageTitle: race.winnerPageTitle || "",
+        });
+      }
+    });
+  } catch (error) {
+    logEvent("warn", "previous-season-winners-failed", { year, error });
+  }
+  previousSeasonWinnersCache.set(year, winners);
+  return winners;
+}
+
+function attachPreviousSeasonWinners(races, winners) {
+  (races || []).forEach((race) => {
+    const hit = winners?.get(previousSeasonWinnerKey(race));
+    if (hit) {
+      race.previousWinner = hit.winner;
+      race.previousWinnerCountryCode = hit.countryCode;
+      race.previousWinnerPageTitle = hit.pageTitle;
+    }
+  });
+  return races;
+}
+
 async function buildRaceMetadata(options = {}) {
   const startedAt = Date.now();
   const includeDeferred = options.includeDeferred === true;
@@ -8428,6 +8477,7 @@ async function buildRaceMetadata(options = {}) {
   allRaces.forEach((race) => {
     race.id = getRaceId(race);
   });
+  attachPreviousSeasonWinners(allRaces, await loadPreviousSeasonWinners(SEASON_YEAR - 1));
   // Once the season's last WorldTour race is over, find out when the next one opens so
   // the closing note can say so. Not asked at all while the season is running.
   const seasonCalendar = buildSeasonCalendar(allRaces);
@@ -10942,26 +10992,72 @@ function buildLiveStageRaceCard(race) {
 
 // Start time, distance and laps, known only for championship events read from a
 // schedule table. Season-table races carry none of these and get no line.
-function buildUpcomingDetailLine(race) {
+// "Saturday, in 14 days" for a one-day race, "Tuesday to Sunday, in 17 days · 6 days"
+// for a stage race, counted on the host country's calendar day so a race that starts
+// tomorrow there says so. A day-level countdown is safe on a page rendered per request
+// from a payload up to fifteen minutes old; hours would not be.
+function describeUpcomingWhen(race, now = new Date()) {
+  const start = toUtcDateOnly(race?.startDate);
+  const end = toUtcDateOnly(race?.endDate) || start;
+  if (!start) {
+    return "";
+  }
+  const today = getRaceLocalDate(race, now) || toUtcDateOnly(now);
+  const days = Math.round((start.getTime() - today.getTime()) / SEASON_DAY_MS);
+  const span = Math.round((end.getTime() - start.getTime()) / SEASON_DAY_MS) + 1;
+  const weekday = (date) => WEEKDAY_NAMES[date.getUTCDay()];
+  const when = span > 1 ? `${weekday(start)} to ${weekday(end)}` : weekday(start);
+  const lead = days <= 0 ? "Today" : days === 1 ? `${when}, tomorrow` : `${when}, in ${days} days`;
+  return [lead, span > 1 ? `${span} days` : ""].filter(Boolean).join(" · ");
+}
+
+function buildUpcomingDetailLine(race, now = new Date()) {
   return [
-    race.finishedToday ? "Today" : "",
+    race.finishedToday ? "Today" : describeUpcomingWhen(race, now),
     race.startTimeLocal ? `Start ${race.startTimeLocal} local` : "",
-    race.distanceKm ? `${race.distanceKm} km` : "",
-    race.laps ? `${race.laps} laps` : "",
+    race.distanceKm ? `${race.distanceKm}\u00a0km` : "",
+    race.laps ? `${race.laps}\u00a0laps` : "",
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-function buildUpcomingCard(race) {
-  const detail = buildUpcomingDetailLine(race);
+// Which of the calendar's tiers the card names: a Monument or a Grand Tour is what a
+// newer fan wants to know, a plain stage race says how long it runs, a one-day race
+// says nothing. The Worlds carry their own kicker.
+const UPCOMING_TIER_CHIPS = {
+  "grand-tour": ["Grand Tour", "tier-chip-grand"],
+  monument: ["Monument", "tier-chip-monument"],
+  "stage-race": ["Stage race", "tier-chip-stage"],
+};
+
+function buildUpcomingTierChip(race) {
+  if (isWorldChampionshipRace(race)) {
+    return "";
+  }
+  const chip = UPCOMING_TIER_CHIPS[getSeasonCalendarTier(race)];
+  return chip ? ` <span class="tier-chip ${chip[1]}">${escapeHtml(chip[0])}</span>` : "";
+}
+
+// Last year's winner, read from the previous season's pages (see
+// loadPreviousSeasonWinners); nothing is printed for a race that had no edition.
+function buildPreviousWinnerMarkup(race) {
+  if (!race?.previousWinner) {
+    return "";
+  }
+  const flag = getCountryFlagEmoji(normalizeCountryCode(race.previousWinnerCountryCode));
+  return `Last year: ${flag ? `<span class="country-flag" aria-hidden="true">${escapeHtml(flag)}</span> ` : ""}${buildRiderLinkMarkup(race.previousWinner)}`;
+}
+
+function buildUpcomingCard(race, now = new Date()) {
+  const detail = [escapeHtml(buildUpcomingDetailLine(race, now)), buildPreviousWinnerMarkup(race)].filter(Boolean).join(" · ");
   const championshipAttribute = race.series === WORLD_CHAMPIONSHIPS.label ? ` data-championship="worlds"` : "";
   return `
     <article class="card upcoming-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
-      <div class="card-kicker">${escapeHtml(race.series)}</div>
+      <div class="card-kicker">${escapeHtml(race.series)}${buildUpcomingTierChip(race)}</div>
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
-      ${detail ? `<p class="meta upcoming-detail">${escapeHtml(detail)}</p>` : ""}
+      ${detail ? `<p class="meta upcoming-detail">${detail}</p>` : ""}
     </article>`;
 }
 
@@ -11496,7 +11592,7 @@ function buildRecentResultsBlock(group) {
 
 function buildCompetitionSection(group) {
   const liveMarkup = group.liveStageRaces.map(buildLiveStageRaceCard).join("");
-  const upcomingMarkup = group.upcomingRaces.map(buildUpcomingCard).join("");
+  const upcomingMarkup = group.upcomingRaces.map((race) => buildUpcomingCard(race)).join("");
   const blocks = [
     buildCompetitionBlock("Live Multi-Stage", "Current stage races and overall standings.", liveMarkup),
     buildRecentResultsBlock(group),
@@ -12060,6 +12156,11 @@ function buildSeasonCalendarSvg(calendar, options = {}) {
     const laneRaces = calendar.races.filter((race) => race.seriesId === series.id);
     return { series, ...packSeasonCalendarRows(laneRaces, X, scale, labelFor) };
   });
+  const championships = Array.isArray(options.championships) ? options.championships : [];
+  if (championships.length && seriesFilter === "both") {
+    lanes.push({ series: { id: "worlds", label: "World Championships" }, ...packSeasonCalendarRows(championships, X, scale, () => "") });
+  }
+  const rainbowId = `season-rainbow-${compact ? "compact" : seriesFilter}`;
 
   let cursorY = axisHeight + 10;
   const laneTops = lanes.map((lane) => {
@@ -12071,6 +12172,9 @@ function buildSeasonCalendarSvg(calendar, options = {}) {
   const bandTop = axisHeight - 4;
   const patternId = compact ? "season-hatch-compact" : `season-hatch-${seriesFilter}`;
   const parts = [CALENDAR_HATCH_DEFS(patternId)];
+  parts.push(
+    `<defs><linearGradient id="${rainbowId}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00a651"/><stop offset="0.2" stop-color="#00a651"/><stop offset="0.2" stop-color="#005bbb"/><stop offset="0.4" stop-color="#005bbb"/><stop offset="0.4" stop-color="#ef3340"/><stop offset="0.6" stop-color="#ef3340"/><stop offset="0.6" stop-color="#111111"/><stop offset="0.8" stop-color="#111111"/><stop offset="0.8" stop-color="#ffcc00"/><stop offset="1" stop-color="#ffcc00"/></linearGradient></defs>`,
+  );
   parts.push(buildCalendarMonthMarkup(calendar.rangeStart, calendar.rangeEnd, X, bandTop, height, compact));
   parts.push(buildCalendarWindowMarkup(X, bandTop, height, patternId, compact ? 0 : height - 4));
 
@@ -12089,7 +12193,7 @@ function buildSeasonCalendarSvg(calendar, options = {}) {
       const barHeight = grand ? rowHeight - 4 : rowHeight - 8;
       const y = barsTop + entry.row * rowHeight + (rowHeight - barHeight) / 2;
       const radius = Math.min(6, barHeight / 2);
-      const fill = seasonRaceFill(race);
+      const fill = race.seriesId === "worlds" && race.status === "finished" ? `url(#${rainbowId})` : seasonRaceFill(race);
       const outlined = race.status === "upcoming" || race.status === "cancelled";
       const stroke = race.status === "live" ? "#b78f00" : outlined ? "rgba(0, 51, 160, 0.5)" : "none";
       const dash = outlined ? ' stroke-dasharray="3 2"' : "";
@@ -12134,7 +12238,8 @@ function buildSeasonCalendarSvg(calendar, options = {}) {
 }
 
 function buildSeasonRaceRowMarkup(race, presentAnchors) {
-  const fill = seasonRaceFill(race);
+  const worlds = race.seriesId === "worlds";
+  const fill = worlds && race.status === "finished" ? "var(--rainbow)" : seasonRaceFill(race);
   const outlined = race.status === "upcoming" || race.status === "cancelled";
   const dotStyle = `background:${outlined ? "transparent" : fill}; border:${outlined ? "1.5px dashed rgba(0, 51, 160, 0.5)" : "none"};${race.tier === "grand-tour" ? " height:22px;" : ""}`;
   const title = presentAnchors.has(race.anchor)
@@ -12155,11 +12260,14 @@ function buildSeasonRaceRowMarkup(race, presentAnchors) {
 // Phone layout: the strip is unreadable at 390px, so the same races become a list
 // grouped by month, live races pinned first and finished months folded away until the
 // section is expanded.
-function buildSeasonMonthListMarkup(calendar, presentAnchors) {
-  const live = calendar.races.filter((race) => race.status === "live");
+function buildSeasonMonthListMarkup(calendar, presentAnchors, championships = []) {
+  const rows = [...calendar.races, ...championships].sort(
+    (left, right) => left.startDate.localeCompare(right.startDate) || right.endDate.localeCompare(left.endDate),
+  );
+  const live = rows.filter((race) => race.status === "live");
   const todayMonth = calendar.today.slice(0, 7);
   const byMonth = new Map();
-  calendar.races.forEach((race) => {
+  rows.forEach((race) => {
     if (race.status === "live") {
       return;
     }
@@ -12176,23 +12284,38 @@ function buildSeasonMonthListMarkup(calendar, presentAnchors) {
         ${live.map((race) => buildSeasonRaceRowMarkup(race, presentAnchors)).join("")}
       </div>`
     : "";
-  const months = [...byMonth.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([month, races]) => {
-      const past = month < todayMonth && races.every((race) => race.status !== "upcoming");
-      const monthIndex = Number.parseInt(month.slice(5, 7), 10) - 1;
-      const rows = past ? "" : races.map((race) => buildSeasonRaceRowMarkup(race, presentAnchors)).join("");
-      return `
-        <div class="season-month"${past ? " data-season-past" : ""}>
+  const entries = [...byMonth.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const monthMarkup = ([month, races]) => {
+    const monthIndex = Number.parseInt(month.slice(5, 7), 10) - 1;
+    return `
+        <div class="season-month">
           <div class="season-month-head">
             <h3>${escapeHtml(CALENDAR_MONTH_NAMES[monthIndex])}</h3>
-            <span class="season-month-count">${escapeHtml(String(races.length))} race${races.length === 1 ? "" : "s"}${past ? " · finished" : ""}</span>
+            <span class="season-month-count">${escapeHtml(String(races.length))} race${races.length === 1 ? "" : "s"}</span>
           </div>
-          ${rows || `<div class="season-month-folded">${races.map((race) => escapeHtml(race.title)).join(" · ")}</div>`}
+          ${races.map((race) => buildSeasonRaceRowMarkup(race, presentAnchors)).join("")}
         </div>`;
-    })
-    .join("");
-  return `${liveMarkup}${months}`;
+  };
+  // The months already run fold into one block, so the list opens at this month
+  // instead of at January (comp of 2026-09-26). Opening it shows every race.
+  const past = entries.filter(([month, races]) => month < todayMonth && races.every((race) => race.status !== "upcoming"));
+  const current = entries.filter((entry) => !past.includes(entry));
+  const pastCount = past.reduce((sum, [, races]) => sum + races.filter((race) => race.seriesId !== "worlds").length, 0);
+  const monthName = (entry) => CALENDAR_MONTH_NAMES[Number.parseInt(entry[0].slice(5, 7), 10) - 1];
+  const pastMarkup = past.length
+    ? `
+      <details class="season-months-past" data-season-past>
+        <summary>
+          <span class="season-months-past-copy">
+            <span class="season-months-past-title">${escapeHtml(past.length === 1 ? monthName(past[0]) : `${monthName(past[0])} to ${monthName(past[past.length - 1])}`)}</span>
+            <span class="season-month-count">${escapeHtml(String(pastCount))} race${pastCount === 1 ? "" : "s"} run</span>
+          </span>
+          <span class="season-months-past-toggle" aria-hidden="true"><span class="season-months-past-open">Open</span><span class="season-months-past-close">Close</span></span>
+        </summary>
+        ${past.map(monthMarkup).join("")}
+      </details>`
+    : "";
+  return `${liveMarkup}${pastMarkup}${current.map(monthMarkup).join("")}`;
 }
 
 // The site went up part-way through its first season, so that season's closing note
@@ -12294,10 +12417,43 @@ function buildSeasonCloseoutHero(closeout, heroMenu) {
       </section>`;
 }
 
-function buildSeasonCalendarSection(calendar, data = {}) {
+// The four Worlds events in the calendar's own row shape, read from the payload at
+// render time because their winners come with the payload's enrichment, not with the
+// metadata the calendar is built from. They are drawn as their own lane and listed
+// among the months, and never counted among the WorldTour races.
+function buildCalendarChampionships(data, todayIso) {
+  return [...(data?.upcomingRaces || []), ...(data?.recentResults || [])]
+    .filter((race) => isWorldChampionshipRace(race) && race?.startDate && race?.endDate)
+    .map((race) => {
+      const startDate = toIsoDay(race.startDate);
+      const endDate = toIsoDay(race.endDate);
+      const status = race.winner ? "finished" : endDate < todayIso ? "finished" : startDate <= todayIso ? "live" : "upcoming";
+      return {
+        id: race.id || race.pageTitle,
+        anchor: createRaceAnchorId(race),
+        title: `Worlds: ${describeWorldChampionshipEventShort(race)}`,
+        series: race.series,
+        seriesId: "worlds",
+        startDate,
+        endDate,
+        date: race.date || "",
+        location: race.location || "",
+        countryCode: race.countryCode || "",
+        winner: race.winner || "",
+        winnerCountryCode: race.winnerCountryCode || "",
+        status: race.winner ? "finished" : status,
+        tier: "championship",
+      };
+    })
+    .filter((race) => race.startDate && race.endDate)
+    .sort((left, right) => left.startDate.localeCompare(right.startDate));
+}
+
+function buildSeasonCalendarSection(calendar, data = {}, now = new Date()) {
   if (!calendar?.races?.length || !calendar.rangeStart || !calendar.rangeEnd) {
     return "";
   }
+  const championships = buildCalendarChampionships(data, calendar.today);
   const presentAnchors = new Set(
     [
       ...(data.recentResults || []),
@@ -12308,15 +12464,9 @@ function buildSeasonCalendarSection(calendar, data = {}) {
       .map(createRaceAnchorId)
       .filter(Boolean),
   );
-  const liveTitles = calendar.races.filter((race) => race.status === "live").map((race) => race.title);
   const upcoming = calendar.races.filter((race) => race.status === "upcoming").slice(0, 3);
-  const summary = [
-    liveTitles.length ? `${liveTitles.join(" and ")} in progress` : "",
-    `${calendar.finishedCount} of ${calendar.races.length} WorldTour races run`,
-    upcoming[0] ? `next: ${upcoming[0].title}, ${formatSeasonRaceDates(upcoming[0])}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  // The same sentence the hero carries, so the two never disagree about what is next.
+  const summary = buildSeasonStatusLine({ ...data, seasonCalendar: calendar }, now);
   const upNextMarkup = upcoming.length
     ? `
       <aside class="competition-block season-upnext">
@@ -12342,6 +12492,7 @@ function buildSeasonCalendarSection(calendar, data = {}) {
     ["season-swatch-finished", "Finished"],
     ["season-swatch-live", "Live now"],
     ["season-swatch-upcoming", "Upcoming"],
+    ...(championships.length ? [["season-swatch-worlds", "World Championships"]] : []),
     ["season-swatch-window", "National championship window (typical, not confirmed)"],
   ]
     .map(([swatch, label]) => `<span class="season-legend-item"><span class="season-swatch ${swatch}"></span>${escapeHtml(label)}</span>`)
@@ -12359,7 +12510,7 @@ function buildSeasonCalendarSection(calendar, data = {}) {
   const fullViews = ["both", "mens", "womens"]
     .map(
       (id) =>
-        `<div class="season-full-view" data-season-view="${id}"${id === "both" ? "" : " hidden"}>${buildSeasonCalendarSvg(calendar, { series: id, presentAnchors })}</div>`,
+        `<div class="season-full-view" data-season-view="${id}"${id === "both" ? "" : " hidden"}>${buildSeasonCalendarSvg(calendar, { series: id, championships, presentAnchors })}</div>`,
     )
     .join("");
 
@@ -12392,7 +12543,7 @@ function buildSeasonCalendarSection(calendar, data = {}) {
             <p class="meta season-note">Race dates and winners come from the Wikipedia ${escapeHtml(String(calendar.year))} season pages the site already reads. Hover or focus a bar for the result; click one to jump to its card. Hatched windows show when national championships usually fall; confirmed dates live in the National Championships section.</p>
           </div>
           <div class="season-month-list" data-season-months>
-            ${buildSeasonMonthListMarkup(calendar, presentAnchors)}
+            ${buildSeasonMonthListMarkup(calendar, presentAnchors, championships)}
           </div>
         </div>
         ${upNextMarkup}
@@ -12442,6 +12593,127 @@ function buildDeferredGroupClientPayload(groups) {
   );
 }
 
+// The hero's two computed lines, chosen from three comps on 2026-09-26 (option B):
+// where the season stands with the next race across the WorldTour and the Worlds, and
+// the day's headline result. Nothing here is fetched; it is the payload read again.
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function describeWorldChampionshipEventShort(event) {
+  return String(event?.title || "")
+    .replace(/^Elite\s+/i, "")
+    .trim()
+    .toLowerCase();
+}
+
+// The next race in the reader's sense: the WorldTour calendar's next race or the next
+// Worlds event, whichever comes first. The Worlds sit outside the WorldTour calendar,
+// so the calendar's own "next" said "Il Lombardia" on the eve of the men's road race.
+function describeNextRace(data, now = new Date()) {
+  const todayIso = toIsoDay(toUtcDateOnly(now));
+  const calendarNext = (data?.seasonCalendar?.races || []).find((race) => race.status === "upcoming") || null;
+  const worldsNext =
+    [...(data?.upcomingRaces || [])]
+      .filter((race) => isWorldChampionshipRace(race) && toIsoDay(race.startDate) >= todayIso)
+      .sort((left, right) => toIsoDay(left.startDate).localeCompare(toIsoDay(right.startDate)))[0] || null;
+  const next = [
+    calendarNext ? { title: calendarNext.title, startDate: calendarNext.startDate, endDate: calendarNext.endDate } : null,
+    worldsNext
+      ? { title: `Worlds ${describeWorldChampionshipEventShort(worldsNext)}`, startDate: toIsoDay(worldsNext.startDate), endDate: toIsoDay(worldsNext.endDate) }
+      : null,
+  ]
+    .filter((entry) => entry && entry.startDate)
+    .sort((left, right) => left.startDate.localeCompare(right.startDate))[0];
+  if (!next) {
+    return "";
+  }
+  const days = seasonDayIndex(next.startDate, todayIso);
+  const when = days === 0 ? "today" : days === 1 ? "tomorrow" : formatSeasonRaceDates(next);
+  return `next: ${next.title}, ${when}`;
+}
+
+function buildSeasonStatusLine(data, now = new Date()) {
+  const calendar = data?.seasonCalendar;
+  if (!calendar?.races?.length) {
+    return "";
+  }
+  const liveTitles = calendar.races.filter((race) => race.status === "live").map((race) => race.title);
+  return [
+    liveTitles.length ? `${liveTitles.join(" and ")} in progress` : "",
+    `${calendar.finishedCount} of ${calendar.races.length} WorldTour races run`,
+    describeNextRace(data, now),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+// "X wins the Tour of Flanders" reads as English; "X wins the Il Lombardia" does not.
+function describeRaceForHeadline(race) {
+  if (isWorldChampionshipRace(race)) {
+    return `the ${describeWorldChampionshipEventShort(race)}`;
+  }
+  const title = String(race?.title || "").trim();
+  return /^(?:Tour|Grand Prix|Vuelta|La Vuelta|Giro|Volta|Cadel Evans|Amstel Gold|Cl[aá]sica|Classic|Bretagne|Copenhagen|Hamburg|Renewi|Itzulia)/i.test(title)
+    ? `the ${title}`
+    : title;
+}
+
+function describeStageForHeadline(stage) {
+  const number = Number(stage?.number);
+  if (number === 0) {
+    return "the prologue";
+  }
+  return Number.isFinite(number) && number > 0 ? `stage ${number}` : String(stage?.label || "the stage").toLowerCase();
+}
+
+// The newest result the payload holds, labelled Today or Yesterday on the host
+// country's day; older results carry no headline, the status line stands alone.
+function buildHeroHeadline(data, now = new Date()) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const candidates = [];
+  [...(data?.recentResults || []), ...(data?.finalizedStageRaces || [])].forEach((race) => {
+    const day = toUtcDateOnly(race?.endDate);
+    if (!race?.winner || !day) {
+      return;
+    }
+    candidates.push({ race, day, text: `${race.winner} wins ${describeRaceForHeadline(race)}` });
+  });
+  (data?.liveStageRaces || []).forEach((race) => {
+    const stage = race?.stageRace?.latestStage;
+    const winner = stage?.winner || stage?.standings?.[0]?.rider || "";
+    const day = toUtcDateOnly(stage?.date);
+    if (winner && day) {
+      candidates.push({ race, day, text: `${winner} wins ${describeStageForHeadline(stage)} of ${describeRaceForHeadline(race)}` });
+    }
+  });
+  const newest = candidates.sort((left, right) => right.day.getTime() - left.day.getTime())[0];
+  if (!newest) {
+    return null;
+  }
+  const today = getRaceLocalDate(newest.race, now) || toUtcDateOnly(now);
+  const label = newest.day.getTime() === today.getTime() ? "Today" : newest.day.getTime() === today.getTime() - dayMs ? "Yesterday" : "";
+  return label ? { label, text: newest.text } : null;
+}
+
+function buildHeroStatus(data, now = new Date()) {
+  return { statusLine: buildSeasonStatusLine(data, now), headline: buildHeroHeadline(data, now) };
+}
+
+// On a phone the five menu buttons are one row of chips, so three of them wear a
+// short label there ("Worlds", "Nationals", "Calendar"); the WorldTour pair fit as
+// they are. Both spellings are in the markup and the stylesheet picks.
+const HERO_MENU_SHORT_LABELS = {
+  "world-championships": "Worlds",
+  "national-championships": "Nationals",
+  "season-calendar": "Calendar",
+};
+
+function buildHeroMenuLabel(group) {
+  const short = HERO_MENU_SHORT_LABELS[group?.id] || "";
+  return short
+    ? `<span class="hero-menu-full">${escapeHtml(group.label)}</span><span class="hero-menu-short">${escapeHtml(short)}</span>`
+    : escapeHtml(group.label);
+}
+
 function buildHtmlPage(data, view) {
   const shareView = getShareView(view?.sharePath || "/") || SHARE_VIEWS["/"];
   const competitionGroups = getCompetitionGroups(data);
@@ -12453,10 +12725,11 @@ function buildHtmlPage(data, view) {
     .join("");
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
   const seasonCalendarSection = buildSeasonCalendarSection(data.seasonCalendar, data);
-  // One plain sentence in the release-notes register, not a feature list: the reader
-  // has already arrived (audience assessment A9/C1, 2026-09-26).
+  // One plain sentence in the release-notes register, kept only for a payload with no
+  // calendar; otherwise the hero says where the season stands (comp B, 2026-09-26).
   const heroSubheader =
     "Results, standings and the finish, minutes after the line, for the men's and women's WorldTour, the Worlds and the national championships.";
+  const heroStatus = buildHeroStatus(data);
   const heroMenu = [
     ...competitionGroups,
     { id: "national-championships", label: "National Championships" },
@@ -12472,9 +12745,9 @@ function buildHtmlPage(data, view) {
                 data-deferred-group-id="${escapeHtml(group.id)}"
                 data-scroll-on-load="true"
               >
-                ${escapeHtml(group.label)}
+                ${buildHeroMenuLabel(group)}
               </button>`
-            : `<a class="hero-menu-link${group.badge ? " is-new" : ""}" href="#${escapeHtml(group.id)}"${group.opensSeasonCalendar ? " data-season-open" : ""}>${escapeHtml(group.label)}${group.badge ? `<span class="hero-menu-badge">${escapeHtml(group.badge)}</span>` : ""}</a>`
+            : `<a class="hero-menu-link${group.badge ? " is-new" : ""}" href="#${escapeHtml(group.id)}"${group.opensSeasonCalendar ? " data-season-open" : ""}>${buildHeroMenuLabel(group)}${group.badge ? `<span class="hero-menu-badge">${escapeHtml(group.badge)}</span>` : ""}</a>`
         }`,
     )
     .join("");
@@ -12486,12 +12759,17 @@ function buildHtmlPage(data, view) {
           <div class="hero-copy">
             <div class="eyebrow">An independent race desk</div>
             <h1>Pro Cycling Results</h1>
-            <p class="hero-subtitle">${escapeHtml(heroSubheader)}</p>
+            <p class="hero-subtitle${heroStatus.statusLine ? " hero-status" : ""}" data-hero-status>${escapeHtml(heroStatus.statusLine || heroSubheader)}</p>
             <div class="updated-row">
               <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
               <button type="button" class="refresh-button" data-refresh-button data-fetched-at="${escapeHtml(data.fetchedAt || "")}">${REFRESH_ICON_SVG}<span data-refresh-label>Refresh results</span></button>
             </div>
             <p class="refresh-status" data-refresh-status role="status" aria-live="polite" hidden></p>
+            ${
+              heroStatus.headline
+                ? `<p class="hero-headline" data-hero-headline><span class="hero-pill">${escapeHtml(heroStatus.headline.label)}</span><span>${escapeHtml(heroStatus.headline.text)}</span></p>`
+                : ""
+            }
           </div>
           <nav class="hero-menu" aria-label="Page sections">${heroMenu}</nav>
         </div>
@@ -12734,6 +13012,37 @@ function buildHtmlPage(data, view) {
         margin-top: 1.1rem;
         color: rgba(255, 255, 255, 0.76);
         font-size: 0.82rem;
+      }
+
+      /* The day's headline result under the timestamp: a yellow Today/Yesterday pill
+         and one sentence, so the first screen says who won before any scroll. */
+      .hero-headline {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.6rem;
+        margin: 1rem 0 0;
+        color: white;
+        font-size: 1.05rem;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .hero-pill {
+        display: inline-block;
+        padding: 0.16rem 0.55rem;
+        border-radius: 999px;
+        background: var(--uci-yellow);
+        color: var(--uci-blue-deep);
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .hero-menu-short {
+        display: none;
       }
 
       /* The refresh button beside the timestamp: it asks the server whether a newer copy
@@ -13134,6 +13443,12 @@ function buildHtmlPage(data, view) {
       .competition-stack {
         display: grid;
         gap: 1.15rem;
+        /* minmax(0, 1fr), never the implicit auto track: a block whose content has an
+           intrinsic width (the nationals schedule strip, a two-column status grid)
+           widened the track past the section at 390px and the section's overflow clip
+           cut the text mid-word (assessment A2; the almanac grid's own rule was not
+           the cause, this track was). */
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .competition-block {
@@ -13438,6 +13753,20 @@ function buildHtmlPage(data, view) {
         display: flex;
         flex-wrap: wrap;
         gap: 0.45rem;
+      }
+
+      /* The one long chip ("Include 22 federations without a recorded champion") wraps
+         its words on a phone instead of running past the edge (assessment A2). */
+      .national-results-foot {
+        flex-wrap: wrap;
+      }
+
+      .national-chip-muted {
+        white-space: normal;
+        text-align: left;
+        line-height: 1.3;
+        height: auto;
+        max-width: 100%;
       }
 
       .national-chip,
@@ -14147,6 +14476,70 @@ function buildHtmlPage(data, view) {
         color: #b78f00;
       }
 
+      .season-months-past {
+        margin-top: 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel-alt);
+      }
+
+      .season-months-past > summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+        padding: 0.8rem 0.95rem;
+        list-style: none;
+        cursor: pointer;
+      }
+
+      .season-months-past > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .season-months-past-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+      }
+
+      .season-months-past-title {
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .season-months-past-toggle {
+        padding: 0.3rem 0.75rem;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--uci-blue);
+        background: white;
+      }
+
+      .season-months-past-close,
+      .season-months-past[open] .season-months-past-open {
+        display: none;
+      }
+
+      .season-months-past[open] .season-months-past-close {
+        display: inline;
+      }
+
+      .season-months-past > .season-month {
+        margin: 0 0.95rem 0.9rem;
+      }
+
+      .season-swatch-worlds {
+        background: var(--rainbow);
+      }
+
       .season-month-folded {
         margin-top: 0.4rem;
         color: var(--muted);
@@ -14192,6 +14585,34 @@ function buildHtmlPage(data, view) {
 
       .card {
         padding: 1.2rem;
+      }
+
+      .tier-chip {
+        display: inline-block;
+        margin-left: 0.45rem;
+        padding: 0.1rem 0.5rem;
+        border-radius: 999px;
+        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        vertical-align: middle;
+      }
+
+      .tier-chip-monument {
+        background: var(--uci-yellow);
+        color: var(--uci-blue-deep);
+      }
+
+      .tier-chip-grand {
+        background: var(--uci-blue);
+        color: white;
+      }
+
+      .tier-chip-stage {
+        background: rgba(0, 51, 160, 0.1);
+        color: var(--uci-blue);
       }
 
       .card-kicker {
@@ -15659,9 +16080,36 @@ function buildHtmlPage(data, view) {
           grid-template-columns: 1fr;
         }
 
+        /* One row of chips instead of five stacked buttons: the comp of 2026-09-26
+           took the first rider's name from 1,180px to under 1,000px on a phone. */
         .hero-menu {
-          gap: 0.65rem;
-          grid-template-columns: 1fr;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          align-content: start;
+          padding-top: 0.9rem;
+        }
+
+        .hero-menu-link {
+          flex: 0 0 auto;
+          min-height: 2.3rem;
+          padding: 0.5rem 0.85rem;
+          border-radius: 999px;
+          font-size: 0.8rem;
+          letter-spacing: 0.05em;
+        }
+
+        .hero-menu-badge {
+          margin-left: 0.4rem;
+          font-size: 0.6rem;
+        }
+
+        .hero-menu-full {
+          display: none;
+        }
+
+        .hero-menu-short {
+          display: inline;
         }
 
         h1 {

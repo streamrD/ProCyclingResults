@@ -106,6 +106,13 @@ function loadParserExports() {
       foldRiderKey,
       extractRiderPageTitle,
       buildStandingEntry,
+      buildHeroStatus,
+      buildHeroMenuLabel,
+      describeNextRace,
+      buildSeasonStatusLine,
+      loadPreviousSeasonWinners,
+      attachPreviousSeasonWinners,
+      buildCalendarChampionships,
       parseCyclingResultLine,
       isSameTimeMarker,
       parseSeasonRows,
@@ -1662,7 +1669,7 @@ test("parseWorldChampionshipEliteEvents reads the four elite events from the sch
 
   const card = buildUpcomingCard(events[3]);
   assert.match(card, /data-championship="worlds"/);
-  assert.match(card, /Start 09:00 local · 273.4 km · 12 laps/);
+  assert.match(card, /Start 09:00 local · 273.4\u00a0km · 12\u00a0laps/);
   assert.match(card, /27 September 2026 • Montreal, Canada/);
   assert.doesNotMatch(buildUpcomingCard(events[0]), /laps/);
 });
@@ -6215,12 +6222,16 @@ test("buildSeasonCalendarSection links bars to cards on the page, pins live race
   const { buildSeasonCalendar, buildSeasonCalendarSection } = loadParserExports();
   const fixture = buildCalendarFixture();
   const calendar = buildSeasonCalendar(fixture, new Date("2026-09-04T00:00:00Z"));
-  const markup = buildSeasonCalendarSection(calendar, {
-    liveStageRaces: [fixture[3]],
-    upcomingRaces: [fixture[4]],
-    recentResults: [],
-    finalizedStageRaces: [],
-  });
+  const markup = buildSeasonCalendarSection(
+    calendar,
+    {
+      liveStageRaces: [fixture[3]],
+      upcomingRaces: [fixture[4]],
+      recentResults: [],
+      finalizedStageRaces: [],
+    },
+    new Date("2026-09-04T00:00:00Z"),
+  );
 
   assert.match(markup, /id="season-calendar"/);
   assert.match(markup, /Vuelta a España in progress · 4 of 7 WorldTour races run · next: Il Lombardia, 10 Oct/);
@@ -6238,16 +6249,17 @@ test("buildSeasonCalendarSection links bars to cards on the page, pins live race
   assert.match(markup, /data-season-calendar hidden>/);
   assert.match(markup, /data-season-close/);
   assert.doesNotMatch(markup, /data-season-compact/);
-  // Phone list: live pinned once, August folded away as finished, October open.
+  // Phone list: live pinned once; the months already run fold into one block that
+  // opens on request, so the list starts at this month; October stays open.
   const monthList = markup.slice(markup.indexOf("data-season-months"), markup.indexOf("</section>"));
   assert.equal((monthList.match(/Vuelta a España/g) || []).length, 1);
   assert.match(monthList, /<h3>Live now<\/h3>/);
-  const monthBlocks = monthList.split('<div class="season-month"').slice(1);
-  const august = monthBlocks.find((block) => block.includes("<h3>August</h3>"));
-  const october = monthBlocks.find((block) => block.includes("<h3>October</h3>"));
-  assert.ok(august.startsWith(" data-season-past"), "August should be folded as finished");
-  assert.ok(!october.startsWith(" data-season-past"), "October should stay open");
-  assert.match(august, /season-month-folded/);
+  const folded = monthList.slice(monthList.indexOf('<details class="season-months-past"'), monthList.indexOf("</details>"));
+  assert.match(folded, /<summary>[\s\S]*?season-months-past-title">[A-Za-z]+(?: to August)?<\/span>[\s\S]*?races? run<\/span>[\s\S]*?Open/);
+  assert.match(folded, /<h3>August<\/h3>/);
+  assert.doesNotMatch(folded, /<h3>October<\/h3>/);
+  assert.match(monthList.slice(monthList.indexOf("</details>")), /<h3>October<\/h3>/);
+  assert.doesNotMatch(monthList, /season-month-folded/);
   assert.match(markup, /Up next[\s\S]*?Il Lombardia[\s\S]*?Tour of Chongming Island/);
   assert.equal(buildSeasonCalendarSection({ races: [] }, {}), "");
 });
@@ -8033,4 +8045,211 @@ test("the season's race-keyed caches are cleared when the year moves on, and onl
   assert.equal(seasonCaches.articleCache.size, 1, "not yet: the season has not moved");
   assert.equal(await resolveSeasonYear(new Date("2027-01-13T00:00:00Z"), opening, 2026), 2027);
   assert.equal(seasonCaches.articleCache.size, 0, "cleared the moment the year moves");
+});
+
+// ---------------------------------------------------------------------------------
+// The first screen, chosen from comps on 2026-09-26: the hero says where the season
+// stands and who won today; upcoming cards sell the race; the phone calendar opens at
+// this month and the Worlds have a lane.
+
+test("the hero says where the season stands, with the Worlds as the next race when they come first", () => {
+  const { buildHeroStatus, describeNextRace } = loadParserExports();
+  const calendar = {
+    today: "2026-09-26",
+    finishedCount: 1,
+    liveCount: 0,
+    upcomingCount: 2,
+    races: [
+      { title: "Grand Prix Cycliste de Montréal", status: "finished", startDate: "2026-09-13", endDate: "2026-09-13" },
+      { title: "Il Lombardia", status: "upcoming", startDate: "2026-10-10", endDate: "2026-10-10" },
+      { title: "Tour of Guangxi", status: "upcoming", startDate: "2026-10-13", endDate: "2026-10-18" },
+    ],
+  };
+  const mensRoadRace = {
+    pageTitle: "2026 UCI Road World Championships – Men's road race",
+    title: "Elite men's road race",
+    series: "UCI Road World Championships",
+    countryCode: "CAN",
+    startDate: new Date("2026-09-27T00:00:00Z"),
+    endDate: new Date("2026-09-27T00:00:00Z"),
+  };
+  const womensRoadRace = {
+    ...mensRoadRace,
+    pageTitle: "2026 UCI Road World Championships – Women's road race",
+    title: "Elite women's road race",
+    startDate: new Date("2026-09-26T00:00:00Z"),
+    endDate: new Date("2026-09-26T00:00:00Z"),
+    winner: "Demi Vollering",
+    winnerCountryCode: "NED",
+  };
+  const data = { seasonCalendar: calendar, upcomingRaces: [mensRoadRace], recentResults: [womensRoadRace], finalizedStageRaces: [], liveStageRaces: [] };
+  const now = new Date("2026-09-26T20:00:00Z");
+
+  const status = buildHeroStatus(data, now);
+  assert.equal(status.statusLine, "1 of 3 WorldTour races run · next: Worlds men's road race, tomorrow");
+  assert.deepEqual({ ...status.headline }, { label: "Today", text: "Demi Vollering wins the women's road race" });
+  // Without the Worlds the calendar's next race leads, with its date.
+  assert.equal(describeNextRace({ seasonCalendar: calendar, upcomingRaces: [] }, now), "next: Il Lombardia, 10 Oct");
+  // The day after, the same result is yesterday's; a week on it carries no headline.
+  assert.equal(buildHeroStatus(data, new Date("2026-09-27T20:00:00Z")).headline.label, "Yesterday");
+  assert.equal(buildHeroStatus(data, new Date("2026-10-05T12:00:00Z")).headline, null);
+  // A live stage race's latest stage is the headline, and the race leads the status line.
+  const vuelta = {
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    countryCode: "ESP",
+    startDate: new Date("2026-08-22T00:00:00Z"),
+    endDate: new Date("2026-09-13T00:00:00Z"),
+    stageRace: { latestStage: { number: 5, date: "2026-08-26", winner: "Jasper Philipsen" } },
+  };
+  const live = buildHeroStatus(
+    { seasonCalendar: { ...calendar, races: [{ title: "Vuelta a España", status: "live", startDate: "2026-08-22", endDate: "2026-09-13" }, ...calendar.races] }, liveStageRaces: [vuelta], recentResults: [], upcomingRaces: [], finalizedStageRaces: [] },
+    new Date("2026-08-26T18:00:00Z"),
+  );
+  assert.match(live.statusLine, /^Vuelta a España in progress · 1 of 4 WorldTour races run · next: Il Lombardia, 10 Oct$/);
+  assert.deepEqual({ ...live.headline }, { label: "Today", text: "Jasper Philipsen wins stage 5 of the Vuelta a España" });
+  // No calendar, no status line (the hero falls back to its sentence).
+  assert.equal(buildHeroStatus({ upcomingRaces: [], recentResults: [] }, now).statusLine, "");
+});
+
+test("the hero menu carries a short label for the chips a phone shows", () => {
+  const { buildHeroMenuLabel } = loadParserExports();
+  assert.equal(
+    buildHeroMenuLabel({ id: "world-championships", label: "UCI Road World Championships" }),
+    '<span class="hero-menu-full">UCI Road World Championships</span><span class="hero-menu-short">Worlds</span>',
+  );
+  assert.equal(buildHeroMenuLabel({ id: "season-calendar", label: "Season Calendar" }), '<span class="hero-menu-full">Season Calendar</span><span class="hero-menu-short">Calendar</span>');
+  assert.equal(buildHeroMenuLabel({ id: "mens-worldtour", label: "Men's WorldTour" }), "Men&#39;s WorldTour");
+});
+
+test("an upcoming card names the tier, the day and the countdown, and last year's winner", () => {
+  const { buildUpcomingCard } = loadParserExports();
+  const now = new Date("2026-09-26T15:00:00Z");
+  const lombardia = {
+    id: "2026 Il Lombardia",
+    pageTitle: "2026 Il Lombardia",
+    title: "Il Lombardia",
+    series: "Men's WorldTour",
+    date: "10 October 2026",
+    location: "Italy",
+    countryCode: "ITA",
+    startDate: new Date("2026-10-10T00:00:00Z"),
+    endDate: new Date("2026-10-10T00:00:00Z"),
+    previousWinner: "Tadej Pogačar",
+    previousWinnerCountryCode: "SLO",
+  };
+  const card = buildUpcomingCard(lombardia, now);
+  assert.match(card, /<div class="card-kicker">Men&#39;s WorldTour <span class="tier-chip tier-chip-monument">Monument<\/span><\/div>/);
+  assert.match(card, /<p class="meta upcoming-detail">Saturday, in 14 days · Last year: <span class="country-flag" aria-hidden="true">🇸🇮<\/span> <a class="rider-text rider-link"[^>]*>Tadej Pogačar<\/a><\/p>/);
+
+  const guangxi = {
+    ...lombardia,
+    id: "2026 Tour of Guangxi",
+    pageTitle: "2026 Tour of Guangxi",
+    title: "Tour of Guangxi",
+    date: "13–18 October 2026",
+    location: "China",
+    countryCode: "CHN",
+    startDate: new Date("2026-10-13T00:00:00Z"),
+    endDate: new Date("2026-10-18T00:00:00Z"),
+    previousWinner: "Paul Double",
+    previousWinnerCountryCode: "GBR",
+  };
+  const stageCard = buildUpcomingCard(guangxi, now);
+  assert.match(stageCard, /tier-chip tier-chip-stage">Stage race</);
+  assert.match(stageCard, /Tuesday to Sunday, in 17 days · 6 days · Last year: /);
+
+  // The Worlds keep their own detail line and wear no tier chip.
+  const worlds = {
+    pageTitle: "2026 UCI Road World Championships – Men's road race",
+    title: "Elite men's road race",
+    series: "UCI Road World Championships",
+    date: "27 September 2026",
+    location: "Montreal, Canada",
+    countryCode: "CAN",
+    startDate: new Date("2026-09-27T00:00:00Z"),
+    endDate: new Date("2026-09-27T00:00:00Z"),
+    startTimeLocal: "09:00",
+    distanceKm: 273.4,
+    laps: 12,
+  };
+  const worldsCard = buildUpcomingCard(worlds, new Date("2026-09-26T20:00:00Z"));
+  assert.doesNotMatch(worldsCard, /tier-chip/);
+  assert.match(worldsCard, /upcoming-detail">Sunday, tomorrow · Start 09:00 local · 273.4\u00a0km · 12\u00a0laps</);
+  // On race day, before the result: Today. No previous edition: no line.
+  assert.match(buildUpcomingCard({ ...worlds, finishedToday: true }, new Date("2026-09-27T14:00:00Z")), /upcoming-detail">Today · Start/);
+  assert.doesNotMatch(buildUpcomingCard({ ...lombardia, previousWinner: "" }, now), /Last year/);
+});
+
+test("last year's winners are read once from the previous season's pages and joined by series and title", async () => {
+  const { loadPreviousSeasonWinners, attachPreviousSeasonWinners } = loadParserExports();
+  const table = (rows) =>
+    ['{| class="wikitable plainrowheaders"', "|-", '! scope="col" |Race', '! scope="col" |Date', '! scope="col" |Winner', '! scope="col" |Second', '! scope="col" |Third', ...rows, "|}"].join("\n");
+  const calls = [];
+  const loader = async (title) => {
+    calls.push(title);
+    return title.includes("Women")
+      ? table(["|-", '! scope="row" |{{flagicon|ITA}} [[2025 Strade Bianche Donne|Strade Bianche Donne]]', "|8 March", "| {{Flagathlete|[[Demi Vollering]]|NED}}", "|", "|"])
+      : table(["|-", '! scope="row" |{{flagicon|ITA}} [[2025 Il Lombardia|Il Lombardia]]', "|11 October", "| {{Flagathlete|[[Tadej Pogačar]]|SLO}}", "| {{Flagathlete|[[Remco Evenepoel]]|BEL}}", "| {{Flagathlete|[[Ben Healy]]|IRL}}"]);
+  };
+  const winners = await loadPreviousSeasonWinners(2025, loader);
+  assert.deepEqual(calls, ["2025_UCI_World_Tour", "2025_UCI_Women's_World_Tour"]);
+  const races = [
+    { title: "Il Lombardia", series: "Men's WorldTour" },
+    { title: "Strade Bianche Donne", series: "Women's WorldTour" },
+    { title: "Tour of Guangxi", series: "Men's WorldTour" },
+  ];
+  attachPreviousSeasonWinners(races, winners);
+  assert.equal(races[0].previousWinner, "Tadej Pogačar");
+  assert.equal(races[0].previousWinnerCountryCode, "SLO");
+  assert.equal(races[1].previousWinner, "Demi Vollering");
+  assert.equal(races[2].previousWinner, undefined);
+  // Cached per process: the pages are not read again; a failure is remembered as empty.
+  await loadPreviousSeasonWinners(2025, loader);
+  assert.equal(calls.length, 2);
+  const failing = await loadPreviousSeasonWinners(2024, async () => {
+    throw new Error("503");
+  });
+  assert.equal(failing.size, 0);
+});
+
+test("the season calendar lists the Worlds among the months and draws them as their own lane", () => {
+  const { buildSeasonCalendar, buildSeasonCalendarSection } = loadParserExports();
+  const fixture = buildCalendarFixture();
+  const calendar = buildSeasonCalendar(fixture, new Date("2026-09-26T00:00:00Z"));
+  const mensRoadRace = {
+    id: "2026 UCI Road World Championships – Men's road race",
+    pageTitle: "2026 UCI Road World Championships – Men's road race",
+    title: "Elite men's road race",
+    series: "UCI Road World Championships",
+    countryCode: "CAN",
+    startDate: new Date("2026-09-27T00:00:00Z"),
+    endDate: new Date("2026-09-27T00:00:00Z"),
+  };
+  const womensRoadRace = {
+    ...mensRoadRace,
+    id: "2026 UCI Road World Championships – Women's road race",
+    pageTitle: "2026 UCI Road World Championships – Women's road race",
+    title: "Elite women's road race",
+    startDate: new Date("2026-09-26T00:00:00Z"),
+    endDate: new Date("2026-09-26T00:00:00Z"),
+    winner: "Demi Vollering",
+    winnerCountryCode: "NED",
+  };
+  const markup = buildSeasonCalendarSection(
+    calendar,
+    { liveStageRaces: [], upcomingRaces: [mensRoadRace], recentResults: [womensRoadRace], finalizedStageRaces: [] },
+    new Date("2026-09-26T12:00:00Z"),
+  );
+  assert.match(markup, />WORLD CHAMPIONSHIPS</, "a lane of its own on the timeline");
+  assert.match(markup, /season-swatch-worlds/);
+  assert.match(markup, /data-tip-title="Worlds: women&#39;s road race"[^>]*data-status="finished"/);
+  assert.match(markup, /data-tip-title="Worlds: men&#39;s road race"[^>]*data-status="upcoming"/);
+  assert.match(markup, /season-month-title">[\s\S]*?Worlds: men&#39;s road race/);
+  assert.match(markup, /next: Worlds men&#39;s road race, tomorrow/);
+  // The Worlds are not WorldTour races: the count is unchanged.
+  assert.match(markup, /of 7 WorldTour races run/);
+  // The single-series views keep to their series.
+  const mensView = markup.slice(markup.indexOf('data-season-view="mens"'), markup.indexOf('data-season-view="womens"'));
+  assert.doesNotMatch(mensView, /WORLD CHAMPIONSHIPS/);
 });

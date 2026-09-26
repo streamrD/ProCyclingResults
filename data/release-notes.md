@@ -2,6 +2,9 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 26 September 2026
 
+- **The first screen says where the season stands.** The hero now opens with how many WorldTour races have been run and what comes next, the Worlds included, and names the day's winner under the timestamp. On a phone the five section buttons are one row of chips, so the first result is a shorter scroll away.
+- **Upcoming cards that sell the race.** Each upcoming race now says whether it is a Monument, a Grand Tour or a stage race, which day it starts and in how many days, how long it runs, and who won it last year.
+- **The calendar opens at this month.** On a phone the months already run fold into one line you can open, and the Worlds now appear in the calendar, as their own lane on the timeline and among the month's races.
 - **Faster pages, especially on phones.** The results page now travels compressed, about a tenth of its former size, and a page already built is reused rather than rebuilt for every visitor.
 - **Ready the moment it deploys.** The site builds its results as soon as it starts, so the first visitor after an update sees the page, not the loading screen.
 - **One-day races on race day.** A one-day race now stays on the page on its race day, marked as today's, and its result arrives within minutes of Wikipedia recording it instead of up to an hour later.

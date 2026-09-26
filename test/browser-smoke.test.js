@@ -583,3 +583,37 @@ test("a picture on a site page fills the window on a click and goes back on the 
   assert.equal(out.reopened, true);
   assert.equal(out.closedFromInside, true);
 });
+
+// A true 390px phone width, which needs the framed probe: nothing in the National
+// Championships section may run past the right edge, where the section's overflow
+// clip would cut it mid-word (assessment A2, 2026-09-26; the cause was the
+// competition stack's implicit grid track). The results table scrolls sideways inside
+// its own wrapper by design and is left out of the count.
+test("the National Championships section fits a true 390px phone width", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+  const { buildNationalChampionshipsSection, parseNationalChampionshipsIndex } = loadServer();
+  const index = fs.readFileSync(path.join(__dirname, "fixtures", "cyclingnews-2026-road-national-champions-index.html"), "utf8");
+  const section = buildNationalChampionshipsSection({ ...parseNationalChampionshipsIndex(index), sourceUrl: "https://example.test/index" });
+  assert.match(section, /id="national-championships"/);
+  const page = buildPage({ markup: section, probe: "document.getElementById('smoke').textContent = JSON.stringify({ errors: window.__errors });" });
+  const out = runFramedProbe(
+    chrome,
+    page,
+    `
+    const d = document.getElementById('f').contentDocument;
+    const width = d.documentElement.clientWidth;
+    const past = [].filter.call(d.querySelectorAll('#national-championships *'), (e) => {
+      const box = e.getBoundingClientRect();
+      return !e.closest('.national-table-wrap') && box.width > 0 && box.right > width + 1;
+    });
+    const label = (e) => e.tagName.toLowerCase() + '.' + String(e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className || '').split(' ')[0];
+    document.getElementById('smoke').textContent = JSON.stringify({ width, past: past.length, sample: past.slice(0, 6).map(label) });
+  `,
+  );
+  assert.equal(out.width, 390, "the frame lays the page out at a phone width");
+  assert.equal(out.past, 0, `elements past the right edge at 390px: ${JSON.stringify(out.sample)}`);
+});
