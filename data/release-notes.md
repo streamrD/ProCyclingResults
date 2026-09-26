@@ -2,6 +2,18 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 26 September 2026
 
+- **Faster pages, especially on phones.** The results page now travels compressed, about a tenth of its former size, and a page already built is reused rather than rebuilt for every visitor.
+- **Ready the moment it deploys.** The site builds its results as soon as it starts, so the first visitor after an update sees the page, not the loading screen.
+- **One-day races on race day.** A one-day race now stays on the page on its race day, marked as today's, and its result arrives within minutes of Wikipedia recording it instead of up to an hour later.
+- **Five names on every one-day card.** Older one-day results had quietly stopped at three names; every card carries its top five again, and La Vuelta Femenina's final classification shows all five.
+- **Today, yesterday and same time.** One-day cards say "Finished today" or "Yesterday", and a rider who finished on the winner's time reads "same time" instead of a blank.
+- **Every jersey's top five, on a phone too.** Tap a classification's name under the jerseys to open its top five in place; it used to open only on hover. Each classification now carries a one-line explanation of how it is scored.
+- **Plainer words.** "Finished" instead of "Final stage race", "Country" instead of "Federation", full names on the championship filters, a shorter opening line, and the updated time shown in your own time zone.
+- **Where the results come from.** A line at the foot of the page and a paragraph on About say where results are read from, that there are no ads or tracking beyond a page counter, and that the site is not affiliated with the UCI, any organiser or ProCyclingStats. Links to full results now say they open ProCyclingStats.
+- **National Championships fit a phone.** The championships section no longer cuts its text off at the right edge on narrow screens.
+- **The result leads the news.** After a race has finished, its news line opens with the stories written about the result rather than the previews.
+- **Rider cards say what they know.** A rider with no win or podium this season now shows the best placing the site has seen, and team names no longer open a rider card.
+- **A status you can watch.** `/api/data-status` now says how many races each section holds and whether the last rebuild succeeded.
 - **Places 4 and 5 on the Worlds cards.** The Montréal result tables list riders under a heading the site did not recognise, so every world championship card stopped at the podium. The full top five now shows wherever Wikipedia has written the event its own page.
 
 ## 20 September 2026

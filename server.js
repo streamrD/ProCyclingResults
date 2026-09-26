@@ -2077,7 +2077,10 @@ function parseSeasonRows(rawText, season, year) {
   return tables
     .flatMap((table) => {
       const rows = table
-        .split(/\n\|-(?:\s[^\n]*)?\n/)
+        // A separator may carry attributes on its own line (`|- style="…"`), never
+        // the next line: `\s` here once matched the newline and swallowed the row's
+        // header cell, shifting every column by one on the real 2026 page.
+        .split(/\n\|-(?:[ \t][^\n]*)?[ \t]*\n/)
         .map(splitSeasonTableRow)
         .filter((cells) => cells.length > 0);
       const headerRow = rows.find((cells) => cells.length >= 2 && cells.every((cell) => cell.header));

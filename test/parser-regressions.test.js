@@ -7843,3 +7843,194 @@ test("a zero gap in the source survives as sameTime on the standing entry", () =
   assert.match(html, /Paul Seixas<\/a><span class="standing-delta standing-same-time" title="Same time as the winner">same time<\/span>/);
   assert.match(html, /Brandon McNulty<\/a><span class="standing-gap">\+00:27<\/span>/);
 });
+
+// ---------------------------------------------------------------------------------
+// Parsers and the rollover (assessment R4, R8, R9, R10, R11, R13, M10, M12, C6;
+// 2026-09-26).
+
+test("parseSeasonRows reads the real 2026 WorldTour page, a sortable table and a reordered header", () => {
+  const { parseSeasonRows, SEASONS } = loadParserExports();
+  const season = SEASONS[0];
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "uci-world-tour-2026-season.wikitext"), "utf8");
+  const races = parseSeasonRows(raw, season, 2026);
+  assert.ok(races.length >= 30, `${races.length} races read`);
+  const downUnder = races.find((race) => race.title === "Tour Down Under");
+  assert.ok(downUnder, "the first race of the season");
+  assert.equal(downUnder.winner, "Jay Vine");
+  assert.equal(downUnder.second, "Mauro Schmid");
+  // Dates made inside the VM are not `instanceof` this realm's Date; read them as strings.
+  assert.equal(new Date(downUnder.startDate).toISOString().slice(0, 10), "2026-01-20");
+  assert.equal(new Date(downUnder.endDate).toISOString().slice(0, 10), "2026-01-25");
+
+  // A `sortable` class, a `style=` before `class` and styled row separators used to
+  // yield zero races.
+  const restyled = raw
+    .replace('{| class="wikitable plainrowheaders"', '{| style="text-align:left" class="wikitable sortable plainrowheaders"')
+    .replace(/\n\|-\n/g, '\n|- style="background:#fff"\n');
+  assert.equal(parseSeasonRows(restyled, season, 2026).length, races.length);
+
+  // The header row says where the columns are, so a moved Date column is still a date.
+  const reordered = [
+    '{| class="wikitable plainrowheaders"',
+    "|-",
+    '! scope="col" |Race',
+    '! scope="col" |Winner',
+    '! scope="col" |Second',
+    '! scope="col" |Third',
+    '! scope="col" |Date',
+    "|-",
+    '! scope="row" |{{flagicon|ITA}} [[2026 Milan–San Remo|Milan–San Remo]]',
+    "| {{Flagathlete|[[Tadej Pogačar]]|SLO}}",
+    "| {{Flagathlete|[[Filippo Ganna]]|ITA}}",
+    "| {{Flagathlete|[[Mathieu van der Poel]]|NED}}",
+    "|21 March",
+    "|}",
+  ].join("\n");
+  const [sanremo] = parseSeasonRows(reordered, season, 2026);
+  assert.ok(sanremo, "one race from the reordered table");
+  assert.equal(sanremo.winner, "Tadej Pogačar");
+  assert.equal(sanremo.third, "Mathieu van der Poel");
+  assert.equal(new Date(sanremo.startDate).toISOString().slice(0, 10), "2026-03-21");
+});
+
+test("official providers match the season's edition of a race, not a literal 2026 title", () => {
+  const {
+    OFFICIAL_STAGE_RACE_PROVIDERS,
+    OFFICIAL_ONE_DAY_RESULT_PROVIDERS,
+    findOfficialRaceProvider,
+    matchesSeasonEdition,
+    getSeasonYearForTest,
+    setSeasonYearForTest,
+  } = loadParserExports();
+  const tour = (year) => ({
+    pageTitle: `${year} Tour de France`,
+    startDate: new Date(`${year}-07-04T00:00:00Z`),
+    endDate: new Date(`${year}-07-26T00:00:00Z`),
+  });
+
+  assert.equal(getSeasonYearForTest(), 2026);
+  assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour(2026))?.id, "tour-de-france-rankings");
+  assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour(2025)), null);
+  assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour(2027)), null, "next season's edition waits for the rollover");
+
+  // After the rollover every titled provider follows the year, and last season's
+  // pages no longer match.
+  setSeasonYearForTest(2027);
+  assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour(2027))?.id, "tour-de-france-rankings");
+  assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour(2026)), null);
+  OFFICIAL_STAGE_RACE_PROVIDERS.filter((provider) => provider.title && provider.id !== "vuelta-a-burgos-feminas-liveblog").forEach((provider) => {
+    const race = { pageTitle: `2027 ${provider.title}`, startDate: new Date("2027-05-01T00:00:00Z"), endDate: new Date("2027-05-07T00:00:00Z") };
+    assert.ok(matchesSeasonEdition(race, provider.title), `${provider.id} follows the season`);
+    assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, race)?.id, provider.id);
+  });
+  assert.equal(
+    findOfficialRaceProvider(OFFICIAL_ONE_DAY_RESULT_PROVIDERS, { pageTitle: "2027 Eschborn–Frankfurt", startDate: new Date("2027-05-01T00:00:00Z"), endDate: new Date("2027-05-01T00:00:00Z") })?.id,
+    "eschborn-frankfurt",
+  );
+});
+
+test("parseWorldChampionshipMedalSummary accepts a Medallists heading, {{Main}} and {{FlagIOCmedalist}}", () => {
+  const { parseWorldChampionshipMedalSummary } = loadParserExports();
+  const variant = [
+    "== Medallists ==",
+    '{| class="wikitable"',
+    "|-",
+    "|{{nowrap|[[UCI Road World Championships – Men's time trial|Men's time trial]]<br>{{Main|2026 UCI Road World Championships – Men's time trial}}",
+    "| {{FlagIOCmedalist|[[Remco Evenepoel]]|BEL}}",
+    "| 44'53.13\"",
+    "| {{FlagIOCmedalist|[[Filippo Ganna]]|ITA}}",
+    "| +57.31\"",
+    "| {{FlagIOCmedalist|[[Paul Seixas]]|FRA}}",
+    "| +1'13.04\"",
+    "|}",
+  ].join("\n");
+  const podium = parseWorldChampionshipMedalSummary(variant).get("2026 uci road world championships - men's time trial");
+  assert.ok(podium, "the event is keyed by its page title");
+  assert.deepEqual(JSON.parse(JSON.stringify(podium.map((entry) => `${entry.rider}/${entry.countryCode}`))), ["Remco Evenepoel/BEL", "Filippo Ganna/ITA", "Paul Seixas/FRA"]);
+});
+
+test("findOverallRaceResult skips a previous edition's result block placed before this year's", () => {
+  const { extractCyclingResultBlocks, findOverallRaceResult, parseCyclingResultStandings } = loadParserExports();
+  const raw = fs.readFileSync(path.join(__dirname, "fixtures", "one-day-previous-edition-first.wikitext"), "utf8");
+  const blocks = extractCyclingResultBlocks(raw);
+  assert.ok(blocks.length >= 2, "two result blocks on the page");
+  const previous = parseCyclingResultStandings(blocks[0].body);
+  assert.equal(previous[0].rider, "Mathieu van der Poel", "the previous edition comes first on the page");
+  assert.equal(findOverallRaceResult(blocks, { rawText: raw, raceYear: 2026 })[0].rider, "Tadej Pogačar");
+  assert.equal(findOverallRaceResult(blocks)[0].rider, "Tadej Pogačar", "without a year, the block with no year in its title wins");
+  assert.equal(findOverallRaceResult(null).length, 0);
+});
+
+test("fetchText does not retry a definitive 4xx but still retries a 503", async () => {
+  const { fetchText, setFetchForTest } = loadParserExports();
+  let calls = 0;
+  setFetchForTest(async () => {
+    calls += 1;
+    return { ok: false, status: 404, statusText: "Not Found", text: async () => "" };
+  });
+  await assert.rejects(() => fetchText("https://example.test/missing"), /404/);
+  assert.equal(calls, 1, "a missing page is asked for once");
+
+  calls = 0;
+  setFetchForTest(async () => {
+    calls += 1;
+    return calls < 2
+      ? { ok: false, status: 503, statusText: "Unavailable", text: async () => "" }
+      : { ok: true, status: 200, statusText: "OK", text: async () => "hello" };
+  });
+  assert.equal(await fetchText("https://example.test/flaky"), "hello");
+  assert.equal(calls, 2, "a 503 is retried");
+});
+
+test("a finished race's news line leads with the result stories, then the rest, then the previews", () => {
+  const { selectRaceArticles } = loadParserExports();
+  const race = {
+    id: "2026 Milan–San Remo",
+    pageTitle: "2026 Milan–San Remo",
+    title: "Milan–San Remo",
+    series: "Men's WorldTour",
+    countryCode: "ITA",
+    startDate: new Date("2026-03-21T00:00:00Z"),
+    endDate: new Date("2026-03-21T00:00:00Z"),
+  };
+  const pool = [
+    { title: "Milan-San Remo 2026 preview: the contenders", description: "", url: "https://example.test/preview", publisher: "A", publishedAt: "2026-03-22T08:00:00Z", score: 9 },
+    { title: "Tadej Pogačar wins Milan-San Remo 2026 after Poggio attack", description: "", url: "https://example.test/result", publisher: "B", publishedAt: "2026-03-21T16:00:00Z", score: 8 },
+    { title: "Milan-San Remo 2026: how to watch", description: "", url: "https://example.test/watch", publisher: "C", publishedAt: "2026-03-20T10:00:00Z", score: 7 },
+    null,
+  ];
+  const ordered = selectRaceArticles(pool, 0, race);
+  assert.equal(ordered.length, 3, "a null entry is dropped");
+  assert.equal(ordered[0].url, "https://example.test/result");
+  assert.equal(ordered[1].url, "https://example.test/preview");
+  assert.equal(ordered[2].url, "https://example.test/watch");
+  assert.equal(selectRaceArticles(null, 0, race).length, 0);
+});
+
+test("extractFeedItems reads the items of a Bing News RSS document", () => {
+  const { extractFeedItems } = loadParserExports();
+  const xml = fs.readFileSync(path.join(__dirname, "fixtures", "bing-news-milan-san-remo-2026.rss.xml"), "utf8");
+  const items = extractFeedItems(xml);
+  assert.equal(items.length, 3);
+  assert.match(items[0], /Pogačar wins Milan-San Remo/);
+  assert.equal(extractFeedItems("").length, 0);
+});
+
+test("the season's race-keyed caches are cleared when the year moves on, and only then", async () => {
+  const { clearSeasonCaches, seasonCaches, resolveSeasonYear } = loadParserExports();
+  seasonCaches.articleCache.set("2026 Il Lombardia", { articles: [] });
+  seasonCaches.finishVideoCache.set("2026 Il Lombardia", { url: "" });
+  seasonCaches.stageProfileCache.set("2026 Vuelta a España#1", { points: [] });
+  const profilesBefore = seasonCaches.stageProfileCache.size;
+  clearSeasonCaches();
+  assert.equal(seasonCaches.articleCache.size, 0);
+  assert.equal(seasonCaches.finishVideoCache.size, 0);
+  assert.equal(seasonCaches.stageProfileCache.size, profilesBefore, "the committed stage profiles are left alone");
+
+  seasonCaches.articleCache.set("2026 Il Lombardia", { articles: [] });
+  const opening = async () => ({ year: 2027, date: "2027-01-19", title: "Tour Down Under" });
+  assert.equal(await resolveSeasonYear(new Date("2027-01-05T00:00:00Z"), opening, 2026), 2026);
+  assert.equal(seasonCaches.articleCache.size, 1, "not yet: the season has not moved");
+  assert.equal(await resolveSeasonYear(new Date("2027-01-13T00:00:00Z"), opening, 2026), 2027);
+  assert.equal(seasonCaches.articleCache.size, 0, "cleared the moment the year moves");
+});

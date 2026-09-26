@@ -167,4 +167,4 @@ how the site fetches. The review log below is updated each time.
   one request not covered by our user agent is the maintainer's own save to GitHub. The
   "no personal data" line now admits our anonymised page-view counts. Also added to
   the repository: the licence texts for the two fonts we self-host (not a fetch: the
-  files are served from our own site).
+  files are served from our own site). Three more changes the same day: the first build now starts when the server boots instead of on the first request (requests per rebuild and every cache TTL unchanged); a request that answers with a definitive 4xx is no longer retried (only 429, 5xx and network errors are); and on a one-day race's own race day, and the day after, its Wikipedia article is read on the live cadence like a stage race's, a page already among those we track.
