@@ -1,0 +1,55 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "fixture-videos-tdf-stage21",
+  "pageInfo": { "totalResults": 8, "resultsPerPage": 8 },
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v1",
+      "id": "tdfOfficial21",
+      "contentDetails": { "duration": "PT10M16S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v2",
+      "id": "tntStage21",
+      "contentDetails": { "duration": "PT9M19S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v3",
+      "id": "nbcStage21",
+      "contentDetails": { "duration": "PT7M19S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v4",
+      "id": "gcnWrongStage",
+      "contentDetails": { "duration": "PT8M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v5",
+      "id": "nbcWrongYear",
+      "contentDetails": { "duration": "PT7M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v6",
+      "id": "euroPreview",
+      "contentDetails": { "duration": "PT3M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v7",
+      "id": "giroUnrelated",
+      "contentDetails": { "duration": "PT8M", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": true, "contentRating": {}, "projection": "rectangular" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "fixture-v8",
+      "id": "shortClip",
+      "contentDetails": { "duration": "PT48S", "dimension": "2d", "definition": "sd", "caption": "false", "licensedContent": false, "contentRating": {}, "projection": "rectangular" }
+    }
+  ]
+}
