@@ -1,2 +1,5 @@
 node_modules
 .DS_Store
+# Local secrets (SITE_EDIT_TOKEN, GITHUB_CONTENT_TOKEN, SOURCE_CONTACT) never belong in the repository.
+.env
+.env.*

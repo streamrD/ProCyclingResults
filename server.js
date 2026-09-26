@@ -123,6 +123,56 @@ const FETCH_RETRY_DELAYS_MS = [250, 750];
 // live-race rebuild indefinitely; a timed-out attempt is retried like any other
 // transient failure and ultimately degrades to partial data in enrichment paths.
 const FETCH_TIMEOUT_MS = 10 * 1000;
+// One JSON line per notable event, on stdout so Railway keeps it with the process
+// output: a failed rebuild, a failed upstream fetch, a 500, an unhandled rejection.
+// Until 2026-09-27 the server logged its startup line and nothing else, so a build
+// that threw on a cold start left the warm-up page up with no trace anywhere. The
+// helper never throws (a logger that can fail is a second bug inside every catch it
+// is called from) and clips long values so one stack trace cannot flood the log.
+const LOG_FIELD_MAX_LENGTH = 600;
+// Anything with a string `message` is written as an error: `instanceof Error` is false
+// for an error from another realm (the VM the tests load server.js into) and for a
+// thrown plain object, and JSON.stringify would print either as `{}`.
+function isErrorLike(value) {
+  return Boolean(value) && typeof value === "object" && typeof value.message === "string";
+}
+function clipLogValue(value) {
+  if (isErrorLike(value)) {
+    return {
+      name: String(value.name || "Error"),
+      message: clipLogValue(value.message),
+      stack: clipLogValue(String(value.stack || "").split("\n").slice(1, 4).map((line) => line.trim()).join(" | ")),
+    };
+  }
+  if (typeof value === "string") {
+    return value.length > LOG_FIELD_MAX_LENGTH ? `${value.slice(0, LOG_FIELD_MAX_LENGTH)}…` : value;
+  }
+  return value;
+}
+function logEvent(level, event, fields = {}) {
+  try {
+    const entry = { time: new Date().toISOString(), level: String(level || "info"), event: String(event || "event") };
+    Object.entries(fields || {}).forEach(([key, value]) => {
+      if (value !== undefined) {
+        entry[key] = clipLogValue(value);
+      }
+    });
+    process.stdout.write(`${JSON.stringify(entry)}\n`);
+  } catch {
+    try {
+      process.stdout.write(`${JSON.stringify({ time: new Date().toISOString(), level: "error", event: "log-failed" })}\n`);
+    } catch {
+      // Nothing left to try; the caller's catch block must not become a crash.
+    }
+  }
+}
+function describeUrlHost(url) {
+  try {
+    return new URL(String(url)).host;
+  } catch {
+    return "";
+  }
+}
 // Cyclingnews publishes one index a season under the same address pattern. A later
 // season's address is the pattern's guess until someone checks it in January.
 function getNationalChampionshipsSource(year = SEASON_YEAR) {
@@ -2311,6 +2361,7 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
 }
 
 async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
+  let lastStatus = 0;
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       const response = await fetch(url, {
@@ -2319,6 +2370,7 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
         },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      lastStatus = response.status;
 
       if (response.ok) {
         return await response.text();
@@ -2332,6 +2384,14 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       throw new Error(`Request failed: ${response.status} ${response.statusText}`);
     } catch (error) {
       if (attempt >= FETCH_RETRY_DELAYS_MS.length) {
+        // One line per request that gave up, after every retry: the host and the last
+        // status say which source is down without printing every attempt.
+        logEvent("warn", "upstream-fetch-failed", {
+          host: describeUrlHost(url),
+          status: lastStatus || null,
+          attempts: attempt + 1,
+          message: error?.message || String(error),
+        });
         throw error;
       }
 
@@ -8326,6 +8386,18 @@ async function buildCompetitionGroupRaceData(metadata, groupId) {
   throw new Error(`Unsupported competition group: ${groupId}`);
 }
 
+// Each cache remembers how its last build attempt ended, whichever way: `lastBuildAt`
+// is when the attempt finished (success or not; `updatedAt` is when the payload on
+// offer was built) and `lastBuildError` is null after a success or `{ message, at }`
+// after a failure. /api/data-status reports both, so "the last rebuild failed at
+// 17:51 with …" is one curl away instead of a guess from a stale `fetchedAt`.
+function describeBuildFailure(error, at = new Date()) {
+  return {
+    message: clipLogValue(String(error?.message || error || "Unknown error")),
+    at: at.toISOString(),
+  };
+}
+
 function refreshRaceMetadataInBackground(options = {}) {
   const includeDeferred = options.includeDeferred === true;
   const resetOnFailure = options.resetOnFailure === true;
@@ -8340,6 +8412,8 @@ function refreshRaceMetadataInBackground(options = {}) {
         updatedAt: Date.now(),
         data,
         promise: null,
+        lastBuildAt: new Date().toISOString(),
+        lastBuildError: null,
       };
       if (includeDeferred) {
         deferredRaceMetadataCache = nextCache;
@@ -8349,10 +8423,19 @@ function refreshRaceMetadataInBackground(options = {}) {
       return data;
     })
     .catch((error) => {
+      const lastBuildError = describeBuildFailure(error);
+      logEvent("error", "metadata-build-failed", {
+        includeDeferred,
+        resetOnFailure,
+        keptPreviousMetadata: Boolean(!resetOnFailure && targetCache.data),
+        error,
+      });
       const fallbackCache = {
         updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
         data: resetOnFailure ? null : targetCache.data,
         promise: null,
+        lastBuildAt: lastBuildError.at,
+        lastBuildError,
       };
       if (includeDeferred) {
         deferredRaceMetadataCache = fallbackCache;
@@ -8386,7 +8469,14 @@ async function loadRaceMetadata(options = {}) {
       return targetCache.data;
     }
 
-    refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: false }).catch(() => {});
+    refreshRaceMetadataInBackground({ includeDeferred, resetOnFailure: false }).catch((error) =>
+      logEvent("warn", "metadata-refresh-failed", {
+        includeDeferred,
+        consequence: "serving the previous metadata",
+        metadataAgeMs: now - targetCache.updatedAt,
+        message: error?.message || String(error),
+      }),
+    );
     return targetCache.data;
   }
 
@@ -8428,9 +8518,14 @@ function scheduleLiveRaceRefresh(data, refresh = refreshLiveRaceDataOnTimer, now
 function refreshLiveRaceDataOnTimer() {
   return loadRaceMetadata({ includeDeferred: false })
     .then((metadata) => refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: false }))
-    .catch(() => {
+    .catch((error) => {
       // A failed tick keeps the last good payload; try again one TTL later rather
       // than letting the live race go quiet.
+      logEvent("warn", "live-refresh-tick-failed", {
+        consequence: "serving the previous payload until the next tick",
+        payloadAgeMs: raceDataCache.updatedAt ? Date.now() - raceDataCache.updatedAt : null,
+        message: error?.message || String(error),
+      });
       scheduleLiveRaceRefresh(raceDataCache.data);
     });
 }
@@ -8449,6 +8544,8 @@ function refreshRaceDataInBackground(metadata, options = {}) {
         updatedAt: Date.now(),
         data,
         promise: null,
+        lastBuildAt: new Date().toISOString(),
+        lastBuildError: null,
       };
       if (includeDeferred) {
         deferredRaceDataCache = nextCache;
@@ -8459,10 +8556,19 @@ function refreshRaceDataInBackground(metadata, options = {}) {
       return data;
     })
     .catch((error) => {
+      const lastBuildError = describeBuildFailure(error);
+      logEvent("error", "race-data-build-failed", {
+        includeDeferred,
+        resetOnFailure,
+        keptPreviousPayload: Boolean(!resetOnFailure && targetCache.data),
+        error,
+      });
       const fallbackCache = {
         updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
         data: resetOnFailure ? null : targetCache.data,
         promise: null,
+        lastBuildAt: lastBuildError.at,
+        lastBuildError,
       };
       if (includeDeferred) {
         deferredRaceDataCache = fallbackCache;
@@ -8503,7 +8609,14 @@ async function loadRaceData(options = {}) {
     // so this is the fallback for a missed tick; the request never waits on it (it did
     // until 2026-09-05, which put every visitor arriving in the rebuild window on the
     // warm-up screen once a minute).
-    refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch(() => {});
+    refreshRaceDataInBackground(metadata, { includeDeferred, resetOnFailure: false }).catch((error) =>
+      logEvent("warn", "race-data-refresh-failed", {
+        includeDeferred,
+        consequence: "serving the previous payload",
+        payloadAgeMs: now - targetCache.updatedAt,
+        message: error?.message || String(error),
+      }),
+    );
     return targetCache.data;
   }
 
@@ -8539,10 +8652,13 @@ function refreshCompetitionGroupDataInBackground(metadata, groupId, options = {}
       return data;
     })
     .catch((error) => {
+      logEvent("error", "competition-group-build-failed", { groupId, resetOnFailure, error });
       deferredGroupDataCaches.set(groupId, {
         updatedAt: resetOnFailure ? 0 : targetCache.updatedAt,
         data: resetOnFailure ? null : targetCache.data,
         promise: null,
+        lastBuildAt: new Date().toISOString(),
+        lastBuildError: describeBuildFailure(error),
       });
       throw error;
     });
@@ -8574,7 +8690,13 @@ async function loadCompetitionGroupData(groupId) {
       return refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false });
     }
 
-    refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false }).catch(() => {});
+    refreshCompetitionGroupDataInBackground(metadata, groupId, { resetOnFailure: false }).catch((error) =>
+      logEvent("warn", "competition-group-refresh-failed", {
+        groupId,
+        consequence: "serving the previous section payload",
+        message: error?.message || String(error),
+      }),
+    );
     return targetCache.data;
   }
 
@@ -8626,6 +8748,9 @@ function buildRaceDataDebugPayload(data) {
       liveRaceDataTtlMs: getRaceDataCacheTtlMs(data),
       metadataTtlMs: RACE_METADATA_CACHE_TTL_MS,
       liveRaceCount: Array.isArray(data?.liveStageRaces) ? data.liveStageRaces.length : 0,
+      raceDataLastBuildAt: raceDataCache.lastBuildAt || null,
+      raceDataLastBuildError: raceDataCache.lastBuildError || null,
+      raceMetadataLastBuildError: raceMetadataCache.lastBuildError || null,
       buildTimings: data?.buildTimings || null,
     },
   };
@@ -8651,15 +8776,43 @@ function buildHomepageDataPayload(data) {
 // never reaches upstream sources on its own.
 async function buildDataStatusPayload(now = Date.now()) {
   const data = await loadRaceData({ includeDeferred: false });
-  const updatedAt = raceDataCache.updatedAt || 0;
+  return describeDataStatus(data, { now });
+}
+
+// The status itself, kept apart from the load so the tests can hand it a payload and a
+// cache. Beyond the freshness fields the button reads, it counts each section of the
+// payload and repeats the last build outcome from both caches, so an external monitor
+// (or a person with curl) can tell "recent results went to zero" or "the last rebuild
+// failed at 17:51" from a healthy quiet day without reading the page. The nationals
+// count is federations (one table row each); its `error` is the string the section
+// carries when the Cyclingnews index could not be read.
+function describeDataStatus(data, { now = Date.now(), raceCache = raceDataCache, metadataCache = raceMetadataCache } = {}) {
+  const updatedAt = raceCache.updatedAt || 0;
   const ttlMs = getRaceDataCacheTtlMs(data, new Date(now));
   const ageMs = updatedAt ? Math.max(0, now - updatedAt) : null;
+  const countOf = (value) => (Array.isArray(value) ? value.length : 0);
+  const nationals = data?.nationalChampionships || null;
   return {
-    fetchedAt: data.fetchedAt || "",
+    fetchedAt: data?.fetchedAt || "",
     ageMs,
     ttlMs,
     nextRebuildDueMs: ageMs === null ? null : Math.max(0, ttlMs - ageMs),
-    rebuilding: Boolean(raceDataCache.promise),
+    rebuilding: Boolean(raceCache.promise),
+    sections: {
+      liveStageRaces: countOf(data?.liveStageRaces),
+      recentResults: countOf(data?.recentResults),
+      finalizedStageRaces: countOf(data?.finalizedStageRaces),
+      upcomingRaces: countOf(data?.upcomingRaces),
+      nationalChampionships: countOf(nationals?.rows),
+    },
+    nationalsError: nationals?.error ? String(nationals.error) : null,
+    lastBuildAt: raceCache.lastBuildAt || null,
+    lastBuildError: raceCache.lastBuildError || null,
+    metadata: {
+      allRaceCount: countOf(metadataCache.data?.allRaces),
+      fetchedAt: metadataCache.data?.fetchedAt || "",
+      lastError: metadataCache.lastBuildError || null,
+    },
   };
 }
 
@@ -16938,7 +17091,14 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (shouldWarmHomepage) {
-      warmRaceDataInBackground().catch(() => {});
+      warmRaceDataInBackground().catch((error) =>
+        logEvent("error", "warm-up-failed", {
+          trigger: "request",
+          pathname: url.pathname,
+          consequence: "warm-up page stays up; the next request tries again",
+          message: error?.message || String(error),
+        }),
+      );
 
       if (url.pathname === "/api/homepage-data" || url.pathname === "/api/data-status") {
         sendJson(response, 202, {
@@ -17090,6 +17250,12 @@ const server = http.createServer(async (request, response) => {
       }),
     );
   } catch (error) {
+    logEvent("error", "request-failed", {
+      method: request.method,
+      url: String(request.url || ""),
+      status: 500,
+      error,
+    });
     sendHtml(
       response,
       500,
@@ -17109,4 +17275,28 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
+  logEvent("info", "server-listening", { port: PORT, commit: BUILD_INFO.commit, source: BUILD_INFO.source, node: process.version });
+  // Build at boot rather than on the first request, so the first reader after a
+  // deploy finds a page instead of the warm-up screen (about seven seconds cold).
+  // Request counts per rebuild are unchanged: it is the same first build, earlier.
+  warmRaceDataInBackground().catch((error) =>
+    logEvent("error", "warm-up-failed", {
+      trigger: "startup",
+      consequence: "warm-up page stays up; the next request tries again",
+      message: error?.message || String(error),
+    }),
+  );
+});
+
+// Failures that reach the process boundary were invisible until 2026-09-27: a rejected
+// promise nobody awaited printed nothing, and an uncaught throw printed a bare stack
+// trace. Both now leave a JSON line. A rejection is logged and the process carries on
+// (it is a background build or lookup, never a request); the monitor hook logs an
+// uncaught exception and leaves Node's default crash in place, so Railway restarts a
+// process whose state can no longer be trusted rather than keeping it up.
+process.on("unhandledRejection", (reason) => {
+  logEvent("error", "unhandled-rejection", { error: reason });
+});
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  logEvent("fatal", "uncaught-exception", { origin, error });
 });

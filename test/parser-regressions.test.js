@@ -15,6 +15,9 @@ function loadParserExports() {
   // The sandbox has to carry the timer globals: server.js uses them for fetch retry
   // backoff and for the official-snapshot blocking budget, and a missing setTimeout
   // surfaces as a ReferenceError from inside the VM rather than anything obvious.
+  // It also lacks `__dirname` and `Buffer`, on purpose: resolve data paths inside
+  // functions (from `process.cwd()`) and avoid `Buffer` in code the tests reach, or
+  // the whole suite fails at load with a ReferenceError from inside the VM.
   const sandbox = {
     require,
     console,
@@ -212,6 +215,19 @@ function loadParserExports() {
       loadOfficialStageRaceSnapshotWithinBudget,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
+      logEvent,
+      describeDataStatus,
+      describeBuildFailure,
+      refreshRaceDataInBackground,
+      refreshRaceMetadataInBackground,
+      getRaceDataCacheForTest: () => raceDataCache,
+      getRaceMetadataCacheForTest: () => raceMetadataCache,
+      // Function declarations are properties of the VM's global object, so a test can
+      // stand in for a builder (buildRaceData, buildRaceMetadata) with no seam in
+      // server.js; every loadParserExports() call is a fresh sandbox, so nothing leaks.
+      stubFunctionForTest: (name, fn) => {
+        globalThis[name] = fn;
+      },
     };`,
     sandbox,
   );
@@ -6663,4 +6679,219 @@ test("resolveSeasonYear moves to the new season a week before its first race and
       2027,
     ),
   }, opening);
+});
+
+// Captures the JSON lines logEvent writes during `run` and lets everything else
+// (the test reporter's own output) through to the real stdout.
+async function captureLogLines(run) {
+  const lines = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk, ...rest) => {
+    const text = String(chunk);
+    if (text.startsWith('{"time":')) {
+      lines.push(text);
+      return true;
+    }
+    return originalWrite.call(process.stdout, chunk, ...rest);
+  };
+  try {
+    await run();
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  return lines;
+}
+
+test("logEvent writes one JSON line per call and never throws", async () => {
+  const { logEvent } = loadParserExports();
+  const circular = {};
+  circular.self = circular;
+  const lines = await captureLogLines(() => {
+    logEvent("error", "race-data-build-failed", { includeDeferred: false, error: new Error("Wikipedia answered 503"), skipped: undefined });
+    logEvent("warn", "circular", { circular });
+    logEvent("info", "long", { message: "x".repeat(2000) });
+    logEvent("info", "no-fields");
+    logEvent(undefined, undefined, null);
+  });
+
+  assert.equal(lines.length, 5, "one line per call, including the ones that could not be serialised");
+  lines.forEach((line) => {
+    assert.ok(line.endsWith("\n"));
+    assert.equal(line.trim().split("\n").length, 1, "never more than one line per event");
+  });
+
+  const failed = JSON.parse(lines[0]);
+  assert.equal(failed.level, "error");
+  assert.equal(failed.event, "race-data-build-failed");
+  assert.match(failed.time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  assert.equal(failed.includeDeferred, false);
+  assert.equal(failed.error.name, "Error");
+  assert.equal(failed.error.message, "Wikipedia answered 503");
+  assert.equal(typeof failed.error.stack, "string");
+  assert.ok(!("skipped" in failed), "undefined fields are left out rather than written as null");
+
+  // A value JSON cannot serialise still produces a line, and never an exception.
+  assert.equal(JSON.parse(lines[1]).event, "log-failed");
+  const long = JSON.parse(lines[2]);
+  assert.ok(long.message.length <= 601 && long.message.endsWith("…"), "long strings are clipped");
+  assert.deepEqual(Object.keys(JSON.parse(lines[3])), ["time", "level", "event"]);
+  assert.equal(JSON.parse(lines[4]).level, "info");
+});
+
+test("describeDataStatus counts every section and repeats the last build outcome", () => {
+  const { describeDataStatus } = loadParserExports();
+  const now = Date.parse("2026-09-27T10:00:00.000Z");
+  const data = {
+    fetchedAt: "2026-09-27T09:58:00.000Z",
+    liveStageRaces: [{ id: "a" }],
+    recentResults: [{ id: "b" }, { id: "c" }],
+    finalizedStageRaces: [],
+    upcomingRaces: [{ id: "d" }, { id: "e" }, { id: "f" }],
+    nationalChampionships: { rows: [{}, {}, {}, {}], error: "" },
+  };
+  const raceCache = { updatedAt: now - 120000, data, promise: null, lastBuildAt: "2026-09-27T09:58:00.000Z", lastBuildError: null };
+  const metadataCache = {
+    updatedAt: now - 300000,
+    data: { allRaces: new Array(70).fill({}), fetchedAt: "2026-09-27T09:55:00.000Z" },
+    promise: null,
+    lastBuildError: null,
+  };
+
+  // Objects built inside the VM carry its Object.prototype, which strict deep equality
+  // compares; spreading them into this realm keeps the comparison about the values.
+  const status = describeDataStatus(data, { now, raceCache, metadataCache });
+  assert.deepEqual({ ...status.sections }, { liveStageRaces: 1, recentResults: 2, finalizedStageRaces: 0, upcomingRaces: 3, nationalChampionships: 4 });
+  assert.equal(status.nationalsError, null);
+  assert.equal(status.lastBuildAt, "2026-09-27T09:58:00.000Z");
+  assert.equal(status.lastBuildError, null);
+  assert.deepEqual({ ...status.metadata }, { allRaceCount: 70, fetchedAt: "2026-09-27T09:55:00.000Z", lastError: null });
+  // The freshness fields the page's refresh button reads are unchanged.
+  assert.equal(status.fetchedAt, data.fetchedAt);
+  assert.equal(status.ageMs, 120000);
+  assert.equal(typeof status.ttlMs, "number");
+  assert.equal(status.nextRebuildDueMs, Math.max(0, status.ttlMs - 120000));
+  assert.equal(status.rebuilding, false);
+
+  // A payload whose nationals source failed, from a cache whose last rebuild failed
+  // while another is running: every one of those is visible without the page.
+  const lastBuildError = { message: "buildRaceData is not a function", at: "2026-09-27T09:59:30.000Z" };
+  const failed = describeDataStatus(
+    { ...data, nationalChampionships: { rows: [], error: "Request failed: 503 Service Unavailable" } },
+    {
+      now,
+      raceCache: { ...raceCache, promise: Promise.resolve(), lastBuildAt: lastBuildError.at, lastBuildError },
+      metadataCache: { ...metadataCache, lastBuildError: { message: "Request failed: 429 Too Many Requests", at: "2026-09-27T09:59:00.000Z" } },
+    },
+  );
+  assert.equal(failed.sections.nationalChampionships, 0);
+  assert.equal(failed.nationalsError, "Request failed: 503 Service Unavailable");
+  assert.equal(failed.lastBuildError, lastBuildError, "the cache's own record is passed through untouched");
+  assert.equal(failed.lastBuildAt, lastBuildError.at);
+  assert.equal(failed.rebuilding, true);
+  assert.equal(failed.metadata.lastError.message, "Request failed: 429 Too Many Requests");
+
+  // An empty or missing section counts as zero rather than throwing.
+  assert.deepEqual({ ...describeDataStatus({}, { now, raceCache: { updatedAt: 0, data: null, promise: null }, metadataCache: { data: null } }).sections }, {
+    liveStageRaces: 0,
+    recentResults: 0,
+    finalizedStageRaces: 0,
+    upcomingRaces: 0,
+    nationalChampionships: 0,
+  });
+});
+
+test("a failed rebuild records lastBuildError on the cache and logs one line; the next success clears it", async () => {
+  const { refreshRaceDataInBackground, describeDataStatus, getRaceDataCacheForTest, stubFunctionForTest } = loadParserExports();
+  const metadata = { allRaces: [], fetchedAt: "2026-09-27T09:55:00.000Z" };
+
+  // A cold start whose build throws: no payload, no promise left behind, the error kept.
+  stubFunctionForTest("buildRaceData", async () => {
+    throw new Error("Wikipedia answered 503");
+  });
+  const failureLines = await captureLogLines(() =>
+    assert.rejects(refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: true }), /503/),
+  );
+  const failedCache = getRaceDataCacheForTest();
+  assert.equal(failedCache.data, null);
+  assert.equal(failedCache.promise, null);
+  assert.equal(failedCache.lastBuildError.message, "Wikipedia answered 503");
+  assert.match(failedCache.lastBuildError.at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(failedCache.lastBuildAt, failedCache.lastBuildError.at);
+  const failureEvents = failureLines.map((line) => JSON.parse(line));
+  assert.deepEqual(failureEvents.map((event) => event.event), ["race-data-build-failed"]);
+  assert.equal(failureEvents[0].error.message, "Wikipedia answered 503");
+  assert.equal(failureEvents[0].resetOnFailure, true);
+  assert.equal(failureEvents[0].keptPreviousPayload, false);
+
+  // A build that succeeds clears the error and stamps the attempt.
+  const payload = {
+    fetchedAt: "2026-09-27T10:00:00.000Z",
+    liveStageRaces: [],
+    recentResults: [],
+    finalizedStageRaces: [],
+    upcomingRaces: [],
+    nationalChampionships: { rows: [{}], error: "" },
+  };
+  stubFunctionForTest("buildRaceData", async () => payload);
+  const successLines = await captureLogLines(() => refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: false }));
+  const okCache = getRaceDataCacheForTest();
+  assert.equal(okCache.data, payload);
+  assert.equal(okCache.lastBuildError, null);
+  assert.ok(okCache.updatedAt > 0);
+  assert.match(okCache.lastBuildAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(successLines, [], "a successful build is quiet");
+
+  // A later failure with resetOnFailure: false keeps the payload and its age, and
+  // /api/data-status says both: the payload it serves and the rebuild that failed.
+  stubFunctionForTest("buildRaceData", async () => {
+    throw new Error("The operation was aborted due to timeout");
+  });
+  const keptLines = await captureLogLines(() =>
+    assert.rejects(refreshRaceDataInBackground(metadata, { includeDeferred: false, resetOnFailure: false }), /timeout/),
+  );
+  const keptCache = getRaceDataCacheForTest();
+  assert.equal(keptCache.data, payload);
+  assert.equal(keptCache.updatedAt, okCache.updatedAt);
+  assert.equal(keptCache.lastBuildError.message, "The operation was aborted due to timeout");
+  assert.equal(JSON.parse(keptLines[0]).keptPreviousPayload, true);
+  const status = describeDataStatus(payload, { raceCache: keptCache, metadataCache: { data: metadata, lastBuildError: null } });
+  assert.equal(status.fetchedAt, payload.fetchedAt);
+  assert.equal(status.sections.nationalChampionships, 1);
+  assert.equal(status.lastBuildError.message, "The operation was aborted due to timeout");
+  assert.equal(status.metadata.allRaceCount, 0);
+});
+
+test("verify-deploy parses its arguments, defaults to production and summarises the status", () => {
+  const { parseArgs, describeStatus, DEFAULT_BASE_URL, SECTION_HEADING_MARKERS, RACE_CARD_MARKER } = require("../scripts/verify-deploy.js");
+  assert.equal(DEFAULT_BASE_URL, "https://procyclingresults.up.railway.app");
+  assert.deepEqual(parseArgs([]), { sha: "", baseUrl: DEFAULT_BASE_URL, pollIntervalMs: 10000, help: false });
+  assert.equal(parseArgs(["--sha=77674E9"]).sha, "77674e9");
+  assert.equal(parseArgs(["--sha", "77674e9abcdef"]).sha, "77674e9", "a full sha is cut to the seven characters build-info reports");
+  assert.equal(parseArgs(["--base-url=http://localhost:3000/"]).baseUrl, "http://localhost:3000");
+  assert.equal(parseArgs(["--poll-interval-ms=500"]).pollIntervalMs, 500);
+  assert.equal(parseArgs(["--help"]).help, true);
+  assert.throws(() => parseArgs(["--sha=zz"]), /seven hex/);
+  assert.throws(() => parseArgs(["--base-url=ftp://example.org"]), /http/);
+  assert.throws(() => parseArgs(["--poll-interval-ms=1"]), /250 or more/);
+  assert.throws(() => parseArgs(["--bogus"]), /Unknown option/);
+  assert.throws(() => parseArgs(["extra"]), /Unexpected argument/);
+
+  // The markers it greps the page for are what buildHtmlPage writes: the card anchors
+  // the season calendar links to, and the section headings.
+  assert.equal(RACE_CARD_MARKER, 'id="race-');
+  assert.ok(SECTION_HEADING_MARKERS.includes("WorldTour</h2>"));
+  assert.ok(SECTION_HEADING_MARKERS.includes("National Championships</h2>"));
+
+  assert.equal(
+    describeStatus({
+      sections: { liveStageRaces: 1, recentResults: 12, finalizedStageRaces: 3, upcomingRaces: 8, nationalChampionships: 90 },
+      nationalsError: null,
+      lastBuildError: null,
+    }),
+    "live 1, recent 12, finalized 3, upcoming 8, nationals 90 federations, last build error: none",
+  );
+  assert.match(
+    describeStatus({ sections: {}, nationalsError: "Request failed: 503", lastBuildError: { message: "boom", at: "2026-09-27T10:00:00.000Z" } }),
+    /nationals \? federations \(error: Request failed: 503\), last build error: boom at 2026-09-27T10:00:00\.000Z$/,
+  );
 });

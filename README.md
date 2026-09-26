@@ -43,11 +43,11 @@ The app previously included UCI ProSeries and Europe Tour Spotlight sections. Th
 
 ### Runtime
 
-- Node.js
-- Built-in modules only: `http`, `fs/promises`, `path`, `url`
-- Uses the global `fetch` API available in modern Node versions
+- Node.js 20 (`engines` in `package.json` is `20.x`, `.nvmrc` says `20`, CI runs 20; production ran `v20.20.2` on 2026-09-27)
+- Built-in modules only: `http`, `fs/promises`, `path`, `url`, `crypto`
+- Uses the global `fetch` API
 
-Practical implication: use Node 18+ at minimum. Current local runtime was `v24.14.0`.
+Practical implication: develop on Node 20 (`nvm use` reads `.nvmrc`). A newer local Node still runs the tests, with an `EBADENGINE` warning from npm, but anything it lets you use that 20 lacks will only fail on Railway. Last verified 2026-09-27.
 
 ### Frontend
 
@@ -58,24 +58,39 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 
 ### Deployment
 
-- Starts with `npm start`
-- Default port is `3000`
-- Honors `PORT` from environment
-- Existing project history and previous README indicate Railway deployment
-- Umami analytics is injected via a hard-coded script tag
+- Railway builds from `main` on every push and runs `npm start`; a push is live about a minute later whether or not the GitHub Actions test run is green (CI is advisory, see "Testing and Gaps")
+- Default port is `3000`; `PORT` from the environment is honoured
+- No deploy configuration is committed (no `railway.json`, healthcheck or restart policy); Node is pinned through `engines` and `.nvmrc`
+- On boot the server starts its first race-data build at once (the `server.listen` callback), so the first reader after a deploy gets a page rather than the warm-up screen; a failed boot build is logged as `warm-up-failed` and the next request tries again
+- After pushing, `npm run verify:deploy` polls `/api/build-info` for your commit, waits for `/api/data-status` to answer `200` and checks that the page rendered cards
+- A self-hosted Umami tracker (`todd-umami.up.railway.app`, the tag in `UMAMI_ANALYTICS_SCRIPT`) is injected into every page, error pages included; it is cookieless and keeps a salted visitor hash, not the IP
+- Logs: every notable event is one JSON line on stdout from `logEvent` (`server-listening`, `upstream-fetch-failed`, `race-data-build-failed`, `metadata-build-failed`, `warm-up-failed`, `live-refresh-tick-failed`, `request-failed`, `unhandled-rejection`, `uncaught-exception`); read them in the Railway service's log view
+
+Last verified 2026-09-27.
 
 ## Repository Layout
 
 ```text
 .
+├── .github/workflows/test.yml   (GitHub Actions: node -c and npm test on push and PRs; advisory)
+├── .nvmrc                       (20)
+├── AGENTS.md
+├── DATA-SOURCES.md
+├── archive/
+│   ├── proseries-europe-tour-sections.js
+│   └── race-coverage-block.js
+├── assessments/
+│   ├── README.md                (check-in cadence)
+│   ├── 2026-09-26/              (report.md, report.pdf, areas/)
+│   └── tools/
 ├── assets/
 │   ├── favicon.svg
+│   ├── grupetto.jpg
+│   ├── grupetto-winter.jpg
 │   ├── og-default.jpg
 │   ├── og-calendar.jpg
 │   ├── og-championships.jpg
 │   └── fonts/
-├── archive/
-│   └── proseries-europe-tour-sections.js
 ├── data/
 │   ├── about.md
 │   ├── release-notes.md
@@ -84,6 +99,7 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 │   └── static-stage-race-snapshots.json
 ├── design-comps/
 │   ├── favicon-directions.html
+│   ├── jersey-contenders.html
 │   ├── marks/            (cyclist.svg ships; five earlier candidates kept)
 │   └── README.md
 ├── handoff.md
@@ -91,15 +107,20 @@ Practical implication: use Node 18+ at minimum. Current local runtime was `v24.1
 ├── README.md
 ├── scripts/
 │   ├── benchmark-load.js
+│   ├── build-assessment-pdf.js
 │   ├── build-continent-map.js
-│   └── refresh-stage-profiles.js
+│   ├── pcs-race-links.browser.js
+│   ├── pcs-rider-links.browser.js
+│   ├── refresh-stage-profiles.js
+│   └── verify-deploy.js
 ├── server.js
 └── test/
+    ├── browser-smoke.test.js
     ├── parser-regressions.test.js
     └── fixtures/
 ```
 
-Important consequence: almost all application logic, data fetching, parsing, caching, ranking, routing, and rendering live in `server.js`.
+Last verified 2026-09-27. Important consequence: almost all application logic, data fetching, parsing, caching, ranking, routing, and rendering live in `server.js`.
 
 ## Runbook
 
@@ -115,13 +136,19 @@ Then open `http://localhost:3000`.
 
 ### Scripts
 
-`package.json` currently defines:
+`package.json` defines (last verified 2026-09-27):
 
 - `start`: `node server.js`
-- `test`: `node --test`
+- `test`: `node --test` (the parser regressions plus the headless-Chrome smoke test, which skips when no Chrome is installed)
 - `benchmark:load`: benchmark warmed endpoint response times
 - `benchmark:ready`: measure cold-start readiness for `/api/races`
 - `benchmark:homepage-ready`: measure cold-start readiness for `/api/homepage-data`
+- `refresh:stage-profiles`: fetch an ASO route's komoot traces into `data/stage-profiles.json` (`-- --race "<Wikipedia page title>" --stages <n>`)
+- `refresh:continent-map`: regenerate `data/continent-map.json` (never hand-edit it)
+- `assessment:pdf`: render an assessment report under `assessments/` to PDF
+- `verify:deploy`: confirm a commit is live and rendering on production (`-- --sha=<7 chars>`; `--base-url=<origin>` for another host; it only reads)
+
+Two scripts are not npm commands: `scripts/pcs-race-links.browser.js` and `scripts/pcs-rider-links.browser.js` are pasted into a browser console on ProCyclingStats, which blocks the server, to verify the link slugs.
 
 There is currently:
 
@@ -140,7 +167,7 @@ There is currently:
 - `/api/build-info`
   Returns the deployment marker from `BUILD_INFO` in `server.js`. On Railway it reflects the deployed commit, branch and message from `RAILWAY_GIT_*` environment variables; elsewhere it falls back to hardcoded values. The `source` field says which — `railway-env` or `hardcoded-fallback` — so a fallback marker is never mistaken for the live commit.
 - `/api/data-status`
-  What the page's "Refresh results" button asks before reloading: `{ fetchedAt, ageMs, ttlMs, nextRebuildDueMs, rebuilding }` for the homepage payload. It reads through `loadRaceData`, so an expired payload starts its background rebuild exactly as a page view would, and it never reaches an upstream source on its own. During cold warmup it returns `202` like `/api/homepage-data`.
+  What the page's "Refresh results" button asks before reloading, and what an external monitor should watch: `{ fetchedAt, ageMs, ttlMs, nextRebuildDueMs, rebuilding, sections, nationalsError, lastBuildAt, lastBuildError, metadata }` for the homepage payload. `sections` counts `liveStageRaces`, `recentResults`, `finalizedStageRaces`, `upcomingRaces` and `nationalChampionships` (federations) in the cached payload; `nationalsError` is the string the nationals section carries when its source could not be read, else `null`; `lastBuildAt` is when the last build attempt finished and `lastBuildError` is `null` or `{ message, at }` from the last failed one; `metadata` is `{ allRaceCount, fetchedAt, lastError }` for the metadata cache. It reads through `loadRaceData`, so an expired payload starts its background rebuild exactly as a page view would, and it never reaches an upstream source on its own. During cold warmup it returns `202` like `/api/homepage-data`. Last verified 2026-09-27.
 - `/api/competition-section?group=<id>`
   Reserved for deferred section fragments. No deferred groups are active right now; retired `proseries` and `europe-tour` requests return `410`.
 - `/api/race-news?race=<race id>`
@@ -638,10 +665,10 @@ Two things to know before swapping it:
   in `design-comps/`. That page loads the repo's own fonts by relative path, so it only
   renders correctly from inside that folder.
 
-Static file serving has a basic path traversal guard:
+Static file serving has a basic path traversal guard (`sendStaticFile`):
 
 - Request path is normalized
-- Resolved path must remain inside the `assets` directory
+- Resolved path must remain inside the `assets` directory. On 2026-09-27 the check was a string-prefix test without a separator (`startsWith(assetRoot)`), which the 2026-09-26 security assessment (X8) asked to become `startsWith(assetRoot + path.sep)`; read the function before relying on either wording
 
 Supported content types are manually mapped by extension.
 
@@ -668,22 +695,43 @@ Likely breakpoints:
 - Official special-case text patterns stop matching
 - Deployment environment blocks outbound HTTP requests
 
-Current failure behavior:
+Current failure behavior (last verified 2026-09-27):
 
 - Static asset misses fall through to normal routing
-- Upstream fetch/parsing errors in enrichment paths are often swallowed and downgraded to partial data
-- Top-level request errors return a 500 HTML error page
+- Upstream fetch/parsing errors in enrichment paths are often swallowed and downgraded to partial data; a request that gives up after its retries logs one `upstream-fetch-failed` line with the host and last status
+- A failed rebuild keeps the previous payload (on a cold start, the warm-up page), logs `race-data-build-failed` or `metadata-build-failed` with the stack, and records `lastBuildError` on the cache, which `/api/data-status` reports
+- Top-level request errors return a 500 HTML error page and log `request-failed`
+- An unhandled promise rejection is logged and the process carries on; an uncaught exception is logged and the process crashes as Node would, so Railway restarts it
 
 ## Security / Privacy Notes
 
-- No user accounts
-- No form input persistence
-- No cookies or sessions
-- No database
-- No secrets are required by current code
-- Umami analytics script is loaded from an external host
+Last verified 2026-09-27.
 
-Because article links are rendered directly from feed content, keep HTML escaping intact. The server currently escapes display text and inserts URLs into anchor attributes after cleaning.
+- No user accounts
+- The only persisted input is the editor's Markdown, written to `data/about.md` or `data/release-notes.md` by `POST /api/site-content` and, when `GITHUB_CONTENT_TOKEN` is set, committed to the repository by the token holder
+- No cookies or sessions. The editor keeps its key in the browser's `localStorage` (`pcr-edit-key`) until a `401` clears it
+- No database
+- Three optional environment secrets: `SITE_EDIT_TOKEN` enables the in-place editor, `GITHUB_CONTENT_TOKEN` lets a save commit to GitHub, `SOURCE_CONTACT` rides on the outbound user agent. Railway's variables are the only store; nothing is committed, and `.env*` is git-ignored
+- A self-hosted Umami tracker (`todd-umami.up.railway.app`, tag in `UMAMI_ANALYTICS_SCRIPT`) is injected into every page including error pages. It is cookieless and stores a salted visitor hash, not the IP
+- There is no rate limiting and `/` is rendered per request; abuse protection is Railway's edge only
+- `/api/homepage-data?debug=1` and `/api/races?debug=1` return cache timings, the last build error and the Node version to anyone; no security headers are set (see the 2026-09-26 security assessment)
+
+Because article links are rendered directly from feed content, keep HTML escaping intact. The server escapes all display text and attribute values. URLs from feeds are parsed (`new URL`) but not scheme-checked; keep `href` values escaped and add an http(s) allow-list before widening any source.
+
+## Accounts and secrets
+
+Everything the site runs on: where each item is set, what it can do, and how to rotate it. One person holds all of it today; this list exists so that a second person could take over. Last verified 2026-09-27. Monthly costs are for the maintainer to fill in.
+
+| Item | Where it lives | What it can do | Rotation | Monthly cost |
+|---|---|---|---|---|
+| GitHub repository `streamrD/ProCyclingResults` | github.com, public | Source of truth; Railway deploys `main` on push; the site editor commits to it | Repository settings → Collaborators; nothing to rotate unless a token below leaks | (maintainer to fill in; a public repository is free) |
+| Railway service (`procyclingresults.up.railway.app`) | railway.app, the maintainer's account | Builds and runs `npm start` with `PORT`; holds the three variables below; keeps the stdout log | Add a second account as a project member so a deploy never depends on one login | (maintainer to fill in) |
+| `SITE_EDIT_TOKEN` | Railway variables | Unlocks "Edit this page" on `/about` and `/release-notes` (`POST /api/site-content`) | Generate a new random string, set it in Railway (this redeploys), enter it in the browser once; the old key stops working at once | none |
+| `GITHUB_CONTENT_TOKEN` | Railway variables | Lets a saved page be committed to `main` through the GitHub Contents API (a fine-grained token with contents: write on this repository only) | GitHub → Settings → Developer settings → tokens: revoke, create, set in Railway; without it saves still work but do not survive a deploy | none |
+| `SOURCE_CONTACT` | Railway variables | An email address appended to the outbound user agent so a source operator can reach a person (see `DATA-SOURCES.md`) | Change the variable; `/api/build-info` says whether one is set, never its value | none |
+| Umami analytics (`todd-umami.up.railway.app`, website id in `UMAMI_ANALYTICS_SCRIPT`) | A separate Railway service on the same account | Page-view counts; cookieless | Change the website id in `server.js` if the instance moves; remove the tag to stop it | (maintainer to fill in) |
+
+Recovery: the repository is public, so anyone can clone it and run `npm start` on Node 20 with nothing set; the site then works with the editor disabled and no contact address on its user agent. To rehost, create a Railway (or any Node) service from the repository, set `PORT` if the host does not, and add the three variables above as needed. The Umami instance is independent; the site works without it (the tag simply fails to load).
 
 ## Development Workflow
 
@@ -749,7 +797,7 @@ The UCI ProSeries and Europe Tour Spotlight sections were implemented previously
 
 ## Recommended Workflow for Future Changes
 
-1. Read `server.js` end-to-end before making structural changes.
+1. Read `AGENTS.md` first, then only the code and tests the change touches; read this README's relevant section when the change involves parsing, providers, caching, grouping, dates or an architectural refactor. Do not read `server.js` end-to-end (about 160k tokens): find the function by name and read it with its neighbours.
 2. Identify whether the change is in parsing, grouping, or rendering.
 3. Preserve current cache semantics unless there is a clear need to change them.
 4. If adding new race-specific exceptions, add them through the provider registries or static snapshot data rather than scattering conditionals across render code.
@@ -771,9 +819,10 @@ The project still lacks several safeguards:
 - Limited fixture coverage beyond the current parser regressions
 - No schema validation for external data
 - No typed interfaces
-- No CI config in-repo
-- No explicit Node engine declaration
-- No structured logging beyond startup message
+- CI (`.github/workflows/test.yml`: `node -c server.js` and `npm test` on Node 20) runs on every push and pull request but is advisory: Railway deploys `main` regardless of the result, and five red pushes deployed on 2026-09-15. Run `npm test` before pushing and `npm run verify:deploy` after
+- Structured logging exists since 2026-09-27 (`logEvent`, one JSON line per event on stdout) but nothing watches it; there is no uptime monitor or alert. `/api/data-status` carries the section counts and `lastBuildError` a monitor would need
+
+Last verified 2026-09-27.
 
 If the project grows, the best next quality investment would be fixture-driven tests for:
 
@@ -799,8 +848,8 @@ If another agent is taking over development, these are strong candidates:
 1. Split `server.js` into modules:
    `data-sources`, `parsers`, `articles`, `render`, and `server`
 2. Add parser fixtures so Wikipedia changes can be detected quickly.
-3. Add an explicit Node engine and a minimal lockfile policy.
-4. Add health-oriented logging around upstream fetch failures and cache refreshes.
+3. Point a free external monitor at `/api/data-status` with an alert on `lastBuildError != null` or a section count of zero in season (the payload has carried the fields since 2026-09-27).
+4. Make CI a gate: enable Railway's "wait for CI" check on the service, or add a pre-push hook that runs `node -c server.js && npm test`.
 5. The season year now rolls over by itself (`resolveSeasonYear`); what remains is checking each new season's Cyclingnews nationals address and Worlds article the week it happens.
 6. Move inline HTML/CSS/JS into template/static modules if the app becomes larger.
 7. Read the points and mountains tables the ASO sites publish (lavuelta.es, letour.fr) so the jersey holders and their contenders update on a live evening before Wikipedia does; today both come from Wikipedia alone, and its standings tables trail its own leadership table by a stage.
@@ -822,10 +871,10 @@ If another agent is taking over development, these are strong candidates:
 ## Current Project Facts
 
 - Entrypoint: `server.js`
-- Package manager usage: effectively none beyond `npm start`
+- Package manager usage: effectively none beyond `npm start` and the scripts listed under "Scripts"
 - Dependency count: zero third-party packages
-- Runtime state: in-memory only
-- Primary transport: server-rendered HTML plus one JSON API
-- Deployment style: suitable for a simple single-process container/service
+- Runtime state: in-memory only, plus the two editable Markdown pages under `data/`
+- Primary transport: server-rendered HTML plus the JSON endpoints listed under "Endpoints" (`/api/homepage-data`, `/api/races`, `/api/data-status`, `/api/build-info`, `/api/race-news`, `/api/race-stages`, `POST /api/site-content`)
+- Deployment style: one Node 20 process on Railway, deployed from `main` on push (last verified 2026-09-27)
 
 This summary should be treated as the baseline mental model for future development unless the repo structure changes substantially.
