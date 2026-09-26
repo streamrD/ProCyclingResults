@@ -11,9 +11,10 @@
     "benchmark:homepage-ready": "node scripts/benchmark-load.js --wait-homepage-ready",
     "refresh:stage-profiles": "node scripts/refresh-stage-profiles.js",
     "refresh:continent-map": "node scripts/build-continent-map.js",
-    "assessment:pdf": "node scripts/build-assessment-pdf.js"
+    "assessment:pdf": "node scripts/build-assessment-pdf.js",
+    "verify:deploy": "node scripts/verify-deploy.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   }
 }

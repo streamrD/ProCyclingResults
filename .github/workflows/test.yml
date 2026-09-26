@@ -12,7 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Production runs Node 20 (see `engines` and .nvmrc); CI tests what is deployed.
+          node-version: 20
       - run: node --version
       # No dependencies to install: the app is built-in modules only.
       - run: node -c server.js
