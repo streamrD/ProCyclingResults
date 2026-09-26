@@ -29,7 +29,7 @@ Do not assume prior chat history is available or needed. Treat `README.md` as th
 - `data/about.md`, `data/release-notes.md`: the editable site pages (the maintainer edits them on the live site; pull before touching them)
 - `data/continent-map.json`: the championships world map, generated — never hand-edit; rerun `npm run refresh:continent-map`
 - `scripts/benchmark-load.js`: readiness and warmed-response benchmarking
-- `handoff.md`: cross-reference plus, for stage-race work, its "Stage Results Feature Map" and "Open Threads" sections
+- `handoff.md`: cross-reference plus, for stage-race work, its "Stage Results Feature Map" and "Open Threads" sections; its "Next Session Starts Here" section is the current work queue, written at the end of the last session
 - `assessments/`: the project check-in (a dated report PDF with a remediation plan and a findings register, the nine per-area reports with evidence and recheck procedures, and the scripts under `assessments/tools/`). `assessments/README.md` gives the cadence: monthly during the racing season, quarterly over the winter. Read the latest report's plan before proposing improvements; findings keep their IDs from one report to the next, so the register is the tracker
 
 ## When You Must Read README.md
