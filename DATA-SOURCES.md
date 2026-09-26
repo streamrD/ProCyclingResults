@@ -27,10 +27,15 @@ Every request the server makes carries this user agent:
 Mozilla/5.0 (compatible; ProCyclingResults/1.0; +https://github.com/streamrD/ProCyclingResults/blob/main/DATA-SOURCES.md; <contact email>)
 ```
 
-The one exception is the YouTube search for finish highlights, which carries the same
-string without the contact email. YouTube answers any agent string with a token after
-the policy URL by serving its mobile site, which the highlights parser cannot read.
-The policy URL still identifies us there.
+The one exception among the sources is the YouTube search for finish highlights, which
+carries the same string without the contact email. YouTube answers any agent string
+with a token after the policy URL by serving its mobile site, which the highlights
+parser cannot read. The policy URL still identifies us there.
+
+One request is not to a source at all: when the maintainer saves the site's own
+"About" or "Release notes" page, the server commits that file to this repository
+through the GitHub API, authenticated with the maintainer's token and introduced as
+"ProCyclingResults site editor".
 
 The site runs as a single small process. There is no crawler, no parallel fleet and
 no scraping of pages we do not show.
@@ -39,12 +44,12 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, while an elite event that has been ridden is still waiting on a result, its medal summary, and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, and once an hour after that. |
-| Official race sites (ASO: letour.fr, letourfemmes.fr, lavuelta.es; RCS: giroditalia.it, giroditaliawomen.it; a few smaller organisers) | The published stage and general classifications, and the stage profile embed the organiser links to | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week, and a stage with no profile is not asked about again once the race is over. |
-| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: about ten searches per race (five for a World Championships event), then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
+| Wikipedia (English) | Race articles and their companion stage articles, plus the season's World Championships article for its schedule and, while an elite event that has been ridden is still waiting on a result, its medal summary, and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles, so one or two queries: in season the tracked set, some 66 race pages plus their companion stage articles and the season, Worlds and event pages, runs past 50). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, once an hour after that, and, if the check itself fails, again after ten minutes. |
+| Official race sites. ASO platform: letour.fr, letourfemmes.fr, lavuelta.es, lavueltafemenina.es, tour-auvergne-rhone-alpes.fr and eschborn-frankfurt.de (`/en/rankings`, or `/de/klassements` in Frankfurt, and the ranking partial that page names under `/en/ajax/ranking/`; for the Tour, Tour Femmes, Vuelta and Vuelta Femenina also `/en/stage-N`, for the profile embed). RCS: giroditalia.it (`/en/classifiche/`, `/en/classifiche/di-tappa/N/`, `/en/livefeed/tappa/N/`) and giroditaliawomen.it (`/en/rankings/`, `/en/rankings/di-tappa/N/` and `/en/video/`, for the stage's finish video). Vuelta a Burgos: vueltaburgos.com (`/feminas/wp-json/wp/v2/posts` and the liveblog feed a post names). Dormant, kept in the code but outside the races we show: hellas-tour.gr (`/portal/en/results-2026`) and lavueltaasturias.com (`/wp-json/wp/v2/posts`) | The published stage and general classifications, the stage profile embed the organiser links to, and on the Giro Women site the link to its own finish video | A race in progress is asked once per rebuild. A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week; a stage with no profile is asked about again once an hour while the race runs and once a week after it. |
+| Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: at most ten searches per race while it is live or finished less than two days ago, at most eight once it is older than that, and five for a World Championships event (most races build fewer: five to nine), then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
 | Cyclingnews | The national championships index page | At most once an hour. |
-| YouTube | A search for the finish highlights of a stage | Once per stage, cached for six hours (or 20 minutes for a miss). |
-| komoot | The elevation trace an organiser embeds | Once per stage, kept for a week; the traces we have are committed to this repository so they are not fetched again after a restart. |
+| YouTube | A search for the finish highlights of a stage. Two paths exist and one is active: today the search results page (`/results`), read without the contact email as described above; once a Data API key is set for the deployment, the YouTube Data API instead (`search.list`, then `videos.list` for the runtime and `channels.list` for the channel size, 102 quota units per lookup within the free daily 10,000). The result is a link to the video; nothing is embedded or downloaded | A stage is first searched once it has a result. A found video is kept for six hours; a stage with no video yet is retried every 20 minutes for its first six hours, then every six hours. A stage stays in the search set for six days after its race ends, so it is asked about at most four times a day after those first hours, and at most six stages are searched per rebuild. |
+| komoot | The elevation trace an organiser embeds | Once per stage, kept for a week; a stage with no trace is asked again once an hour while the race runs and once a week after it. The traces we have are committed to this repository so they are not fetched again after a restart. |
 
 "Rebuild" means the server refreshing its one in-memory copy of the results. While a
 race is live it rebuilds once a minute during racing hours in the host country (10:00
@@ -66,7 +71,8 @@ Before that day's review a rebuild made 58 requests, every minute, around the cl
   up until the next rebuild.
 - We do not use more than three concurrent connections to Wikipedia, and our revision
   query sets `maxlag` so it steps aside when their servers are busy.
-- We do not store personal data about anyone.
+- We do not store personal data about anyone, beyond anonymised page-view counts in
+  our own analytics (self-hosted, no cookies, no addresses kept).
 
 ## How we keep ourselves honest
 
@@ -141,3 +147,24 @@ how the site fetches. The review log below is updated each time.
   Worlds news searches were also rewritten: they quoted a phrase no headline uses and
   found nothing, so a Worlds card now makes five searches instead of about fifteen.
   Measured the same evening against Wikipedia and the news feed.
+- **2026-09-27.** A review of this document against the code, prompted by the
+  project's first assessment. Three things changed in what we ask for. The news
+  searches were capped at 32 per race while live or fresh and 12 once settled, three
+  times the "about ten" stated here; the caps are now 10 and 8, and eight is what a
+  card shows. Counted in the harness over the 65 races on the calendar: a live stage
+  race builds 9 to 10 queries (median 9; 9 to 32 before), a live one-day race 5 to 10
+  (median 5; 5 to 23 before), a settled race 5 to 8 (median 5 one-day, 8 stage; up to
+  12 before). A stage with no finish video was retried on YouTube every 20 minutes for
+  as long as it stayed in the six-day search set, up to 72 searches a day; it is now
+  retried every 20 minutes for its first six hours and every six hours after that,
+  four a day at most. And the YouTube Data API is wired in beside the search page,
+  inactive until a key is set for the deployment; when it is switched on, the search
+  page will not be read again, and this table will say so. The rest of the review is
+  wording: the table now names every official host and path family we read, marks the
+  two dormant ones, says that a stage without a komoot trace is asked again (hourly
+  during the race, weekly after), that the revision query is one or two requests, that
+  a failed check for next season's pages is repeated after ten minutes, and that the
+  one request not covered by our user agent is the maintainer's own save to GitHub. The
+  "no personal data" line now admits our anonymised page-view counts. Also added to
+  the repository: the licence texts for the two fonts we self-host (not a fetch: the
+  files are served from our own site).

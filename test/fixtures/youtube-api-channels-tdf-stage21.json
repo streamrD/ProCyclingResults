@@ -1,0 +1,43 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "fixture-channels-tdf-stage21",
+  "pageInfo": { "totalResults": 6, "resultsPerPage": 6 },
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c1",
+      "id": "UCtdfOfficial",
+      "statistics": { "viewCount": "412345678", "subscriberCount": "861000", "hiddenSubscriberCount": false, "videoCount": "3120" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c2",
+      "id": "UCtntSportsCycling",
+      "statistics": { "viewCount": "98765432", "subscriberCount": "1240000", "hiddenSubscriberCount": false, "videoCount": "4410" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c3",
+      "id": "UCnbcSports",
+      "statistics": { "viewCount": "2345678901", "subscriberCount": "2100000", "hiddenSubscriberCount": false, "videoCount": "25800" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c4",
+      "id": "UCgcn",
+      "statistics": { "viewCount": "1234567890", "subscriberCount": "3050000", "hiddenSubscriberCount": false, "videoCount": "7300" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c5",
+      "id": "UCeurosport",
+      "statistics": { "viewCount": "876543210", "subscriberCount": "1560000", "hiddenSubscriberCount": false, "videoCount": "18200" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "fixture-c6",
+      "id": "UCrandomFan",
+      "statistics": { "viewCount": "5120", "subscriberCount": "412", "hiddenSubscriberCount": false, "videoCount": "37" }
+    }
+  ]
+}

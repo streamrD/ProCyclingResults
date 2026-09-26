@@ -210,6 +210,12 @@ function loadParserExports() {
       extractCyclingResultBlocks,
       parseCyclingResultStandings,
       loadOfficialStageRaceSnapshotWithinBudget,
+      fetchYouTubeFinishVideoUrl,
+      fetchYouTubeApiSearchVideos,
+      parseYouTubeIsoDurationSeconds,
+      describeYouTubePublishedAge,
+      resolveRaceFinishVideoUrl,
+      finishVideoCache,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
     };`,
@@ -538,11 +544,15 @@ test("parseGiroDItaliaStageClassificationStandings accepts the current type-4 st
 
 test("buildRaceArticleQueries adds stage-specific Giro coverage searches", () => {
   const { buildRaceArticleQueries, scoreRaceArticle, selectRaceArticles } = loadParserExports();
+  // A race in progress, dated against the real clock because buildRaceArticleQueries
+  // reads it: the stage-winner query is the ninth and survives only the live cap (10),
+  // not the settled one (8), so a fixed June date would fail once the race is over.
+  const now = Date.now();
   const race = {
     title: "Giro d'Italia",
     pageTitle: "2026 Giro d'Italia",
-    endDate: new Date("2026-06-01T00:00:00Z"),
-    startDate: new Date("2026-05-09T00:00:00Z"),
+    endDate: new Date(now + 10 * 24 * 60 * 60 * 1000),
+    startDate: new Date(now - 10 * 24 * 60 * 60 * 1000),
     stageRace: {
       totalStages: 21,
       completedStages: 10,
@@ -2715,6 +2725,151 @@ test("selectFinishVideo prefers the official race channel over region-locked bro
   assert.equal(best.id, "tdfOfficial21");
 });
 
+// The Data API fixtures describe the same eight videos as the search-page fixture, with
+// publish dates relative to this clock so the derived "1 day ago" phrasing matches.
+const TDF_STAGE21_API_NOW = new Date("2026-07-27T20:00:00Z");
+
+function loadYouTubeApiFixtures() {
+  const read = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8"));
+  return {
+    search: read("youtube-api-search-tdf-stage21.json"),
+    videos: read("youtube-api-videos-tdf-stage21.json"),
+    channels: read("youtube-api-channels-tdf-stage21.json"),
+  };
+}
+
+// Answers the three Data API endpoints from the fixtures and records every URL asked.
+function createYouTubeApiStub(fixtures) {
+  const urls = [];
+  const fetchJson = async (url) => {
+    urls.push(url);
+    const { pathname } = new URL(url);
+    if (pathname.endsWith("/search")) return fixtures.search;
+    if (pathname.endsWith("/videos")) return fixtures.videos;
+    if (pathname.endsWith("/channels")) return fixtures.channels;
+    throw new Error(`Unexpected Data API path ${pathname}`);
+  };
+  return { fetchJson, urls };
+}
+
+test("fetchYouTubeApiSearchVideos maps Data API responses to the shape the search page yields", async () => {
+  const { fetchYouTubeApiSearchVideos } = loadParserExports();
+  const { videos: scraped } = loadYouTubeFixtureVideos();
+  const stub = createYouTubeApiStub(loadYouTubeApiFixtures());
+
+  const mapped = await fetchYouTubeApiSearchVideos("Tour de France 2026 stage 21 highlights", "test-api-key", stub.fetchJson, TDF_STAGE21_API_NOW);
+
+  // Same id, decoded title, channel, runtime, age phrasing and verified flag for every video.
+  const withoutPublishedAt = mapped.map(({ publishedAt, ...video }) => {
+    assert.match(publishedAt, /^\d{4}-\d{2}-\d{2}T/);
+    return video;
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(withoutPublishedAt)), JSON.parse(JSON.stringify(scraped)));
+  assert.equal(mapped.find((video) => video.id === "tntStage21").title, "EPIC FINALE! | Men's Tour de France 2026 Stage 21 Race Highlights");
+  assert.equal(mapped.find((video) => video.id === "shortClip").verified, false);
+});
+
+test("fetchYouTubeFinishVideoUrl on the Data API selects the video the search page selects", async () => {
+  const { fetchYouTubeFinishVideoUrl, selectFinishVideo } = loadParserExports();
+  const { videos: scraped } = loadYouTubeFixtureVideos();
+  const stub = createYouTubeApiStub(loadYouTubeApiFixtures());
+
+  const url = await fetchYouTubeFinishVideoUrl(TDF_STAGE21_RACE, {
+    apiKey: "test-api-key",
+    fetchJson: stub.fetchJson,
+    now: TDF_STAGE21_API_NOW,
+  });
+
+  assert.equal(url, `https://www.youtube.com/watch?v=${selectFinishVideo(scraped, TDF_STAGE21_RACE).id}`);
+  assert.equal(url, "https://www.youtube.com/watch?v=tdfOfficial21");
+  // search.list first, then the two one-unit follow-ups; the key rides only as a query parameter.
+  assert.deepEqual(
+    stub.urls.map((requested) => new URL(requested).pathname),
+    ["/youtube/v3/search", "/youtube/v3/videos", "/youtube/v3/channels"],
+  );
+  const search = new URL(stub.urls[0]);
+  assert.equal(search.hostname, "www.googleapis.com");
+  assert.equal(search.searchParams.get("q"), "Tour de France 2026 stage 21 highlights");
+  assert.equal(search.searchParams.get("part"), "snippet");
+  assert.equal(search.searchParams.get("type"), "video");
+  assert.equal(search.searchParams.get("maxResults"), "10");
+  stub.urls.forEach((requested) => assert.equal(new URL(requested).searchParams.get("key"), "test-api-key"));
+});
+
+test("fetchYouTubeFinishVideoUrl on the Data API still returns broadcaster videos when the follow-ups fail", async () => {
+  const { fetchYouTubeFinishVideoUrl } = loadParserExports();
+  const fixtures = loadYouTubeApiFixtures();
+  const fetchJson = async (url) => {
+    if (new URL(url).pathname.endsWith("/search")) return fixtures.search;
+    throw new Error("Request failed: 403 Forbidden");
+  };
+
+  const url = await fetchYouTubeFinishVideoUrl(TDF_STAGE21_RACE, { apiKey: "test-api-key", fetchJson, now: TDF_STAGE21_API_NOW });
+
+  // No runtime and no subscriber count, so the official channel cannot be vouched for
+  // and the best trusted broadcaster wins instead of nothing.
+  assert.equal(url, "https://www.youtube.com/watch?v=tntStage21");
+});
+
+test("parseYouTubeIsoDurationSeconds and describeYouTubePublishedAge read the API's formats", () => {
+  const { parseYouTubeIsoDurationSeconds, describeYouTubePublishedAge } = loadParserExports();
+  assert.equal(parseYouTubeIsoDurationSeconds("PT10M16S"), 616);
+  assert.equal(parseYouTubeIsoDurationSeconds("PT1H2M3S"), 3723);
+  assert.equal(parseYouTubeIsoDurationSeconds("P1DT2H"), 93600);
+  assert.equal(parseYouTubeIsoDurationSeconds("PT48S"), 48);
+  assert.equal(parseYouTubeIsoDurationSeconds("10:16"), 0);
+  assert.equal(parseYouTubeIsoDurationSeconds(""), 0);
+
+  const now = new Date("2026-07-27T20:00:00Z");
+  assert.equal(describeYouTubePublishedAge("2026-07-27T19:30:00Z", now), "30 minutes ago");
+  assert.equal(describeYouTubePublishedAge("2026-07-27T17:00:00Z", now), "3 hours ago");
+  assert.equal(describeYouTubePublishedAge("2026-07-26T18:03:12Z", now), "1 day ago");
+  assert.equal(describeYouTubePublishedAge("2026-07-10T18:00:00Z", now), "2 weeks ago");
+  assert.equal(describeYouTubePublishedAge("2025-08-20T18:00:00Z", now), "11 months ago");
+  assert.equal(describeYouTubePublishedAge("not a date", now), "");
+});
+
+test("resolveRaceFinishVideoUrl retries a miss every 20 minutes for six hours, then every six hours", async () => {
+  const { resolveRaceFinishVideoUrl, finishVideoCache } = loadParserExports();
+  finishVideoCache.clear();
+  const start = Date.parse("2026-07-26T17:00:00Z");
+  const minute = 60 * 1000;
+  let calls = 0;
+  let answer = "";
+  const lookup = async () => {
+    calls += 1;
+    return answer;
+  };
+  const at = (minutes) => resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now: start + minutes * minute, lookup });
+
+  assert.equal(await at(0), "");
+  assert.equal(calls, 1);
+  await at(10);
+  assert.equal(calls, 1, "a miss ten minutes old is not searched again");
+  await at(20);
+  assert.equal(calls, 2, "a miss is retried after 20 minutes");
+  for (let minutes = 40; minutes < 360; minutes += 20) {
+    await at(minutes);
+  }
+  assert.equal(calls, 18, "18 searches in the first six hours");
+  await at(360);
+  await at(500);
+  await at(699);
+  assert.equal(calls, 18, "after six hours a miss waits six hours");
+  await at(700);
+  assert.equal(calls, 19);
+  await at(1000);
+  assert.equal(calls, 19);
+
+  answer = "https://www.youtube.com/watch?v=tdfOfficial21";
+  assert.equal(await at(1060), answer);
+  assert.equal(calls, 20);
+  assert.equal(await at(1300), answer, "a hit is served from the cache");
+  assert.equal(calls, 20);
+  await at(1420);
+  assert.equal(calls, 21, "a hit is searched again after six hours");
+});
+
 test("isLikelyFinishVideo rejects wrong stage, wrong year, previews, and unrelated races", () => {
   const { isLikelyFinishVideo } = loadParserExports();
   const { videos } = loadYouTubeFixtureVideos();
@@ -3285,6 +3440,88 @@ test("parseNationalChampionshipsIndex extracts national champions and cleans pla
     weRoadRace: "",
   });
   assert.equal(parsed.highlights[0].country, "United States");
+});
+
+test("parseNationalChampionshipsIndex reads the Cyclingnews index as published", () => {
+  const { parseNationalChampionshipsIndex } = loadParserExports();
+  const html = fs.readFileSync(path.join(__dirname, "fixtures", "cyclingnews-2026-road-national-champions-index.html"), "utf8");
+
+  const parsed = parseNationalChampionshipsIndex(html);
+
+  // The counts the live almanac showed on 2026-09-27, the day the page was captured.
+  assert.equal(parsed.error, "");
+  assert.equal(parsed.totalCountryCount, 105);
+  assert.equal(parsed.reportingCountryCount, 83);
+  assert.equal(parsed.completeCountryCount, 62);
+  assert.equal(parsed.completedEventCount, 291);
+  assert.equal(parsed.sourceLastModified, "2026-06-29T09:15:58+00:00");
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed.rows.find((row) => row.country === "Algeria"))), {
+    country: "Algeria",
+    meItt: "Yacine Hamza",
+    meRoadRace: "Hamza Amari",
+    weItt: "Nesrine Houili",
+    weRoadRace: "Nesrine Houili",
+  });
+  // The page pads empty cells with a byte-order mark, which must read as "no champion".
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed.rows.find((row) => row.country === "Afghanistan"))), {
+    country: "Afghanistan",
+    meItt: "",
+    meRoadRace: "",
+    weItt: "Fariba Hashimi",
+    weRoadRace: "Fariba Hashimi",
+  });
+});
+
+test("parseNationalChampionshipsIndex maps columns by the header row, not by position", () => {
+  const { parseNationalChampionshipsIndex } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>WE Road Race</th><th>Country</th><th>Code</th><th>ME Road Race</th><th>WE ITT</th><th>ME ITT</th></tr>
+      <tr><td>Kate Courtney</td><td>United States</td><td>USA</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Artem Schmidt</td></tr>
+      <tr><td></td><td>Canada</td><td>CAN</td><td>Alison Jackson</td><td></td><td></td></tr>
+    </table>`);
+
+  assert.equal(parsed.error, "");
+  assert.deepEqual(JSON.parse(JSON.stringify(parsed.rows)), [
+    { country: "United States", meItt: "Artem Shmidt", meRoadRace: "Quinn Simmons", weItt: "Taylor Knibb", weRoadRace: "Kate Courtney" },
+    { country: "Canada", meItt: "", meRoadRace: "Alison Jackson", weItt: "", weRoadRace: "" },
+  ]);
+});
+
+test("parseNationalChampionshipsIndex reports a header row that lost a title column instead of guessing", () => {
+  const { parseNationalChampionshipsIndex } = loadParserExports();
+  const parsed = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><th>Country</th><th>ME ITT</th><th>ME Road Race</th><th>WE Road Race</th></tr>
+      <tr><th>United States</th><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Kate Courtney</td></tr>
+    </table>`);
+
+  assert.equal(parsed.rows.length, 0);
+  assert.equal(parsed.totalCountryCount, 0);
+  assert.equal(parsed.error, "National championships table is missing the WE ITT column.");
+});
+
+test("parseNationalChampionshipsIndex trusts position only for a headerless five-column table", () => {
+  const { parseNationalChampionshipsIndex } = loadParserExports();
+  const headerless = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><td>United States</td><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+    </table>`);
+  assert.equal(headerless.error, "");
+  assert.deepEqual(JSON.parse(JSON.stringify(headerless.rows)), [
+    { country: "United States", meItt: "Artem Shmidt", meRoadRace: "Quinn Simmons", weItt: "Taylor Knibb", weRoadRace: "Kate Courtney" },
+  ]);
+
+  const sixColumns = parseNationalChampionshipsIndex(`
+    <table>
+      <caption>2026 Elite Road National Champions</caption>
+      <tr><td>United States</td><td>USA</td><td>Artem Schmidt</td><td>Quinn Simmons</td><td>Taylor Knibb</td><td>Kate Courtney</td></tr>
+    </table>`);
+  assert.equal(sixColumns.rows.length, 0);
+  assert.equal(sixColumns.error, "National championships table has no header row naming its columns.");
 });
 
 test("buildNationalChampionshipsSection renders source-backed champion table", () => {

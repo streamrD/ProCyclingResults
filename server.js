@@ -107,10 +107,14 @@ const RACE_HOST_TIME_ZONES = {
 // the minute; its provider is asked again after this long rather than every rebuild.
 const OFFICIAL_SNAPSHOT_SETTLED_TTL_MS = 6 * 60 * 60 * 1000;
 // News about a race that finished two or more days ago moves slowly: fewer searches,
-// kept for longer.
+// kept for longer. The caps are the figures DATA-SOURCES.md promises the news feed:
+// ten searches while a race is live or fresh, eight (the card shows eight stories)
+// once it has settled. Measured 2026-09-27 over the 65 calendar races: most build
+// 5-13 queries before any cap, so it bites only on names with many spellings, which
+// built up to 32 under the old caps (32 live, 12 settled).
 const ARTICLE_SETTLED_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const MAX_RACE_ARTICLE_QUERIES = 32;
-const MAX_SETTLED_RACE_ARTICLE_QUERIES = 12;
+const MAX_RACE_ARTICLE_QUERIES = 10;
+const MAX_SETTLED_RACE_ARTICLE_QUERIES = 8;
 const NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS = 60 * 60 * 1000;
 // Wikipedia is asked once per rebuild which tracked pages changed (one revisions query
 // per 50 titles); only those are fetched again.
@@ -2709,28 +2713,94 @@ function buildEmptyNationalChampionships(error) {
   };
 }
 
+// The index names its columns in a header row ("Country", "ME ITT", "ME Road Race",
+// "WE ITT", "WE Road Race"). Columns are found by that text rather than by position,
+// so a column the editors insert or reorder cannot mislabel every champion without a
+// visible error (until 2026-09-27 the cells were read by index and a shifted table
+// would have printed the wrong champions indefinitely). Position is trusted only when
+// the table has no header row at all and its first row holds exactly the five cells.
+function matchNationalChampionshipColumn(headerHtml) {
+  const text = cleanFeedText(headerHtml).toLowerCase();
+  if (/\b(?:country|nation|federation)\b/.test(text)) {
+    return "country";
+  }
+  const men = /\b(?:me|men|male)\b/.test(text);
+  const women = /\b(?:we|women|female)\b/.test(text);
+  const timeTrial = /\b(?:itt|tt|time trial)\b/.test(text);
+  const roadRace = /\b(?:rr|road race|road)\b/.test(text);
+  if (men === women || timeTrial === roadRace) {
+    return "";
+  }
+  return `${men ? "me" : "we"}${timeTrial ? "Itt" : "RoadRace"}`;
+}
+
+function resolveNationalChampionshipColumns(firstRowCells) {
+  const cells = firstRowCells || [];
+  const indexes = {};
+  cells.forEach((cell, index) => {
+    const key = matchNationalChampionshipColumn(cell.html);
+    if (key && indexes[key] === undefined) {
+      indexes[key] = index;
+    }
+  });
+
+  const hasHeaderRow = cells.length > 0 && (Object.keys(indexes).length > 0 || cells.every((cell) => cell.tag === "h"));
+  if (!hasHeaderRow) {
+    if (cells.length === NATIONAL_CHAMPIONSHIP_EVENT_KEYS.length + 1) {
+      return { hasHeaderRow: false, indexes: { country: 0, meItt: 1, meRoadRace: 2, weItt: 3, weRoadRace: 4 } };
+    }
+    return { error: "National championships table has no header row naming its columns." };
+  }
+
+  const missing = NATIONAL_CHAMPIONSHIP_EVENT_KEYS.filter((key) => indexes[key] === undefined);
+  if (missing.length > 0) {
+    const labels = missing.map((key) => NATIONAL_CHAMPIONSHIP_EVENT_LABELS[key]).join(", ");
+    return { error: `National championships table is missing the ${labels} column${missing.length > 1 ? "s" : ""}.` };
+  }
+  if (indexes.country === undefined) {
+    const taken = new Set(Object.values(indexes));
+    indexes.country = cells.findIndex((cell, index) => !taken.has(index));
+    if (indexes.country < 0) {
+      return { error: "National championships table has no country column." };
+    }
+  }
+  return { hasHeaderRow: true, indexes };
+}
+
 function parseNationalChampionshipsIndex(html) {
   const table = extractHtmlTableByCaption(html, /elite road national champions/i);
   if (!table) {
     return buildEmptyNationalChampionships(new Error("National championships table was not found."));
   }
 
-  const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .slice(1)
-    .map((match) => {
-      const cells = [...match[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-        .map((cellMatch) => cleanNationalChampionCell(cellMatch[1]));
+  const rowCells = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) =>
+    [...match[1].matchAll(/<t([dh])[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cellMatch) => ({
+      tag: cellMatch[1].toLowerCase(),
+      html: cellMatch[2],
+    })),
+  );
+  const firstRowIndex = Math.max(0, rowCells.findIndex((cells) => cells.length > 0));
+  const columns = resolveNationalChampionshipColumns(rowCells[firstRowIndex]);
+  if (columns.error) {
+    return buildEmptyNationalChampionships(new Error(columns.error));
+  }
 
-      if (cells.length < 5 || !cells[0]) {
+  const lastIndex = Math.max(...Object.values(columns.indexes));
+  const rows = rowCells
+    .slice(columns.hasHeaderRow ? firstRowIndex + 1 : firstRowIndex)
+    .map((rawCells) => {
+      const cells = rawCells.map((cell) => cleanNationalChampionCell(cell.html));
+      const country = cells[columns.indexes.country];
+      if (cells.length <= lastIndex || !country) {
         return null;
       }
 
       return {
-        country: cells[0],
-        meItt: cells[1],
-        meRoadRace: cells[2],
-        weItt: cells[3],
-        weRoadRace: cells[4],
+        country,
+        meItt: cells[columns.indexes.meItt],
+        meRoadRace: cells[columns.indexes.meRoadRace],
+        weItt: cells[columns.indexes.weItt],
+        weRoadRace: cells[columns.indexes.weRoadRace],
       };
     })
     .filter(Boolean);
@@ -7108,8 +7178,8 @@ function buildRaceArticleQueries(race) {
   const overallWinner = cleanWikiText(race?.winner || "");
   const primaryVariant = variants[0] || "";
 
-  // Result-oriented queries placed first so they survive the query cap (32 while a
-  // race is live or fresh, 12 once it has been over for two days). A bare
+  // Result-oriented queries placed first so they survive the query cap (10 while a
+  // race is live or fresh, 8 once it has been over for two days). A bare
   // "<race> <year> cycling" query tends to surface previews/guides; naming the
   // winner and asking for the report is what surfaces the actual result coverage
   // (e.g. "Wout Van Aert beats Tadej Pogacar" for Paris-Roubaix).
@@ -8996,16 +9066,116 @@ function selectFinishVideo(videos, race) {
     .sort((left, right) => right.score - left.score)[0]?.video || null;
 }
 
-async function fetchYouTubeFinishVideoUrl(race) {
+// YouTube Data API v3, used instead of the search page as soon as YOUTUBE_API_KEY is
+// set in the deployment environment (the search page is the path YouTube's robots.txt
+// disallows). search.list costs 100 of the 10,000 free daily quota units and answers
+// with only the id, title, channel and publish date; the runtime comes from videos.list
+// and the channel's subscriber count from channels.list, one unit each, so a lookup
+// costs 102 units, about 98 lookups a day. The API exposes no verified badge; a channel
+// with the 100,000 subscribers YouTube requires before granting one counts as verified
+// here. The key travels only in the request URL, which nothing logs; it is never put
+// in the user agent, an error message or the payload.
+const YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3";
+const YOUTUBE_API_VERIFIED_SUBSCRIBER_COUNT = 100000;
+
+function parseYouTubeIsoDurationSeconds(text) {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(String(text || "").trim());
+  if (!match) {
+    return 0;
+  }
+  const [days, hours, minutes, seconds] = match.slice(1).map((value) => Number.parseInt(value || "0", 10));
+  return ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+}
+
+// The search page says "1 day ago"; the API gives a timestamp. Phrased the same way so
+// the age scoring reads both paths alike.
+function describeYouTubePublishedAge(publishedAt, now = new Date()) {
+  const published = new Date(publishedAt || "");
+  if (Number.isNaN(published.getTime())) {
+    return "";
+  }
+  const minutes = Math.max(0, Math.floor((now.getTime() - published.getTime()) / 60000));
+  const phrase = (count, unit) => `${count} ${unit}${count === 1 ? "" : "s"} ago`;
+  if (minutes < 60) {
+    return phrase(Math.max(1, minutes), "minute");
+  }
+  if (minutes < 24 * 60) {
+    return phrase(Math.floor(minutes / 60), "hour");
+  }
+  const days = Math.floor(minutes / (24 * 60));
+  if (days < 7) {
+    return phrase(days, "day");
+  }
+  if (days < 30) {
+    return phrase(Math.floor(days / 7), "week");
+  }
+  if (days < 365) {
+    return phrase(Math.floor(days / 30), "month");
+  }
+  return phrase(Math.floor(days / 365), "year");
+}
+
+// Same shape as parseYouTubeSearchVideos so selectFinishVideo judges both paths alike.
+async function fetchYouTubeApiSearchVideos(query, apiKey, fetchJsonImpl = fetchJson, now = new Date()) {
+  const searchParams = new URLSearchParams({ part: "snippet", type: "video", maxResults: "10", q: query, key: apiKey });
+  const search = await fetchJsonImpl(`${YOUTUBE_API_BASE_URL}/search?${searchParams}`);
+  const items = (search?.items || []).filter((item) => item?.id?.videoId && item?.snippet?.title);
+  if (items.length === 0) {
+    return [];
+  }
+
+  const durations = new Map();
+  const subscribers = new Map();
+  try {
+    const videoIds = [...new Set(items.map((item) => item.id.videoId))].join(",");
+    const channelIds = [...new Set(items.map((item) => item.snippet.channelId).filter(Boolean))].join(",");
+    const [videos, channels] = await Promise.all([
+      fetchJsonImpl(`${YOUTUBE_API_BASE_URL}/videos?${new URLSearchParams({ part: "contentDetails", id: videoIds, key: apiKey })}`),
+      channelIds
+        ? fetchJsonImpl(`${YOUTUBE_API_BASE_URL}/channels?${new URLSearchParams({ part: "statistics", id: channelIds, key: apiKey })}`)
+        : { items: [] },
+    ]);
+    (videos?.items || []).forEach((video) => {
+      durations.set(video.id, parseYouTubeIsoDurationSeconds(video.contentDetails?.duration));
+    });
+    (channels?.items || []).forEach((channel) => {
+      subscribers.set(channel.id, Number.parseInt(channel.statistics?.subscriberCount || "0", 10) || 0);
+    });
+  } catch {
+    // Without the follow-ups the results still reach the filter, which then admits
+    // only the trusted broadcasters: no runtime and no badge to vouch for the rest.
+  }
+
+  // search.list HTML-escapes its titles ("Men&#39;s"); the search page does not.
+  return items.map((item) => ({
+    id: item.id.videoId,
+    title: cleanFeedText(item.snippet.title),
+    channel: cleanFeedText(item.snippet.channelTitle || ""),
+    lengthSeconds: durations.get(item.id.videoId) || 0,
+    ageText: describeYouTubePublishedAge(item.snippet.publishedAt, now),
+    publishedAt: item.snippet.publishedAt || "",
+    verified: (subscribers.get(item.snippet.channelId) || 0) >= YOUTUBE_API_VERIFIED_SUBSCRIBER_COUNT,
+  }));
+}
+
+async function fetchYouTubeFinishVideoUrl(
+  race,
+  { apiKey = process.env.YOUTUBE_API_KEY, fetchJson: fetchJsonImpl = fetchJson, now = new Date() } = {},
+) {
   const query = buildFinishVideoQuery(race);
   if (!query) {
     return "";
   }
 
-  const html = await fetchText(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
-    userAgent: YOUTUBE_FETCH_USER_AGENT,
-  });
-  const best = selectFinishVideo(parseYouTubeSearchVideos(html), race);
+  const key = String(apiKey || "").trim();
+  const videos = key
+    ? await fetchYouTubeApiSearchVideos(query, key, fetchJsonImpl, now)
+    : parseYouTubeSearchVideos(
+        await fetchText(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+          userAgent: YOUTUBE_FETCH_USER_AGENT,
+        }),
+      );
+  const best = selectFinishVideo(videos, race);
   return best ? `https://www.youtube.com/watch?v=${best.id}` : "";
 }
 
@@ -9020,26 +9190,32 @@ function hasCuratedFinishVideo(race) {
   return Boolean(mapped[getRaceCoverageStageNumber(race)]);
 }
 
-async function resolveRaceFinishVideoUrl(race) {
+async function resolveRaceFinishVideoUrl(race, { now = Date.now(), lookup = fetchYouTubeFinishVideoUrl } = {}) {
   const key = `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
   const cached = finishVideoCache.get(key);
-  const now = Date.now();
+  // A miss is retried every 20 minutes for the first six hours after a stage is first
+  // searched, when its video is expected to appear, and every six hours after that; a
+  // hit is kept for six hours. So a stage costs at most 18 searches in its first six
+  // hours and four a day thereafter, video or not, until the six-day window closes.
+  // Until 2026-09-27 a miss was retried every 20 minutes for the whole window.
+  const firstSearchedAt = cached?.firstSearchedAt || cached?.updatedAt || now;
   if (cached) {
-    const ttl = cached.url ? FINISH_VIDEO_CACHE_TTL_MS : FINISH_VIDEO_MISS_CACHE_TTL_MS;
+    const missRetriesQuickly = !cached.url && now - firstSearchedAt < FINISH_VIDEO_CACHE_TTL_MS;
+    const ttl = missRetriesQuickly ? FINISH_VIDEO_MISS_CACHE_TTL_MS : FINISH_VIDEO_CACHE_TTL_MS;
     if (now - cached.updatedAt < ttl) {
       return cached.url;
     }
   }
 
   try {
-    const url = await fetchYouTubeFinishVideoUrl(race);
-    finishVideoCache.set(key, { updatedAt: Date.now(), url });
+    const url = await lookup(race);
+    finishVideoCache.set(key, { updatedAt: now, url, firstSearchedAt });
     return url;
   } catch {
     if (cached) {
       return cached.url;
     }
-    finishVideoCache.set(key, { updatedAt: now, url: "" });
+    finishVideoCache.set(key, { updatedAt: now, url: "", firstSearchedAt });
     return "";
   }
 }
