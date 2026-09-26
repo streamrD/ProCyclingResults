@@ -212,6 +212,41 @@ function loadParserExports() {
       loadOfficialStageRaceSnapshotWithinBudget,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
+      findOverallRaceResult,
+      extractFeedItems,
+      fetchRaceArticles,
+      fetchText,
+      getWikiRevision,
+      wikiRawCache,
+      wikiRevisionIndex,
+      OFFICIAL_STAGE_RACE_PROVIDERS,
+      OFFICIAL_ONE_DAY_RESULT_PROVIDERS,
+      findOfficialRaceProvider,
+      matchesSeasonEdition,
+      clearSeasonCaches,
+      isArticleOnOrAfterRaceDay,
+      buildRaceMetadata,
+      SEASONS,
+      seasonCaches: {
+        articleCache,
+        finishVideoCache,
+        officialSnapshotCache,
+        teamNameCache,
+        worldChampionshipMissingPages,
+        deferredGroupDataCaches,
+        stageHistoryCache,
+        stageProfileCache,
+        seasonOpeningCache,
+      },
+      getSeasonYearForTest: () => SEASON_YEAR,
+      setSeasonYearForTest: (year) => {
+        SEASON_YEAR = year;
+      },
+      // The sandbox's fetch is what fetchText calls; swapping it lets a test feed a
+      // fixture through the real request path without touching the network.
+      setFetchForTest: (fetchImpl) => {
+        globalThis.fetch = fetchImpl;
+      },
     };`,
     sandbox,
   );

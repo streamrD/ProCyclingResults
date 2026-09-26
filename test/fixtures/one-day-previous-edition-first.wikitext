@@ -1,0 +1,30 @@
+{{Infobox cycling race report
+| name = 2026 Milan–San Remo
+| date = 21 March 2026
+| first = [[Tadej Pogačar]]
+| first_nat = SLO
+}}
+'''The 2026 Milan–San Remo''' was the 117th edition of the [[Milan–San Remo]] one-day race, held on 21 March 2026.
+
+== Previous edition ==
+The 2025 edition was won by [[Mathieu van der Poel]] ahead of [[Filippo Ganna]] and [[Tadej Pogačar]].
+{{Cyclingresult start|title=2025 Result|rider=yes}}
+{{cyclingresult|1|{{flagathlete|[[Mathieu van der Poel]]|NED}}|{{UCI team code|ADC|2025}}|6h 22' 00"}}
+{{cyclingresult|2|{{flagathlete|[[Filippo Ganna]]|ITA}}|{{UCI team code|IGD|2025}}|s.t.}}
+{{cyclingresult|3|{{flagathlete|[[Tadej Pogačar]]|SLO}}|{{UCI team code|UAD|2025}}|s.t.}}
+{{Cyclingresult end}}
+
+== Route ==
+The route was unchanged from the previous year.
+
+== Result ==
+{{Cyclingresult start|title=Result|rider=yes}}
+{{cyclingresult|1|{{flagathlete|[[Tadej Pogačar]]|SLO}}|{{UCI team code|UAD|2026}}|6h 20' 47"}}
+{{cyclingresult|2|{{flagathlete|[[Mathieu van der Poel]]|NED}}|{{UCI team code|ADC|2026}}|s.t.}}
+{{cyclingresult|3|{{flagathlete|[[Filippo Ganna]]|ITA}}|{{UCI team code|IGD|2026}}|+ 3"}}
+{{cyclingresult|4|{{flagathlete|[[Michael Matthews]]|AUS}}|{{UCI team code|JAY|2026}}|+ 41"}}
+{{cyclingresult|5|{{flagathlete|[[Tom Pidcock]]|GBR}}|{{UCI team code|Q36|2026}}|+ 41"}}
+{{Cyclingresult end}}
+
+== References ==
+{{reflist}}
