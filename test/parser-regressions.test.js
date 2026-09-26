@@ -84,6 +84,12 @@ function loadParserExports() {
       parseWorldChampionshipEventResult,
       enrichWorldChampionshipResults,
       partitionRaceBuckets,
+      enrichOneDayRaceDayResults,
+      isOneDayRaceAwaitingResult,
+      selectHomepageWorldTourRecentCandidates,
+      selectHomepageRecentStandingsTargets,
+      HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT,
+      WORLDTOUR_RECENT_RESULTS,
       buildRaceCard,
       buildRecentResultsBlock,
       getRaceArticleVariants,
@@ -1802,6 +1808,156 @@ test("enrichWorldChampionshipResults asks for an event page from race day only a
   assert.ok(calls.every((title) => !/Men's road race/.test(title) || calls.filter((entry) => entry === title).length === 1));
 });
 
+test("a one-day race keeps a Today card on race day and takes its result from its own article", async () => {
+  const { enrichOneDayRaceDayResults, isOneDayRaceAwaitingResult, partitionRaceBuckets, getFreshnessSensitiveRaces, buildUpcomingCard } =
+    loadParserExports();
+  const article = (withResult) => `{{Infobox cycling race report
+| name = 2026 Il Lombardia
+| date = 10 October 2026
+}}
+== Route ==
+The race starts in Como.
+${
+  withResult
+    ? `== Result ==
+{{Cycling result start|title=Result}}
+{{cyclingresult|1|[[Tadej Pogačar]]|SLO|{{UCI team code|UAD|2026}}|5h 58' 32"}}
+{{cyclingresult|2|[[Remco Evenepoel]]|BEL|{{UCI team code|RBH|2026}}|+ 1' 22"}}
+{{cyclingresult|3|[[Isaac del Toro]]|MEX|{{UCI team code|UAD|2026}}|+ 1' 22"}}
+{{cyclingresult|4|[[Tom Pidcock]]|GBR|{{UCI team code|Q36|2026}}|+ 2' 05"}}
+{{cyclingresult|5|[[Ben Healy]]|IRL|{{UCI team code|EFE|2026}}|+ 2' 05"}}
+{{cyclingresult|6|[[Primož Roglič]]|SLO|{{UCI team code|RBH|2026}}|+ 2' 40"}}
+{{Cycling result end}}`
+    : ""
+}
+`;
+  const oneDay = (title, iso, overrides = {}) => ({
+    pageTitle: `2026 ${title}`,
+    title,
+    series: "Men's WorldTour",
+    countryCode: "ITA",
+    location: "Como to Bergamo",
+    date: "10 October 2026",
+    winner: "",
+    winnerCountryCode: "",
+    second: "",
+    secondCountryCode: "",
+    third: "",
+    thirdCountryCode: "",
+    startDate: new Date(`${iso}T00:00:00Z`),
+    endDate: new Date(`${iso}T00:00:00Z`),
+    ...overrides,
+  });
+  const lombardia = oneDay("Il Lombardia", "2026-10-10");
+  const emilia = oneDay("Giro dell'Emilia", "2026-10-03", { winner: "Tadej Pogačar", winnerCountryCode: "SLO" });
+  const guangxi = oneDay("Tour of Guangxi", "2026-10-13", { endDate: new Date("2026-10-18T00:00:00Z"), countryCode: "CHN" });
+  const worlds = worldsEvent({ startDate: new Date("2026-10-10T00:00:00Z"), endDate: new Date("2026-10-10T00:00:00Z") });
+  const races = [lombardia, emilia, guangxi, worlds];
+  const calls = [];
+  let page = article(false);
+  const loader = async (title) => {
+    calls.push(title);
+    return page;
+  };
+  const titles = (list) => JSON.parse(JSON.stringify(list.map((race) => race.title)));
+
+  // The day before: nothing is read; the race is simply upcoming.
+  await enrichOneDayRaceDayResults(races, loader, new Date("2026-10-09T12:00:00Z"));
+  assert.equal(calls.length, 0);
+  let buckets = partitionRaceBuckets(races, new Date("2026-10-09T12:00:00Z"));
+  assert.deepEqual(titles(buckets.upcomingRaces), ["Il Lombardia", "Elite men's road race", "Tour of Guangxi"]);
+  assert.deepEqual(titles(buckets.recentOneDayResults), ["Giro dell'Emilia"]);
+
+  // Race day, no result on the article yet: it is read (the Worlds event is left to its
+  // own reader), the race keeps its upcoming card marked "Today", and the page stays on
+  // the live cadence while it waits.
+  const raceDay = new Date("2026-10-10T14:00:00Z");
+  await enrichOneDayRaceDayResults(races, loader, raceDay);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), ["2026 Il Lombardia"]);
+  assert.equal(lombardia.winner, "");
+  buckets = partitionRaceBuckets(races, raceDay);
+  assert.deepEqual(titles(buckets.upcomingRaces), ["Il Lombardia", "Elite men's road race", "Tour of Guangxi"]);
+  assert.deepEqual(titles(buckets.recentOneDayResults), ["Giro dell'Emilia"]);
+  assert.equal(isOneDayRaceAwaitingResult(lombardia, buckets.todayUtc, raceDay), true);
+  assert.match(buildUpcomingCard({ ...lombardia, finishedToday: true }), /Today/);
+  assert.equal(getFreshnessSensitiveRaces({ upcomingRaces: [{ ...lombardia, finishedToday: true }] }).length, 1);
+  assert.equal(getFreshnessSensitiveRaces({ upcomingRaces: [{ ...lombardia, finishedToday: false }] }).length, 0);
+
+  // Race day, the article now carries the result: the podium and top five land and
+  // the race moves to the results.
+  page = article(true);
+  await enrichOneDayRaceDayResults(races, loader, new Date("2026-10-10T16:30:00Z"));
+  assert.equal(lombardia.winner, "Tadej Pogačar");
+  assert.equal(lombardia.winnerCountryCode, "SLO");
+  assert.equal(lombardia.second, "Remco Evenepoel");
+  assert.equal(lombardia.third, "Isaac del Toro");
+  assert.equal(lombardia.resultStandings.length, 5);
+  assert.equal(lombardia.resultSource, "wikipedia-race-article");
+  buckets = partitionRaceBuckets(races, new Date("2026-10-10T16:30:00Z"));
+  assert.deepEqual(titles(buckets.recentOneDayResults), ["Il Lombardia", "Giro dell'Emilia"]);
+  assert.deepEqual(titles(buckets.upcomingRaces), ["Elite men's road race", "Tour of Guangxi"]);
+
+  // The day after: nothing more is read, and the race stays in the results.
+  const readSoFar = calls.length;
+  await enrichOneDayRaceDayResults(races, loader, new Date("2026-10-11T09:00:00Z"));
+  assert.equal(calls.length, readSoFar);
+  buckets = partitionRaceBuckets(races, new Date("2026-10-11T09:00:00Z"));
+  assert.deepEqual(titles(buckets.recentOneDayResults), ["Il Lombardia", "Giro dell'Emilia"]);
+
+  // Had the season table still not named the winner the next morning, the article is
+  // read once more so the card does not vanish; two days on it is left to the table.
+  const lagging = oneDay("Il Lombardia", "2026-10-10");
+  await enrichOneDayRaceDayResults([lagging], loader, new Date("2026-10-11T09:00:00Z"));
+  assert.equal(calls.length, readSoFar + 1);
+  assert.equal(lagging.winner, "Tadej Pogačar");
+  assert.deepEqual(titles(partitionRaceBuckets([lagging], new Date("2026-10-11T09:00:00Z")).recentOneDayResults), ["Il Lombardia"]);
+  await enrichOneDayRaceDayResults([oneDay("Il Lombardia", "2026-10-10")], loader, new Date("2026-10-12T09:00:00Z"));
+  assert.equal(calls.length, readSoFar + 1);
+
+  // Race day is the host country's: a race in Montreal is still today at 01:00 UTC the
+  // next morning, and a race in Italy stays today until UTC midnight.
+  const montreal = oneDay("Grand Prix Cycliste de Montréal", "2026-09-13", { countryCode: "CAN" });
+  assert.deepEqual(titles(partitionRaceBuckets([montreal], new Date("2026-09-14T01:00:00Z")).upcomingRaces), ["Grand Prix Cycliste de Montréal"]);
+  assert.deepEqual(titles(partitionRaceBuckets([montreal], new Date("2026-09-14T05:00:00Z")).upcomingRaces), []);
+  assert.deepEqual(titles(partitionRaceBuckets([oneDay("Il Lombardia", "2026-10-10")], new Date("2026-10-10T22:30:00Z")).upcomingRaces), ["Il Lombardia"]);
+});
+
+test("homepage top-five reads count only one-day WorldTour races toward their limit", () => {
+  const { selectHomepageWorldTourRecentCandidates, selectHomepageRecentStandingsTargets, HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT, WORLDTOUR_RECENT_RESULTS } =
+    loadParserExports();
+  const race = (title, series, start, end) => ({
+    pageTitle: `2026 ${title}`,
+    title,
+    series,
+    winner: "x",
+    startDate: new Date(`${start}T00:00:00Z`),
+    endDate: new Date(`${end}T00:00:00Z`),
+  });
+  const oneDay = (title, series, day) => race(title, series, day, day);
+  const worlds = ["27", "26", "20"].map((day) => oneDay(`Worlds ${day}`, "UCI Road World Championships", `2026-09-${day}`));
+  const stageRaces = [
+    race("Vuelta a España", "Men's WorldTour", "2026-08-22", "2026-09-13"),
+    race("Tour de Romandie Féminin", "Women's WorldTour", "2026-09-04", "2026-09-06"),
+  ];
+  const oneDays = [];
+  for (let day = 1; day <= 14; day += 1) {
+    oneDays.push(oneDay(`Men ${day}`, "Men's WorldTour", `2026-08-${String(day).padStart(2, "0")}`));
+    oneDays.push(oneDay(`Women ${day}`, "Women's WorldTour", `2026-08-${String(day).padStart(2, "0")}`));
+  }
+  const candidates = selectHomepageWorldTourRecentCandidates([...worlds, ...oneDays], stageRaces);
+  const targets = selectHomepageRecentStandingsTargets(candidates);
+
+  // Twelve cards per section. The Worlds (their own reader) and the stage races
+  // (enriched regardless) take none of the one-day races' places: at the old limit of
+  // six those five left a single one-day race with a top five.
+  assert.equal(HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT, 2 * WORLDTOUR_RECENT_RESULTS);
+  assert.equal(candidates.length, 27);
+  assert.equal(targets.length, 22);
+  assert.ok(targets.every((entry) => entry.series !== "UCI Road World Championships" && entry.startDate.getTime() === entry.endDate.getTime()));
+  assert.equal(targets[0].title, "Men 14");
+  assert.equal(targets[targets.length - 1].title, "Women 4");
+});
+
 test("the championship article's medal summary stands in until an event gets its own page", async () => {
   const { parseWorldChampionshipMedalSummary, enrichWorldChampionshipResults } = loadParserExports();
   const championship = loadWorldsFixture("uci-road-world-championships-2026-time-trial-medals.wikitext");
@@ -2429,6 +2585,36 @@ test("extractClassificationTableGcSnapshots ignores the other jersey classificat
   assert.equal(snapshots.length, 1);
   assert.equal(snapshots[0].stageNumber, 6);
   assert.equal(snapshots[0].standings[0].rider, "Marlen Reusser");
+});
+
+test("a finished race's 'Final general classification' table is the GC after the last stage", () => {
+  const { extractClassificationTableGcSnapshots, extractStageRaceSnapshot } = loadParserExports();
+  const rawText = fs.readFileSync(path.join(__dirname, "fixtures", "la-vuelta-femenina-2026-final-gc.wikitext"), "utf8");
+
+  // The live article as captured on 2026-09-26: its only GC table is captioned "Final
+  // general classification (1–10)", which the reader skipped, so the finished card fell
+  // back to the leadership table's leader alone and showed three names.
+  const snapshots = extractClassificationTableGcSnapshots(rawText);
+  assert.equal(snapshots.length, 1);
+  assert.equal(snapshots[0].stageNumber, 7);
+  assert.equal(snapshots[0].standings.length, 5);
+
+  const snapshot = extractStageRaceSnapshot(rawText);
+  assert.equal(snapshot.totalStages, 7);
+  assert.equal(snapshot.completedStages, 7);
+  assert.equal(snapshot.generalClassification.stageNumber, 7);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(snapshot.generalClassification.standings.map((entry) => [entry.place, entry.rider, entry.gap || entry.time]))),
+    [
+      ["1", "Paula Blasi", "22:17:03"],
+      ["2", "Anna van der Breggen", "+00:24"],
+      ["3", "Marion Bunel", "+00:49"],
+      ["4", "Usoa Ostolaza", "+02:31"],
+      ["5", "Juliette Berthet", "+02:36"],
+    ],
+  );
+  // Without a stage count the caption cannot be placed on the race and is left alone.
+  assert.equal(extractClassificationTableGcSnapshots(rawText.replace(/\|stages\s*=\s*7/, "|stages = ")).length, 0);
 });
 
 test("fetchTourDeFranceFemmesOfficialSnapshot builds a stage + GC snapshot from letourfemmes.fr", async () => {

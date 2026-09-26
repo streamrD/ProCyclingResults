@@ -40,7 +40,12 @@ const WORLDTOUR_RECENT_RESULTS = 12;
 // with a "Load more races" button adding another row up to WORLDTOUR_RECENT_RESULTS.
 const WORLDTOUR_RECENT_RESULTS_STEP = 3;
 const PROSERIES_RECENT_RESULTS = 10;
-const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 6;
+// One-day WorldTour races whose article is read for the top five on the homepage
+// build. Only those count toward it: the Worlds have their own reader and finished
+// stage races are enriched regardless, so at 6 the limit was spent on three Worlds
+// events and a stage race while ten of fourteen one-day cards stopped at three names
+// (2026-09-26). Two sections of WORLDTOUR_RECENT_RESULTS cards is the most that shows.
+const HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT = 2 * WORLDTOUR_RECENT_RESULTS;
 // YouTube finish-video lookups: found URLs are stable so they cache for hours,
 // while "not found yet" misses re-check sooner so a video that is uploaded an hour
 // after the finish still gets picked up. Lookups per build are capped and only run
@@ -3775,18 +3780,28 @@ function parseWikiClassificationTableStandings(table) {
 // Grand Tour pages publish their in-progress standings as plain wikitables captioned
 // "General classification after Stage N" instead of the {{cycling result start}}
 // blocks smaller races use, so they need a dedicated reader to surface a GC at all.
+// Once the race is over the same table is recaptioned "Final general classification":
+// that is the GC after the last stage (the infobox says how many) and the only place
+// the page keeps it in full — without it a finished La Vuelta Femenina fell back to
+// the leadership table's leader alone (2026-09-26). A page that wrote "Final" early
+// would claim every stage; the progress bound in the snapshot merge
+// (isStageRaceProgressPlausible) is what ranks that below a plausible snapshot.
 function extractClassificationTableGcSnapshots(rawText) {
-  return [...String(rawText || "").matchAll(/\{\|[\s\S]*?\n\|\}/g)]
+  const text = String(rawText || "");
+  const totalStages = parseTotalStages(text);
+  return [...text.matchAll(/\{\|[\s\S]*?\n\|\}/g)]
     .map((match) => {
       const table = match[0];
       const caption = cleanWikiText(table.match(/\|\+\s*([^\n]+)/)?.[1] || "");
       const captionMatch = caption.match(/^general classification after stage\s+(\d+)/i);
-      if (!captionMatch) {
+      const isFinal = !captionMatch && totalStages > 0 && /^final general classification\b/i.test(caption);
+      if (!captionMatch && !isFinal) {
         return null;
       }
 
       const standings = parseWikiClassificationTableStandings(table);
-      return standings.length > 0 ? { stageNumber: Number(captionMatch[1]), standings } : null;
+      const stageNumber = isFinal ? totalStages : Number(captionMatch[1]);
+      return standings.length > 0 ? { stageNumber, standings } : null;
     })
     .filter(Boolean);
 }
@@ -4361,8 +4376,9 @@ function getFreshnessSensitiveRaces(data) {
     ...[...(data?.recentResults || []), ...(data?.finalizedStageRaces || []), ...(data?.europeTourRecentResults || [])].filter(
       (race) => race?.finishedToday,
     ),
-    // A Worlds event being raced today, still waiting for its result.
-    ...(data?.upcomingRaces || []).filter((race) => isWorldChampionshipRace(race) && race?.finishedToday),
+    // A one-day race being ridden today, still waiting for its result: the Worlds were
+    // the first, and every one-day race keeps its card the same way since 2026-09-26.
+    ...(data?.upcomingRaces || []).filter((race) => race?.finishedToday),
   ];
 }
 
@@ -7648,13 +7664,65 @@ function cloneRaces(races) {
   return races.map(cloneRace);
 }
 
-// On race day a Worlds event has no result until its page fills in; it keeps its
-// upcoming card (marked "Today") rather than vanishing for the afternoon.
-function isWorldChampionshipEventAwaitingResult(race, todayUtc) {
+// On race day a one-day race has no result until its article fills in; it keeps its
+// upcoming card (marked "Today") rather than vanishing for the afternoon. The Worlds
+// were the first to need this; since 2026-09-26 every one-day race gets it. Race day is
+// the host country's date as well as the UTC date the buckets are cut on, so a race in
+// Montreal is still today at 01:00 UTC and one in Italy stays today until UTC midnight.
+function isOneDayRaceAwaitingResult(race, todayUtc, now = new Date()) {
+  if (race?.winner || !(isOneDayRace(race) || isWorldChampionshipRace(race))) {
+    return false;
+  }
+
   const startUtc = toUtcDateOnly(race?.startDate);
-  return Boolean(
-    isWorldChampionshipRace(race) && !race.winner && startUtc && todayUtc && startUtc.getTime() === todayUtc.getTime(),
+  const hostToday = getRaceLocalDate(race, now);
+  return Boolean(startUtc && [todayUtc, hostToday].some((day) => day && startUtc.getTime() === day.getTime()));
+}
+
+// A one-day race's winner reaches the season table hours after the finish, and the
+// metadata that holds it is cached for an hour on top; the race's own article carries
+// the result first. So on race day the article is read on every rebuild — the live
+// cadence during racing hours — and the podium and top five are taken from it the
+// moment they appear, moving the race from its "Today" card to the results. The Worlds
+// have their own reader (enrichWorldChampionshipResults): their pages list nations.
+async function enrichOneDayRaceDayResults(races, loadWikiRaw = fetchWikiRaw, now = new Date()) {
+  const todayUtc = toUtcDateOnly(now);
+  // The article is also read the day after: the season table can lag it by a night,
+  // and a card that appeared on race day must not vanish the next morning.
+  const isDue = (race) => {
+    if (race?.winner || !isOneDayRace(race)) {
+      return false;
+    }
+    const startUtc = toUtcDateOnly(race.startDate);
+    const daysSince = startUtc && todayUtc ? Math.round((todayUtc.getTime() - startUtc.getTime()) / (24 * 60 * 60 * 1000)) : -1;
+    return (daysSince >= 0 && daysSince <= 1) || isOneDayRaceAwaitingResult(race, todayUtc, now);
+  };
+  const due = (races || []).filter(
+    (race) => (race?.series === "Men's WorldTour" || race?.series === "Women's WorldTour") && isDue(race),
   );
+
+  await Promise.all(
+    due.map(async (race) => {
+      let standings = [];
+      try {
+        standings = findOverallRaceResult(extractCyclingResultBlocks(await loadWikiRaw(race.pageTitle)));
+      } catch {
+        return; // The season table still answers within the hour.
+      }
+      if (standings[0]?.place !== "1" || !standings[0].rider) {
+        return;
+      }
+
+      const [first, second, third] = standings;
+      [race.winner, race.winnerCountryCode, race.winnerPageTitle] = [first.rider, first.countryCode || "", first.pageTitle || ""];
+      [race.second, race.secondCountryCode, race.secondPageTitle] = [second?.rider || "", second?.countryCode || "", second?.pageTitle || ""];
+      [race.third, race.thirdCountryCode, race.thirdPageTitle] = [third?.rider || "", third?.countryCode || "", third?.pageTitle || ""];
+      race.resultStandings = standings;
+      race.resultSource = "wikipedia-race-article";
+    }),
+  );
+
+  return races;
 }
 
 function partitionRaceBuckets(allRaces, now = new Date()) {
@@ -7698,7 +7766,7 @@ function partitionRaceBuckets(allRaces, now = new Date()) {
     .slice(0, MAX_LIVE_STAGE_RACES);
 
   const upcomingRaces = allRaces
-    .filter((race) => race.startDate && (race.startDate > todayUtc || isWorldChampionshipEventAwaitingResult(race, todayUtc)))
+    .filter((race) => race.startDate && (race.startDate > todayUtc || isOneDayRaceAwaitingResult(race, todayUtc, now)))
     .sort((left, right) => left.startDate - right.startDate);
 
   const europeTourRaces = allRaces.filter((race) => race.series === "Men's Europe Tour");
@@ -7859,8 +7927,13 @@ function selectHomepageWorldTourRecentCandidates(recentOneDayResults, finalizedS
   );
 }
 
+// The one-day WorldTour races whose article is read for the top five. Only they count
+// toward the limit: the Worlds skip that reader (they have their own) and finished
+// stage races are enriched regardless, so counting them spent the limit on races it
+// did not serve and left most one-day cards at three names.
 function selectHomepageRecentStandingsTargets(recentCandidates) {
-  return [...recentCandidates]
+  return recentCandidates
+    .filter((race) => isOneDayRace(race) && !isWorldChampionshipRace(race))
     .sort((left, right) => right.endDate - left.endDate)
     .slice(0, HOMEPAGE_RECENT_STANDINGS_ENRICH_LIMIT);
 }
@@ -8025,11 +8098,16 @@ async function buildRaceMetadata(options = {}) {
 
 async function buildRaceData(metadata, options = {}) {
   const startedAt = Date.now();
+  // Re-wrapped rather than checked with instanceof: a Date from another realm (the VM
+  // test harness) fails that check and would silently hand the build the real clock.
+  const now = options.now ? new Date(options.now) : new Date();
   const allRaces = cloneRaces(metadata?.allRaces || []);
   const wikiRawLoader = createWikiRawLoader();
   // Metadata is cached for an hour; the Worlds podium has to arrive on the live
-  // cadence, so it is read here, on the copy each rebuild works on.
-  await enrichWorldChampionshipResults(allRaces, wikiRawLoader);
+  // cadence, so it is read here, on the copy each rebuild works on — and so is any
+  // other one-day race's, on its own race day.
+  await enrichWorldChampionshipResults(allRaces, wikiRawLoader, now);
+  await enrichOneDayRaceDayResults(allRaces, wikiRawLoader, now);
   const {
     todayUtc,
     recentOneDayResults,
@@ -8039,7 +8117,7 @@ async function buildRaceData(metadata, options = {}) {
     europeTourRecentResults,
     europeTourLiveStageRaces,
     europeTourUpcomingRaces,
-  } = partitionRaceBuckets(allRaces);
+  } = partitionRaceBuckets(allRaces, now);
   const includeDeferred = options.includeDeferred !== false;
   const isWorldTourRace = (race) => race.series === "Men's WorldTour" || race.series === "Women's WorldTour";
   const homepageWorldTourRecentCandidates = selectHomepageWorldTourRecentCandidates(
@@ -8143,7 +8221,11 @@ async function buildRaceData(metadata, options = {}) {
     ...selectedEuropeTourLiveStageRaces,
     ...selectedEuropeTourUpcomingRaces,
   ].forEach((race) => {
-    race.finishedToday = Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime());
+    // An upcoming card is "Today" for as long as its race is being waited on, which
+    // outlasts the UTC date in a western host country.
+    race.finishedToday =
+      Boolean(race.endDate && race.endDate.getTime() === todayUtc.getTime()) ||
+      isOneDayRaceAwaitingResult(race, todayUtc, now);
   });
 
   // Resolve YouTube finish videos for the races that render a finish link, after

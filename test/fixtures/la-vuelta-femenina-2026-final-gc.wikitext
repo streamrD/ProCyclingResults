@@ -1,0 +1,547 @@
+{{Short description|Women's cycling race in Spain}}
+{{for|the men's race|2026 Vuelta a España}}
+{{Use dmy dates|date=March 2026}}
+{{Infobox cycling race report
+|name                = 2026 {{Lang|es|La Vuelta Femenina|italic=no}}
+|series              = [[2026 UCI Women's World Tour]]
+|race_no             = 16
+|season_no           = 26
+|image               = 
+|image_size          = 
+|image_caption       = 
+|image_alt           = 
+|date                = 3–9 May
+|stages              = 7
+|distance            = 819.5
+|unit                = km
+|time                = 22h 17" 03"
+|first               = [[Paula Blasi]]
+|first_nat           = ESP
+|first_team          = {{UCI team code|UAD women|2026a}}
+|first_color         = red
+|second              = [[Anna van der Breggen]]
+|second_nat          = NED
+|second_team         = {{UCI team code|SDW|2026}}
+|third               = [[Marion Bunel]]
+|third_nat           = FRA
+|third_team          = {{UCI team code|TVL women|2026}}
+|points              = [[Lotte Kopecky]]
+|points_nat          = BEL
+|points_team         = {{UCI team code|SDW|2026}}
+|points_color        = dark green
+|mountains           = [[Paula Blasi]]
+|mountains_nat       = ESP
+|mountains_team      = {{UCI team code|UAD women|2026a}}
+|mountains_color     = blue polkadot
+|youth               = [[Marion Bunel]]
+|youth_nat           = FRA
+|youth_team          = {{UCI team code|TVL women|2026}}
+|youth_color         = white
+|team_nat            = NED
+|team                = {{UCI team code|SDW|2026}}
+|team_color          = yellow number
+|previous            = [[2025 La Vuelta Femenina|2025]]
+|next                = ''[[2027 La Vuelta Femenina|2027]]''
+}}
+The '''2026 {{Lang|es|La Vuelta Femenina|italic=no}}''' (officially '''{{Lang|es|La Vuelta Femenina|italic=no}} by Carrefour.es''') was the fourth edition of {{Lang|es|[[La Vuelta Femenina]]|italic=no}}, a cycling [[stage race]] that took place in [[Spain]]. The race ran from 3 to 9 May, and was the 16th event in the [[2026 UCI Women's World Tour]]. From 2026, more ranking points will be awarded at the [[Giro d'Italia Women]], [[Tour de France Femmes]] and the Vuelta Femenina – elevating these races in status compared to other races in the UCI Women's World Tour.<ref>{{Cite web |date=1 June 2025 |title=Part II Road Races - Amendments to Regulations as from 20.10.2025 |url=https://assets.ctfassets.net/761l7gh5x5an/NAeT9EN3grfH1b8uTXoYv/8b18929d380cb33fbb62d3efd3a71f27/2-ROA-20251020-E-amendments_on_20.10.25.pdf |access-date=20 June 2025 |website=[[Union Cycliste Internationale]] |page=15 |quote=2.10.017 Points scale Women Elite}}</ref><ref>{{Cite web |last=Price |first=Matilda |date=2025-06-20 |title=UCI points update brings Women's WorldTour system in line with men's, designating women's Monuments and boosting Tour de France Femmes |url=https://www.cyclingnews.com/news/uci-points-update-brings-womens-worldtour-system-in-line-with-mens-designating-womens-monuments-and-boosting-tour-de-france-femmes/ |access-date=2025-06-20 |website=Cyclingnews |language=en}}</ref>
+
+The race was won by Spanish rider [[Paula Blasi]] of {{UCI team code|UAD women|2026a}}, taking the overall victory and the mountains classification after an attack on the final stage of the race to [[Alto de l'Angliru|l'Angliru]]. Second overall was Dutch rider [[Anna van der Breggen]] of {{UCI team code|SDW|2026}}, who had taken the leaders jersey after a win on stage 6. Third overall was French rider [[Marion Bunel]] of {{UCI team code|TVL women|2026}}, with Bunel also winning the youth classification as the best placed rider under the age of 23. The points classification was won by Belgian rider [[Lotte Kopecky]] of {{UCI team code|SDW|2026|nolink=y}}, with {{UCI team code|SDW|2026|nolink=y}} also taking the teams classification.<ref>{{Cite web |last=Ostanek |first=Dani |last2=Frattini |first2=Kirsten |date=2026-05-03 |title=La Vuelta Femenina final GC standings – A new face in the red jersey on the final day as the Angliru decides overall victory |url=https://www.cyclingnews.com/pro-cycling/womens-cycling/la-vuelta-femenina-gc-standings-2026/ |access-date=2026-05-18 |website=Cyclingnews |language=en}}</ref>
+
+== Teams ==
+{{Main|List of teams and cyclists in the 2026 La Vuelta Femenina}}
+All fourteen [[UCI Women's Team|UCI Women's WorldTeams]], three UCI Women's Pro Teams and one UCI Women's Continental Team participated in the race.<ref>{{cite web|title=Startlist for La Vuelta Femenina 2026|url=https://www.procyclingstats.com/race/vuelta-espana-femenina/2026/startlist|website=procyclingstats.com|access-date=11 April 2026}}</ref>
+
+'''UCI Women's WorldTeams'''
+{{div col|colwidth=20em|style=margin-right:20%;}}
+* {{UCI team code|AGS|2026}}
+* {{UCI team code|CSZ|2026a}}
+* {{UCI team code|EFO|2026}}
+* {{UCI team code|FSF|2026}}
+* {{UCI team code|FPT|2026}}
+* {{UCI team code|HPH|2026}}
+* {{UCI team code|LTK women|2026}}
+* {{UCI team code|LIV|2026}}
+* {{UCI team code|MOV women|2026}}
+* {{UCI team code|TPP women|2026}}
+* {{UCI team code|SDW|2026}}
+* {{UCI team code|UAD women|2026a}}
+* {{UCI team code|UXM women|2026}}
+* {{UCI team code|TVL women|2026}}
+{{div col end}}
+
+'''UCI Women's ProTeams'''
+{{div col|colwidth=20em|style=margin-right:20%;}}
+* {{UCI team code|LKF|2026}}
+* {{UCI team code|LIL|2026}}
+* {{UCI team code|WOS|2026}}
+{{div col end}}
+
+'''UCI Women's Continental Teams'''
+{{div col|colwidth=20em|style=margin-right:20%;}}
+* {{UCI team code|BPK|2026}}
+{{div col end}}
+
+== Route ==
+{{main|2026 La Vuelta Femenina, Stage 1 to Stage 7}}
+Prior to the route announcement, Spanish newspaper ''[[El País]]'' reported rumours that the challenging [[Alto de l'Angliru|Angliru]] climb would be included in the race for the first time in 2026,<ref>{{Cite web |last=Arribas |first=Carlos |date=2026-03-04 |title=Las ciclistas, impacientes por medirse al Angliru en la Vuelta: “Vamos a sacarnos la máscara de que las mujeres no pueden subir esos puertos” |url=https://elpais.com/deportes/ciclismo/2026-03-04/las-ciclistas-impacientes-por-medirse-al-angliru-en-la-vuelta-vamos-a-sacarnos-la-mascara-de-que-las-mujeres-no-pueden-subir-esos-puertos.html |access-date=2026-03-09 |website=El País |language=es}}</ref> following previous suggestions that the climb could be included in the race in future.<ref>{{Cite web |last=Mitchell |first=Mathew |date=2024-11-14 |title=Women’s Vuelta tipped to tackle Angliru in future editions by Vuelta organiser |url=https://procyclinguk.com/womens-vuelta-tipped-to-tackle-angliru-in-future-editions-by-vuelta-organiser/ |access-date=2025-03-13 |website=ProCyclingUK.com |language=en-GB}}</ref>
+
+The route was announced in March 2026.<ref name=":0">{{Cite web |date=9 March 2026 |title=La Vuelta Femenina 2026 by Carrefour.es: Legendary Angliru to culminate a course designed for climbers |url=https://www.lavueltafemenina.es/en/news/2026/la-vuelta-femenina-26-by-carrefour-es-legendary-angliru-to-culminate-a-course-designed-for-climbers/3615 |access-date=2026-03-09 |website=www.lavueltafemenina.es |language=en}}</ref> It comprised seven days of racing with seven stages, covering a total of {{convert|815|km|mi}} with {{convert|14,486|m|ft}} of elevation gain.<ref name=":0" />
+The entire race was held in the north-west of the country, with the first four stages taking place in [[Galicia (Spain)|Galicia]], before stage 5 in [[Castile and León]]. The race finished with two summit finishes in [[Asturias]] – stage 6 finishing at the [[Les Praeres de Nava]] (a nearly {{convert|4|km|adj=on}} climb with an average gradient of 13.5%, with a maximum gradient of 27%), and stage 7 finishing at the Alto de l'Angliru (a {{convert|12.5|km|adj=on}} climb at an average gradient of 10%, with a maximum gradient of 23%).<ref name=":1">{{Cite web |last=Frattini |first=Kirsten |date=2026-03-09 |title=2026 La Vuelta Femenina route revealed showcasing back-to-back summit finishes at Les Praeres and Alto de l'Angliru |url=https://www.cyclingnews.com/pro-cycling/womens-cycling/2026-la-vuelta-femenina-route-revealed-showcasing-back-to-back-summit-finishes-at-les-praeres-and-alto-de-langliru/ |access-date=2026-03-09 |website=Cyclingnews |language=en}}</ref><ref name=":2">{{Cite web |last=Mitchell |first=Mathew |date=2026-03-09 |title=Angliru set to decide La Vuelta Femenina 2026 as organisers unveil climber friendly route |url=https://procyclinguk.com/angliru-set-to-decide-la-vuelta-femenina-2026-as-organisers-unveil-climber-friendly-route/ |access-date=2026-03-09 |website=ProCyclingUK |language=en-GB}}</ref>
+
+Overall, the route was considered to favour the climbers, owing to the inclusion of the Angliru climb, more elevation gain than the Giro d'Italia Women over a shorter distance and the absence of the [[team time trial]] that had featured in previous editions.<ref name=":1" /><ref name=":2" />
+{| class="wikitable sortable"
+|+Stage characteristics<ref name=":0" />
+! scope="col" |Stage
+! scope="col" |Date
+! scope="col" |Course
+! scope="col" |Distance
+! colspan="2" scope="col" |Type
+! scope="col" |Winner
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 1|1]]
+| style="text-align:right" | 3 May
+| [[Marín, Pontevedra|Marín]] to [[Salvaterra de Miño]]
+| style="text-align:center;" | {{convert|113.9|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flagathlete|[[Noemi Rüegg]]|SUI}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 2|2]]
+| style="text-align:right" | 4 May
+| [[Lobios]] to [[San Cibrao das Viñas]]
+| style="text-align:center;" | {{convert|109.8|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flagathlete|[[Shari Bossuyt]]|BEL}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 3|3]]
+| style="text-align:right" | 5 May
+| [[Padrón]] to [[A Coruña]]
+| style="text-align:center;" | {{convert|121.2|km|abbr=on}}
+| [[File:Plainstage.svg|link=|alt=|20x20px]]
+| Flat stage
+| {{Flagathlete|[[Cédrine Kerbaol]]|FRA}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 4|4]]
+| style="text-align:right" | 6 May
+| [[Monforte de Lemos]] to [[Antas de Ulla]]
+| style="text-align:center;" | {{convert|115.6|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flagathlete|[[Lotte Kopecky]]|BEL}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 5|5]]
+| style="text-align:right" | 7 May
+| [[León, Spain|León]] to [[Astorga, Spain|Astorga]]
+| style="text-align:center;" | {{convert|119.6|km|abbr=on}}
+| [[File:Hillystage.svg|link=|alt=|20x20px]]
+| Hilly stage
+| {{Flagathlete|[[Mischa Bredewold]]|NED}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 6|6]]
+| style="text-align:right" | 8 May
+| [[Gijón/Xixón]] to [[Les Praeres de Nava]]
+| style="text-align:center;" | {{convert|106.5|km|abbr=on}}
+| [[File:Mountainstage.svg|link=|alt=|20x20px]]
+| Mountain stage
+| {{Flagathlete|[[Anna van der Breggen]]|NED}}
+|-
+! scope="row" | [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 7|7]]
+| style="text-align:right" | 9 May
+| [[Pola de Laviana]] to [[Alto de l'Angliru|L'Angliru]]
+| style="text-align:center;" |{{convert|132.9|km|abbr=on}}
+| [[File:Mountainstage.svg|link=|alt=|20x20px]]
+| Mountain stage
+| {{Flagathlete|[[Petra Stiasny]]|SUI}}
+|-
+! colspan="3" |Total
+| colspan="4" style="text-align:center" | {{convert|819.5|km|abbr=on}}
+|}
+
+== Classification leadership table ==
+{| class="wikitable" style="text-align: center; font-size:smaller;"
+|- style="background-color: #efefef;"
+! scope="col" width="2%" | Stage
+! scope="col" width="13%" | Winner
+! scope="col" width="13%" | [[General classification]]<br />{{cjersey|red|size=25px}}
+! scope="col" width="13%" | [[Points classification]]<br />{{cjersey|dark green|size=25px}}
+! scope="col" width="13%" | [[Mountains classification]]<br />{{cjersey|blue polkadot|size=25px}}
+! scope="col" width="13%" | [[Young rider classification]]<br />{{cjersey|white|size=25px}}
+! scope="col" width="13%" | [[Team classification]]<br />{{cjersey|yellow number|size=25px}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 1|1]]
+| [[Noemi Rüegg]]
+| style="background:#FFE6E6;" | [[Noemi Rüegg]]
+| style="background:#008000;" | {{font colour|white|Noemi Rüegg|link=Noemi Rüegg}}
+| style="background:azure;" rowspan=2 | [[Maëva Squiban]]
+| style="background:offwhite;" | [[Eleonora Ciabocco]]
+| style="background:#FFCD5F;" rowspan="4"| {{UCI team code|UAD women|2026a}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 2|2]]
+| [[Shari Bossuyt]]
+| style="background:#FFE6E6;" rowspan="2" | [[Franziska Koch (cyclist)|Franziska Koch]]
+| style="background:#008000;" rowspan="3" | {{font colour|white|Franziska Koch|link=Franziska Koch (cyclist)}}
+| style="background:offwhite;" rowspan="3" | [[Lore De Schepper]]
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 3|3]]
+| [[Cédrine Kerbaol]]
+| style="background:azure;" | [[Ashleigh Moolman-Pasio]]
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 4|4]]
+| [[Lotte Kopecky]]
+| style="background:#FFE6E6;" rowspan=2 | [[Lotte Kopecky]]
+| style="background:azure;" | {{Interlanguage link|Marine Allione|lt=Marine Allione|fr}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 5|5]]
+| [[Mischa Bredewold]]
+| style="background:#008000;" rowspan="3"| {{font colour|white|Lotte Kopecky|link=Lotte Kopecky}}
+| style="background:azure;" | [[Alice Coutinho]]
+| style="background:offwhite;" | [[Gaia Segato]]
+| style="background:#FFCD5F;" rowspan="3"|  {{UCI team code|SDW|2026}}
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 6|6]]
+| [[Anna van der Breggen]]
+| style="background:#FFE6E6;" | [[Anna van der Breggen]]
+| style="background:azure;" | [[Anna van der Breggen]]
+| style="background:offwhite;" rowspan="2"| [[Marion Bunel]]
+|-
+! [[2026 La Vuelta Femenina, Stage 1 to Stage 7#Stage 7|7]]
+| [[Petra Stiasny]]
+| style="background:#FFE6E6;" | [[Paula Blasi]]
+| style="background:azure;" | [[Paula Blasi]]
+|-
+! colspan="2" | Final
+! style="background:#f00;" | {{font color|white|Paula Blasi|link=Paula Blasi}}
+! style="background:#006400;" | {{font colour|white|Lotte Kopecky|link=Lotte Kopecky}}
+! style="background:#0094FF;" | {{font color|white|Paula Blasi|link=Paula Blasi}}
+! style="background:white;" | [[Marion Bunel]]
+! style="background:#FFB927;" | {{UCI team code|SDW|2026}}
+|}
+
+== Classification standings ==
+{| class="wikitable"
+|-
+! scope="col" colspan="4" | Legend
+|-
+| {{cjersey|red}}
+| Denotes the leader of the general classification
+| {{cjersey|white}}
+| Denotes the leader of the young rider classification
+|-
+| {{cjersey|dark green}}
+| Denotes the leader of the points classification
+| {{cjersey|yellow number}}
+| Denotes the leader of the team classification
+|-
+| {{cjersey|blue polkadot}}
+| Denotes the leader of the mountains classification
+|}
+
+=== General classification ===
+{| class="wikitable" style="margin-bottom:0;"
+|+ Final general classification (1–10)<ref name="rankings">{{cite web|title=Official classifications of La Vuelta Femenina|url=https://www.lavueltafemenina.es/en/rankings|access-date=9 May 2026}}</ref>
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flagathlete|[[Paula Blasi]]|ESP}} {{cjersey|red}}{{cjersey|blue polkadot}}
+| {{UCI team code|UAD women|2026a}}
+| style="text-align:right;" | 22h 17' 03"
+|-
+! scope="row" | 2
+| {{Flagathlete|[[Anna van der Breggen]]|NED}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| style="text-align:right;" | + 24"
+|-
+! scope="row" | 3
+| {{Flagathlete|[[Marion Bunel]]|FRA}} {{cjersey|white}}
+| {{UCI team code|TVL women|2026}}
+| style="text-align:right;" | + 49"
+|-
+! scope="row" | 4
+| {{Flagathlete|[[Usoa Ostolaza]]|ESP}}
+| {{UCI team code|LKF|2026}}
+| style="text-align:right;" | + 2' 31"
+|-
+! scope="row" | 5
+| {{Flagathlete|[[Juliette Berthet]]|FRA}}
+| {{UCI team code|FSF|2026}}
+| style="text-align:right;" | + 2' 36"
+|-
+! scope="row" | 6
+| {{Flagathlete|[[Urška Žigart]]|SLO}}
+| {{UCI team code|AGS|2026}}
+| style="text-align:right;" | + 2' 43"
+|-
+! scope="row" | 7
+| {{Flagathlete|[[Monica Trinca Colonel]]|ITA}}
+| {{UCI team code|LIV|2026}}
+| style="text-align:right;" | + 2' 51"
+|-
+! scope="row" | 8
+| {{Flagathlete|[[Katarzyna Niewiadoma-Phinney]]|POL}}
+| {{UCI team code|CSZ|2026a}}
+| style="text-align:right;" | + 3' 06"
+|-
+! scope="row" | 9
+| {{Flagathlete|[[Barbara Malcotti]]|ITA}}
+| {{UCI team code|HPH|2026}}
+| style="text-align:right;" | + 3' 50"
+|-
+! scope="row" | 10
+| {{Flagathlete|[[Évita Muzic]]|FRA}}
+| {{UCI team code|FSF|2026}}
+| style="text-align:right;" | + 3' 55"
+|}
+{{columns-start}}
+
+=== Points classification ===
+{| class="wikitable" margin-bottom:0;"
+|+ Final points classification (1–10)<ref name="rankings" />
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Points
+|-
+! scope="row" | 1
+| {{Flagathlete|[[Lotte Kopecky]]|BEL}} {{cjersey|dark green}}{{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| align="right" | 164
+|-
+! scope="row" | 2
+| {{Flagathlete|[[Franziska Koch (cyclist)|Franziska Koch]]|GER}}
+| {{UCI team code|FSF|2026}}
+| align="right" | 155
+|-
+! scope="row" | 3
+| {{Flagathlete|[[Anna van der Breggen]]|NED}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| align="right" | 121
+|-
+! scope="row" | 4
+| {{Flagathlete|[[Paula Blasi]]|ESP}} {{cjersey|red}}{{cjersey|blue polkadot}}
+| {{UCI team code|UAD women|2026a}}
+| align="right" | 85
+|-
+! scope="row" | 5
+| {{Flagathlete|[[Shari Bossuyt]]|BEL}}
+| {{UCI team code|AGS|2026}}
+| align="right" | 84
+|-
+! scope="row" | 6
+| {{Flagathlete|[[Mischa Bredewold]]|NED}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| align="right" | 74
+|-
+! scope="row" | 7
+| {{Flagathlete|[[Letizia Paternoster]]|ITA}}
+| {{UCI team code|LIV|2026}}
+| align="right" | 73
+|-
+! scope="row" | 8
+| {{Flagathlete|[[Liane Lippert]]|GER}}
+| {{UCI team code|MOV women|2026}}
+| align="right" | 60
+|-
+! scope="row" | 9
+| {{Flagathlete|[[Cédrine Kerbaol]]|FRA}}
+| {{UCI team code|EFO|2026}}
+| align="right" | 56
+|-
+! scope="row" | 10
+| {{Flagathlete|[[Petra Stiasny]]|SUI}}
+| {{UCI team code|HPH|2026}}
+| align="right" | 51
+|}
+{{column}}
+
+=== Mountains classification ===
+{| class="wikitable" margin-bottom:0;"
+|+ Final mountains classification (1–10)<ref name="rankings" />
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Points
+|-
+! scope="row" | 1
+| {{Flagathlete|[[Paula Blasi]]|ESP}} {{cjersey|blue polkadot}}{{cjersey|red}}
+| {{UCI team code|UAD women|2026a}}
+| align="right" | 25
+|-
+! scope="row" | 2
+| {{Flagathlete|[[Ashleigh Moolman-Pasio]]|RSA}}
+| {{UCI team code|AGS|2026}}
+| align="right" | 22
+|-
+! scope="row" | 3
+| {{Flagathlete|[[Petra Stiasny]]|SUI}}
+| {{UCI team code|HPH|2026}}
+| align="right" | 20
+|-
+! scope="row" | 4
+| {{Flagathlete|[[Anna van der Breggen]]|NED}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| align="right" | 18
+|-
+! scope="row" | 5
+| {{Flagathlete|[[Marion Bunel]]|FRA}} {{cjersey|white}}
+| {{UCI team code|TVL women|2026}}
+| align="right" | 16
+|-
+! scope="row" | 6
+| {{Flagathlete|[[Juliette Berthet]]|FRA}}
+| {{UCI team code|FSF|2026}}
+| align="right" | 16
+|-
+! scope="row" | 7
+| {{Flagathlete|[[Liane Lippert]]|GER}}
+| {{UCI team code|MOV women|2026}}
+| align="right" | 14
+|-
+! scope="row" | 8
+| {{Flagathlete|[[Riejanne Markus]]|NED}}
+| {{UCI team code|LTK women|2026}}
+| align="right" | 14
+|-
+! scope="row" | 9
+| {{Flagathlete|[[Alice Coutinho]]|FRA}}
+| {{UCI team code|WOS|2026}}
+| align="right" | 12
+|-
+! scope="row" | 10
+| {{Flagathlete|[[Marine Allione]]|FRA}}
+| {{UCI team code|WOS|2026}}
+| align="right" | 12
+|}
+{{columns-end}}
+{{columns-start}}
+
+=== Young rider classification ===
+{| class="wikitable" style="margin-bottom:0;"
+|+ Final young rider classification (1–10)<ref name="rankings" />
+|-
+! scope="col" | Rank
+! scope="col" | Rider
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{Flagathlete|[[Marion Bunel]]|FRA}} {{cjersey|white}}
+| {{UCI team code|TVL women|2026}}
+| style="text-align:right;" | 22h 17' 52"
+|-
+! scope="row" | 2
+| {{Flagathlete|[[Lore De Schepper]]|BEL}}
+| {{UCI team code|AGS|2026}}
+| style="text-align:right;" | + 3' 07"
+|-
+! scope="row" | 3
+| {{Flagathlete|[[Nienke Vinke]]|NED}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| style="text-align:right;" | + 3' 30"
+|-
+! scope="row" | 4
+| {{Flagathlete|[[Gaia Segato]]|ITA}}
+| {{UCI team code|BPK|2026}}
+| style="text-align:right;" | + 10' 53"
+|-
+! scope="row" | 5
+| {{Flagathlete|[[Titia Ryo]]|FRA}}
+| {{UCI team code|HPH|2026}}
+| style="text-align:right;" | + 18' 45"
+|-
+! scope="row" | 6
+| {{Flagathlete|[[Julia Kopecký]]|CZE}} {{cjersey|yellow number}}
+| {{UCI team code|SDW|2026}}
+| style="text-align:right;" | + 28' 23"
+|-
+! scope="row" | 7
+| {{Flagathlete|[[Felicity Wilson-Haffenden]]|AUS}}
+| {{UCI team code|LTK women|2026}}
+| style="text-align:right;" | + 42' 57"
+|-
+! scope="row" | 8
+| {{Flagathlete|[[Lucía Ruiz Pérez]]|ESP}}
+| {{UCI team code|MOV women|2026}}
+| style="text-align:right;" | + 47' 24"
+|-
+! scope="row" | 9
+| {{Flagathlete|[[Babette van der Wolf]]|NED}}
+| {{UCI team code|EFO|2026}}
+| style="text-align:right;" | + 47' 55"
+|-
+! scope="row" | 10
+| {{Flagathlete|[[Imogen Wolff]]|GBR}}
+| {{UCI team code|TVL women|2026}}
+| style="text-align:right;" | + 48' 31"
+|}
+{{column}}
+
+=== Team classification ===
+{| class="wikitable" style="margin-bottom:0;"
+|+ Final team classification (1–10)<ref name="rankings" />
+|-
+! scope="col" | Rank
+! scope="col" | Team
+! scope="col" | Time
+|-
+! scope="row" | 1
+| {{flagicon|NED}} {{UCI team code|SDW|2026}} {{cjersey|yellow number}}
+| align="right" | 66h 58' 03"
+|-
+! scope="row" | 2
+| {{flagicon|FRA}} {{UCI team code|FSF|2026}}
+| align="right" | + 6' 47"
+|-
+! scope="row" | 3
+| {{flagicon|BEL}} {{UCI team code|AGS|2026}}
+| align="right" | + 7' 12"
+|-
+! scope="row" | 4
+| {{flagicon|NED}} {{UCI team code|TVL women|2026}}
+| align="right" | + 10' 44"
+|-
+! scope="row" | 5
+| {{flagicon|UAE}} {{UCI team code|UAD women|2026a}}
+| align="right" | + 12' 19"
+|-
+! scope="row" | 6
+| {{flagicon|GER}} {{UCI team code|LTK women|2026}}
+| align="right" | + 18' 26"
+|-
+! scope="row" | 7
+| {{flagicon|USA}} {{UCI team code|HPH|2026}}
+| align="right" | + 19' 47"
+|-
+! scope="row" | 8
+| {{flagicon|ESP}} {{UCI team code|LKF|2026}}
+| align="right" | + 24' 32"
+|-
+! scope="row" | 9
+| {{flagicon|NOR}} {{UCI team code|UXM women|2026}}
+| align="right" | + 26' 49"
+|-
+! scope="row" | 10
+| {{flagicon|BEL}} {{UCI team code|FPT|2026}}
+| align="right" | + 36' 31"
+|}
+{{columns-end}}
+
+== References ==
+{{reflist}}
+
+== External links ==
+* [https://www.lavueltafemenina.es/en Official website]
+
+{{Vuelta a España}}
+{{2026 UCI Women's World Tour}}
+{{2026 in road cycling}}
+
+[[Category:2026 UCI Women's World Tour|La Vuelta Femenina]]
+[[Category:La Vuelta Femenina by year]]
+[[Category:May 2026 sports events in Spain|La Vuelta Femenina]]
