@@ -20,7 +20,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | M3 | closed | 51770de: section counts and last build error in `/api/data-status` |
 | M4 | closed | 51770de: README "Accounts and secrets" section (costs still to be filled in by the maintainer) |
 | M5 | closed | 8c564a5: providers keyed by season, rollover guard test |
-| L1 | partial | fc66a6b: Data API path behind `YOUTUBE_API_KEY`. Open: the key (maintainer) or curated-only; the scrape runs until then |
+| L1 | closed | fc66a6b wired the Data API path; the maintainer set `YOUTUBE_API_KEY` on Railway on 2026-09-26 and the fresh process found the three Worlds videos through it. The search-page scrape no longer runs while the key is set |
 | L2 | open | Email to ASO (maintainer); code half (prefer the public rankings page) untouched |
 | R5 | closed | b644062 |
 | R6 | closed | b644062 |
