@@ -1041,91 +1041,113 @@ date or a function name when a rule in `AGENTS.md` cites one of them. A session'
 closing notes go at the end of the journal; this map changes only when the shape of
 the project does.
 
-## Next Session Starts Here (written 2026-09-27, 01:30 UTC)
+## Next Session Starts Here (written 2026-09-27, 12:00 UTC)
 
-The state of play at the close of the 2026-09-27 session, which took every item of
-the queue written at 00:00 UTC and then A10 at the maintainer's request (commits
-1ac9f2f → 6f44500, all on `main`, each deploy verified live).
-`assessments/2026-09-26/status.md` is the complete list; closed today: R7, S8, X2,
-L8, P5, A13, F2/F3/F23, S4, S9, M7, M8, A10; partial: S3 and the CSP. The session's
-notes are the last section of `handoff-journal.md`. Start by reading this section,
-then the status file, and take the queue below in order.
+The state of play at the close of the second 2026-09-27 session (03:30 to 12:00 UTC).
+Everything below is pushed to `main` and verified live with `npm run verify:deploy`
+unless it says otherwise. `assessments/2026-09-26/status.md` is the complete list of
+findings; the session's story is the last dated sections of `handoff-journal.md`
+("Finish Videos And The Search Quota", "The ASO Question", and the notes after them).
+Start by reading this section, then the status file, then take the list below in order.
 
-**First, on 27 September (race day):** the Worlds men's road race is 09:00–15:40
-Montréal (13:00–19:40 UTC). Nothing to push in those hours. Check in the evening: the
-hero's status line should read "next: Worlds men's road race, today" during the day
-and the headline "X wins the men's road race" after the finish; the card should carry
-the podium from the medal summary within minutes of Wikipedia's edit
-(`resultSource: wikipedia-medal-summary`), then the top five once the event page
-exists (`wikipedia-event-page`). `curl -s https://procyclingresults.up.railway.app/api/data-status`
-says whether the last build succeeded. If a page is wrong, check production before
-local code. The last session ended at 00:45 UTC, before the race, so nobody has done
-this check yet.
+**What this session shipped** (all live):
+
+1. Finish videos: the YouTube key's Google project allows **100 searches a day**, reset
+   at midnight Pacific (07:00 UTC); the first refusal now pauses every lookup until then
+   (`finishVideos.quotaPausedUntil` in `/api/data-status`).
+2. GC top five from Wikipedia's per-stage articles while the main article lags
+   (`selectStageArticleGcFallback`, guarded against stale copies).
+3. ASO read through its public pages first, a live ASO race at most every two minutes,
+   and a dormant `ASO_SOURCES=off` switch. See "If ASO Says No" above.
+4. "Full classification on lavuelta.es ↗" on every card whose results come from an ASO
+   site (maintainer's wording; "Official rankings" was rejected).
+5. A finished stage race's stage results load on first open (`/api/stage-results`):
+   page 561 KB → 254 KB, 3,467 → 693 elements. Closed S3 and C9.
+6. Client-side register items by an agent: lazy rider index (S7), skip link and h4
+   card titles (A14), one km/mi control in the header (C8, chosen by the maintainer
+   from a comp, **with the note that per-panel toggles may come back later**).
+7. Server-side register items by an agent: upstream body caps and two regex lock-ups
+   fixed (X12), backoff test (R12), clock guard for tests (M6), Wikipedia read through
+   the Action API instead of `action=raw` (L7).
+8. Wikipedia reads batched (up to ten pages a query) and kept to Wikimedia's robot
+   policy for unauthenticated Action API clients: one request at a time, under five a
+   second. Cold build ready in ~7 s (it was 15.5 s with unbatched pacing).
+
+**Still to do today, 27 September:**
+
+- **The Worlds men's road race check,** after 19:40 UTC (race 13:00–19:40 UTC, no
+  pushes in those hours). The hero should read "next: Worlds men's road race, today"
+  in the day and the headline "X wins the men's road race" after; the card should carry
+  the podium from the medal summary within minutes of Wikipedia's edit
+  (`resultSource: wikipedia-medal-summary`), then the top five once the event page
+  exists (`wikipedia-event-page`). Check production, not local code.
+- **One local commit waits to be pushed:** `9883025` (a comment correction) plus this
+  handoff commit. Push after 19:40 UTC if the session did not push them before 13:00;
+  `git log origin/main..HEAD` says.
+- **Finish-video refresh in the evening:** `npm run refresh:finish-videos`, commit
+  `data/finish-videos.json` if it grew (production knew 13 at 09:30 UTC).
+
+**The ASO letter (the maintainer's current project):**
+
+- It lives in a shared, editable Claude doc, "Letter to ASO — consent request":
+  https://claude.ai/code/artifact/793c9a53-0994-4534-8de4-ab5588a80724 . Read it with
+  the docs tools (never web-fetch it) and **read before editing: the maintainer edits
+  it in place** (their text wins; change only what is asked). Sections: Positioning,
+  the letter in English, the letter in French (kept in step with the maintainer's
+  English), Before sending (checklist and "Who it goes to"), If ASO says no.
+- Decided: signed by Todd Stabley from tcs16@duke.edu; no ads, sponsorship or paid
+  access ever; a "buy me a coffee" link may come later and is disclosed; readership
+  "under three thousand total page views" since May; the site was made first for the
+  local riding community in Orange and Durham counties, North Carolina. Three questions:
+  keep reading (above all the GC partial during live stages); the komoot profiles; and
+  links, because letour.fr's terms forbid linking without written authorisation.
+- Who it goes to (researched 2026-09-27; sources in the doc): **Yann Le Moënner**,
+  Directeur de la publication and General Manager of A.S.O., by post to 40–42 Quai du
+  Point du Jour, 92100 Boulogne-Billancourt (the terms page's "92200" is a typo), with a
+  copy marked for the Direction juridique; **Javier Guillén**, Director General of
+  Unipublic, by email to prensa@unipublic.es plus a post copy to Calle Ramírez de
+  Arellano 29, 4º, Madrid. Out of date: Vincent Pereira (left ASO for the IOC in 2022),
+  Sara Thorner (left ASO). The only emails on the terms pages are data-protection desks.
+- Open with the maintainer: the greeting ("Dear [name or team]" / "Madame, Monsieur",
+  or Mr Le Moënner by name), whether to add a Spanish version for Unipublic, refreshing
+  the page-view figure from Umami on the day, and a LinkedIn search for a named person
+  in ASO's digital or legal team (we cannot search LinkedIn from here).
+- Send in the off-season, before Eschborn–Frankfurt (1 May) and La Vuelta Femenina
+  (early May). After the answer: record it, dated, in `DATA-SOURCES.md` and here. On a
+  refusal: `ASO_SOURCES=off` on Railway, delete `data/stage-profiles.json`, rewrite the
+  ASO and komoot rows of `DATA-SOURCES.md`, and drop the organiser links if links are
+  refused too.
 
 **Then the queue (no maintainer decision needed):**
 
-1. **Keep the finish-video file growing.** The backlog fills at 60 a day (about 170
-   to find from empty); run `npm run refresh:finish-videos` and commit
-   `data/finish-videos.json` at the start of each session until
-   `/api/data-status` → `finishVideos.known` stops rising (at the close of this
-   session production reported 4 known, 7 lookups in this process; the file holds four). Watch for
-   `finish-video-lookup-failed` in Railway's logs: it means the API refused (most
-   likely the day's quota, which every deploy's fresh counter can overrun), and the
-   backlog pauses an hour. If deploys stay frequent, persist the day's count or lower
-   `FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT`.
-2. **Bytes, after A10.** A10 shipped on 2026-09-27 (finished cards fold their
-   jerseys and stage results, GC open; the maintainer chose the default from a comp),
-   which fixes the height but not the bytes: the folded stage panels still travel
-   with the page (555 KB after S3, target 400 KB; 13 cards, the true count since
-   the deploy checker and `compose.js` learned to count `<article>`s rather than
-   every `race-` id, which the news drawers and now the panels share). The next lever is to
-   serve a finished card's folded stage results on first open (`/api/race-stages`
-   already renders a switcher; the folded panel could hold only the strip until the
-   header is tapped). Re-measure S2 (first rider name on a phone) after that.
-3. **The CSP, from report-only to enforcing.** The results page sends
-   `Content-Security-Policy-Report-Only` (`buildContentSecurityPolicy`: the client
-   script by hash, the analytics host, `'unsafe-inline'` styles, `report-uri
-   /api/csp-report`) since 2026-09-27 at 01:00 UTC. Read Railway's logs for
-   `csp-report` lines over a few days of real browsers; if none, switch the header
-   name to `content-security-policy`, then give the about and warm-up pages the same
-   treatment (their scripts are still inline template literals).
-4. Smaller items from the register: S7 (parse the rider index only on hover
-   devices), C8 (per-panel unit toggles), A14's remainder (skip link, heading depth,
-   `aria-hidden` on icons), C9 (re-measure after S3). (X12, L7, R12 and M6 closed
-   2026-09-27; see the end of `handoff-journal.md`.)
-5. Item 27, the ASO provider parameterisation, only when one of them next needs a
-   change. The deferred-group machinery (`/api/competition-section`,
-   `DEFERRED_COMPETITION_GROUP_IDS`) is still unused; S3 built its own fragment
-   endpoints beside it.
+1. **Keep the finish-video file growing** each session until `finishVideos.known`
+   stops rising; about 60 backlog finds a day at most under the quota.
+2. **The CSP, from report-only to enforcing,** once Railway's logs show no
+   `csp-report` lines over a few days of real browsers (report-only since 2026-09-27
+   01:00 UTC); then the about and warm-up pages.
+3. **What is left of the register:** A11 (rider-link hit areas), S2 (the first rider is
+   still below the fold on a phone: the hero is 521 px; a design question, comp it),
+   F9 (a guide page). M9 only when an ASO provider next needs a change.
 
-**Waiting on the maintainer** (section 5 of the report, still open): the ASO email
-about the rankings partials; nationals from Wikipedia instead of Cyclingnews;
-Railway's wait-for-CI setting; the GitHub token's scope and who else can reach
-Railway; an uptime monitor pointed at `/api/data-status`; Worlds results ordering
-(men-first stays until told otherwise); the committee's one line on the results
-page; analytics access; komoot/ASO about the derived traces. Discoverability is
-deliberately last. The YouTube key question is settled: the key is set and the
-search page is no longer read.
+**Waiting on the maintainer:** the ASO letter (above); an uptime monitor on
+`/api/data-status` (R3); Railway's wait-for-CI (M2); the GitHub token's scope (X4);
+nationals from Wikipedia instead of Cyclingnews (L3); decisions 4, 5 and 11 (P7, C5,
+M11); discoverability last (P1).
 
 **Dates to keep:** the season close-out note goes live on 19 October 2026 (add its
-release note that day); the site moves to 2027 about 9 January 2027 (check the
-nationals source, the Worlds parser and the cards that week); the next monthly
-assessment is due 27 October 2026.
+release note that day); the next monthly assessment is due 27 October 2026; the site
+moves to 2027 about 9 January 2027 (check the nationals source, the Worlds parser, the
+cards and the ASO providers' public-page reads on the first 2027 ASO race).
 
-**How the last session worked, for the next one:** four parallel agents in isolated
-worktrees (feeds and winter states, ETag and dedupe, fonts, Greece archive), each
-owning named regions of `server.js`, merged onto `main` one at a time while the
-orchestrator did the finish-video work, then M7 and S3 alone. The agents cost 100 to
-175 thousand tokens each and the spend limit did not bite. Every branch appended
-tests to `test/parser-regressions.test.js`, and on two of the three conflicting
-merges git dropped the shared closing `});` at the seam: run `node -c` on the test
-file after every merge and put the brace back. `git pull --rebase` with local merge
-commits replays and re-conflicts them; fetch, confirm origin has not moved, and push.
-The agents' worktrees and `worktree-agent-*` branches were merged and deleted at
-the close. The second half of the session was the maintainer's own request (A10),
-done the standing way: build it, render the real card in both states at phone and
-desktop widths, ask which default to ship, push on the answer. After pushing,
-`npm run verify:deploy`.
+**How this session worked, for the next one:** the lead took the user-visible items
+(comp, choice, push) and ran two agents in isolated worktrees for the register items,
+each told which functions to stay out of and to put tests beside related ones rather
+than at the end of the file; both merged cleanly. `git add -A` swept the agents'
+worktrees into a commit once (now in `.gitignore`). Two browser smoke tests are flaky
+under load ("a picture on a site page fills the window…", "phones keep stage profiles
+compact…"): rerun alone before treating a failure as real. The maintainer answers
+tersely; a choice of comp is the go-ahead to push, and pushes are announced with the
+UTC time because of race windows.
 
 ## Suggested First Checks For A New Agent
 

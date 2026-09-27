@@ -21,7 +21,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | M4 | closed | 51770de: README "Accounts and secrets" section (costs still to be filled in by the maintainer) |
 | M5 | closed | 8c564a5: providers keyed by season, rollover guard test |
 | L1 | closed | fc66a6b wired the Data API path; the maintainer set `YOUTUBE_API_KEY` on Railway on 2026-09-26 and the fresh process found the three Worlds videos through it. The search-page scrape no longer runs while the key is set |
-| L2 | open | Email to ASO (maintainer); code half (prefer the public rankings page) untouched |
+| L2 | partial | 2026-09-27: code half done (stage results from the public `/en/rankings` and `/en/rankings/stage-N` pages, a live ASO race read at most every two minutes, `ASO_SOURCES=off` switch built and dormant, "Full classification on …" link on every ASO card). The GC partial is still read during a race until ASO answers. Open: the letter, drafted in English and French in the maintainer's doc (see "Next Session Starts Here" in handoff.md), not yet sent |
 | R5 | closed | b644062 |
 | R6 | closed | b644062 |
 | R7 | closed | 2026-09-27: backlog search of every finished race and stage under per-rebuild and daily caps, `data/finish-videos.json` seeded at boot, `npm run refresh:finish-videos`, `/api/finish-videos` |
@@ -56,7 +56,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | L3 | open | Nationals from Wikipedia (maintainer decision 7) |
 | L4 | closed | fc66a6b: caps 10 live / 8 settled, page corrected |
 | L5 | closed | 013cc62 |
-| L6 | open | Ask komoot or ASO about the derived traces (maintainer) |
+| L6 | partial | 2026-09-27: asked as question 2 of the ASO letter (drafted, not sent). A refusal means deleting `data/stage-profiles.json` and switching the profile sources off (`ASO_SOURCES=off` does both) |
 | R9 | closed | 8c564a5 |
 | R10 | closed | 8c564a5 |
 | R11 | closed | 8c564a5 |

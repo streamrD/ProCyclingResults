@@ -3,3 +3,6 @@ node_modules
 # Local secrets (SITE_EDIT_TOKEN, GITHUB_CONTENT_TOKEN, SOURCE_CONTACT) never belong in the repository.
 .env
 .env.*
+
+# Claude Code agents' isolated working copies (a session nearly committed two, 2026-09-27)
+.claude/worktrees/

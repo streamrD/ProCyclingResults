@@ -1262,3 +1262,18 @@ Traps met:
   pages). A preload that wraps `globalThis.fetch` and counts by host is the quick way
   to count requests per build.
 
+## Process Lessons From The 2026-09-27 Morning Session (03:30–12:00 UTC)
+
+- Diagnose from production, with the real key: the "missing videos" were a quota, not
+  a filter, and only a raw API request's error body said so. `railway run` gives a
+  script the environment's secrets without printing them; the directory is linked.
+- Measure before claiming: the first replay's bisection overstated Wikipedia's GC delay
+  by a day on many stages, and the first ASO public-page version would have printed
+  Auvergne's GC leader as its last stage's winner. Both were caught by checking against
+  the real source (a full revision scan; the live site) rather than fixtures.
+- Read the source's own rules, not our summary of them: Wikimedia's robot policy set
+  the pacing (the agent had it right, the lead nearly undid it), and letour.fr's terms
+  forbid even links without authorisation (the lead had said linking needs none).
+- A long session with a maintainer who edits a shared doc: read the doc since your
+  last revision before every edit; keep the French in step with their English.
+
