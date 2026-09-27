@@ -64,8 +64,10 @@ const FINISH_VIDEO_MAX_AGE_DAYS = 6;
 // good and a miss for a week, and whatever is found is committed to
 // data/finish-videos.json by `npm run refresh:finish-videos`, so a redeploy starts
 // from it instead of forgetting every video. The caps keep the API inside its free
-// quota: a lookup is 102 of the 10,000 units a day, so 90 lookups in any 24 hours,
-// 60 of them backlog, leaving the rest for the live and recent races.
+// quota: a lookup is 102 of the 10,000 units a day, and the project behind the key
+// also allows only 100 search calls a day (defaultSearchListPerDayPerProject, found
+// 2026-09-27), so 90 lookups a quota day, 60 of them backlog, leaving the rest for
+// the live and recent races. Google's quota day starts at midnight Pacific.
 const FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT = 6;
 const FINISH_VIDEO_BACKLOG_BUDGET_MS = 4000;
 const FINISH_VIDEO_BACKLOG_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1458,7 +1460,7 @@ const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
 const finishVideoCache = new Map();
-// Timestamps of the YouTube lookups made in the last day, for the daily caps.
+// Timestamps of the YouTube lookups made this quota day, for the daily caps.
 const finishVideoLookupLog = [];
 // Channels whose cycling highlights are reliable. The race's own official channel
 // is scored separately (by matching race tokens in the channel name), so this list
@@ -9217,7 +9219,8 @@ function describeDataStatus(data, { now = Date.now(), raceCache = raceDataCache,
     nationalsError: nationals?.error ? String(nationals.error) : null,
     finishVideos: {
       known: [...finishVideoCache.values()].filter((entry) => entry?.url).length,
-      lookupsLast24h: countRecentFinishVideoLookups(now),
+      lookupsToday: countRecentFinishVideoLookups(now),
+      quotaPausedUntil: now < finishVideoQuotaPausedUntil ? new Date(finishVideoQuotaPausedUntil).toISOString() : null,
     },
     lastBuildAt: raceCache.lastBuildAt || null,
     lastBuildError: raceCache.lastBuildError || null,
@@ -9692,9 +9695,24 @@ function getFinishVideoCacheKey(race) {
   return `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
 }
 
+// The YouTube quota resets at midnight Pacific, so the caps count lookups since then
+// rather than over a rolling 24 hours. On the two days a year the clocks change the
+// day is an hour off at one end; the refusal pause below covers that.
+function getYouTubeQuotaDayStartMs(now = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hourCycle: "h23",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(new Date(now));
+  const part = (type) => Number(parts.find((entry) => entry.type === type)?.value || 0);
+  return now - ((part("hour") * 60 + part("minute")) * 60 + part("second")) * 1000 - (now % 1000);
+}
+
 function countRecentFinishVideoLookups(now = Date.now()) {
-  const dayAgo = now - 24 * 60 * 60 * 1000;
-  while (finishVideoLookupLog.length > 0 && finishVideoLookupLog[0] <= dayAgo) {
+  const dayStart = getYouTubeQuotaDayStartMs(now);
+  while (finishVideoLookupLog.length > 0 && finishVideoLookupLog[0] < dayStart) {
     finishVideoLookupLog.shift();
   }
   return finishVideoLookupLog.length;
@@ -9731,10 +9749,18 @@ function isFinishVideoLookupDue(cached, now, backlog = false) {
   return now - cached.updatedAt >= ttl;
 }
 
-// After a failed lookup the backlog waits an hour before asking again: the likeliest
-// cause is the API's daily quota, and a rebuild every minute would only repeat the
-// refusal. The live and recent passes keep their own short retry.
+// After a failed lookup the backlog waits an hour before asking again, so a rebuild
+// every minute does not repeat a network failure. A refusal (429, or 403 for the unit
+// quota) is different: the day's quota is spent, so every lookup, live and backlog,
+// stops until the quota day turns. The in-memory count starts again at zero on every
+// deploy, so without this a day of deploys ran the key dry and then spent each build
+// on refused searches and their retries (2026-09-26, when four finds in six were lost).
 let finishVideoBacklogPausedUntil = 0;
+let finishVideoQuotaPausedUntil = 0;
+
+function isYouTubeQuotaRefusal(error) {
+  return /\b(?:429|403)\b/.test(error?.message || String(error || ""));
+}
 
 async function resolveRaceFinishVideoUrl(
   race,
@@ -9748,7 +9774,7 @@ async function resolveRaceFinishVideoUrl(
   }
   // The daily cap is the API's quota; past it a live stage keeps whatever it has
   // until the window rolls on.
-  if (countRecentFinishVideoLookups(now) >= FINISH_VIDEO_DAILY_LOOKUP_CAP) {
+  if (now < finishVideoQuotaPausedUntil || countRecentFinishVideoLookups(now) >= FINISH_VIDEO_DAILY_LOOKUP_CAP) {
     return cached?.url || "";
   }
   finishVideoLookupLog.push(now);
@@ -9758,9 +9784,20 @@ async function resolveRaceFinishVideoUrl(
     finishVideoCache.set(key, { updatedAt: now, url, firstSearchedAt, persistent: backlog && Boolean(url) });
     return url;
   } catch (error) {
+    const refused = isYouTubeQuotaRefusal(error);
+    if (refused && now >= finishVideoQuotaPausedUntil) {
+      finishVideoQuotaPausedUntil = getYouTubeQuotaDayStartMs(now) + 24 * 60 * 60 * 1000;
+      logEvent("warn", "finish-video-quota-refused", {
+        race: key,
+        error: error?.message || String(error),
+        pausedUntil: new Date(finishVideoQuotaPausedUntil).toISOString(),
+      });
+    }
     if (backlog) {
       finishVideoBacklogPausedUntil = now + FINISH_VIDEO_BACKLOG_PAUSE_MS;
-      logEvent("warn", "finish-video-lookup-failed", { race: key, error: error?.message || String(error) });
+      if (!refused) {
+        logEvent("warn", "finish-video-lookup-failed", { race: key, error: error?.message || String(error) });
+      }
     }
     if (cached?.url) {
       return cached.url;
@@ -10398,7 +10435,12 @@ async function enrichFinishVideoBacklog(
 
   // known: videos applied from the cache this time; pending: stages due a search.
   const summary = { known, pending: searchable.length, searched: 0, found: 0 };
-  if (!String(apiKey || "").trim() || searchable.length === 0 || nowMs < finishVideoBacklogPausedUntil) {
+  if (
+    !String(apiKey || "").trim() ||
+    searchable.length === 0 ||
+    nowMs < finishVideoBacklogPausedUntil ||
+    nowMs < finishVideoQuotaPausedUntil
+  ) {
     return summary;
   }
 

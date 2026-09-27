@@ -470,8 +470,18 @@ the process knows in the file's shape, and `npm run refresh:finish-videos` (defa
 `--from https://procyclingresults.up.railway.app`) merges that into the file for the
 maintainer to commit. Run it every few days while the backlog fills (roughly 170
 videos at 60 a day). `/api/data-status` reports `finishVideos.known` and
-`finishVideos.lookupsLast24h`, and each rebuild that searched logs one
+`finishVideos.lookupsToday` (since midnight Pacific, when YouTube's quota resets) and
+`finishVideos.quotaPausedUntil`, and each rebuild that searched logs one
 `finish-video-backlog` line with what it searched, found and still has pending.
+
+The binding limit is not the 10,000 units: the Google project behind the key allows
+**100 `search.list` calls a day** (`defaultSearchListPerDayPerProject`; a raw request
+answers 429 with that name). The in-memory count restarts with each deploy, so the
+first 429 (or 403) sets `finishVideoQuotaPausedUntil` to the next Pacific midnight
+and every lookup, live and backlog, waits for it (`finish-video-quota-refused` in the
+logs, once per pause). To diagnose a video gap, `railway run node <script>` gives a
+script the key without printing it; the directory is linked to the project since
+2026-09-27. A higher search quota can be requested in the Google Cloud console.
 
 ## Full Results Links (2026-09-12)
 

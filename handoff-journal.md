@@ -1104,3 +1104,31 @@ Traps met:
 - Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside
   the VM harness fail because the sandbox's prototypes are another realm's; compare
   `JSON.parse(JSON.stringify(...))` copies.
+
+## Finish Videos And The Search Quota (2026-09-27, 04:00 UTC)
+
+- **The reported symptom:** "race videos didn't all populate when we switched to the
+  YouTube API". The filter was not the cause. Run through the API with the real key,
+  the men's time trial, the women's road race and the Bretagne Classic each had
+  several videos the filter accepts (FloBikes, TNT Sports, the UCI).
+- **The cause:** the Google project behind the key allows 100 `search.list` calls a
+  day, reset at midnight Pacific. Our cap counted a rolling 24 hours in memory, and the
+  count restarted with every deploy; the 2026-09-26/27 session deployed a dozen times,
+  so the day's searches were gone by the small hours. Four of the six backlog lookups
+  at 03:29 UTC were 429s, logged as `finish-video-lookup-failed`. The live and recent
+  pass had no pause at all and kept asking every rebuild. Fix: the count follows the
+  quota day and the first refusal pauses every lookup until it turns
+  (`finishVideoQuotaPausedUntil`, shown as `finishVideos.quotaPausedUntil`).
+- **How it was found:** `railway link --project ProCyclingResults` (it needs the name
+  outside a terminal prompt), then `railway run node <diagnostic>` so a script sees
+  `YOUTUBE_API_KEY` without it being printed. A raw `search.list` request returns the
+  quota's name in the 429 body; the log lines alone only say "429 Too Many Requests".
+- **The backlog's pace is also traffic-bound:** outside a live race a rebuild happens
+  only when a request arrives, so on a quiet night the backlog barely moves. With 100
+  searches a day, the quota binds before the pace does; leave it unless that changes.
+  If the maintainer raises the search quota in the Google Cloud console, the caps
+  (`FINISH_VIDEO_DAILY_LOOKUP_CAP`, `FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP`) can rise
+  with it.
+- **CI:** the failed run the maintainer was emailed was `9e71a18`, pushed before its
+  test was updated; `6f44500` fixed it a minute later. Run `npm test` before every
+  push, even a one-line checker change.

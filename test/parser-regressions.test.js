@@ -262,6 +262,7 @@ function loadParserExports() {
       listFoundFinishVideos,
       listFinishVideoBacklogSubjects,
       enrichFinishVideoBacklog,
+      getYouTubeQuotaDayStartMs,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
       logEvent,
@@ -5052,9 +5053,10 @@ test("a failed lookup is retried after 20 minutes in the backlog too, and pauses
   const now = Date.parse("2026-09-27T12:00:00Z");
   const minute = 60 * 1000;
   let calls = 0;
+  // A network failure; a quota refusal (429/403) pauses until the quota day turns.
   const failing = async () => {
     calls += 1;
-    throw new Error("403");
+    throw new Error("socket hang up");
   };
   assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now, lookup: failing, backlog: true }), "");
   const cached = finishVideoCache.get("2026 Tour de France|21");
@@ -5075,6 +5077,57 @@ test("a failed lookup is retried after 20 minutes in the backlog too, and pauses
   assert.deepEqual(JSON.parse(JSON.stringify(summary)), { known: 0, pending: 2, searched: 0, found: 0 });
   summary = await enrichFinishVideoBacklog([race], new Date(now + 61 * minute), { apiKey: "test", lookup: failing });
   assert.equal(summary.searched, 2);
+  assert.equal(calls, 3);
+});
+
+test("the YouTube quota day starts at midnight Pacific", () => {
+  const { getYouTubeQuotaDayStartMs } = loadParserExports();
+  // Summer: midnight PDT is 07:00 UTC; a moment before it belongs to the day before.
+  assert.equal(new Date(getYouTubeQuotaDayStartMs(Date.parse("2026-09-27T04:07:13.500Z"))).toISOString(), "2026-09-26T07:00:00.000Z");
+  assert.equal(new Date(getYouTubeQuotaDayStartMs(Date.parse("2026-09-27T07:00:00Z"))).toISOString(), "2026-09-27T07:00:00.000Z");
+  // Winter: midnight PST is 08:00 UTC.
+  assert.equal(new Date(getYouTubeQuotaDayStartMs(Date.parse("2027-01-10T20:00:00Z"))).toISOString(), "2027-01-10T08:00:00.000Z");
+});
+
+test("a quota refusal stops every finish-video lookup until the quota day turns", async () => {
+  const { resolveRaceFinishVideoUrl, enrichFinishVideoBacklog, finishVideoCache, finishVideoLookupLog, describeDataStatus } =
+    loadParserExports();
+  finishVideoCache.clear();
+  finishVideoLookupLog.length = 0;
+  // 04:00 UTC on 27 September is 21:00 Pacific on the 26th; the quota turns at 07:00 UTC.
+  const now = Date.parse("2026-09-27T04:00:00Z");
+  const hour = 60 * 60 * 1000;
+  let calls = 0;
+  const refused = async () => {
+    calls += 1;
+    throw new Error("Request failed: 429 Too Many Requests");
+  };
+  const found = async () => {
+    calls += 1;
+    return "https://www.youtube.com/watch?v=found";
+  };
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now, lookup: refused }), "");
+  assert.equal(calls, 1);
+  const status = describeDataStatus({}, { now: now + hour, raceCache: {}, metadataCache: {} });
+  assert.equal(status.finishVideos.quotaPausedUntil, "2026-09-27T07:00:00.000Z");
+
+  // A live stage asking again an hour later does not search, and neither does the backlog.
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now: now + hour, lookup: found }), "");
+  const race = {
+    pageTitle: "2026 Tour de Pologne",
+    title: "Tour de Pologne",
+    startDate: new Date("2026-08-24T00:00:00Z"),
+    endDate: new Date("2026-08-30T00:00:00Z"),
+    stageRace: { totalStages: 1, completedStages: 1, latestStage: { number: 1 }, stages: [{ number: 1, label: "Stage 1", standings: [{ place: "1", rider: "R" }] }] },
+  };
+  const summary = await enrichFinishVideoBacklog([race], new Date(now + 2 * hour), { apiKey: "test", lookup: found });
+  assert.equal(summary.searched, 0);
+  assert.equal(calls, 1, "no search is made while the quota is spent");
+
+  // After midnight Pacific both search again.
+  const turned = Date.parse("2026-09-27T07:01:00Z");
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now: turned, lookup: found }), "https://www.youtube.com/watch?v=found");
+  assert.equal((await enrichFinishVideoBacklog([race], new Date(turned), { apiKey: "test", lookup: found })).found, 1);
   assert.equal(calls, 3);
 });
 
