@@ -248,7 +248,7 @@ Notable official/special providers currently in code:
 - Tour de France (letour.fr official rankings; full stage top five + GC, ASO platform, dedicated `parseLetourOfficialStandings`)
 - Tour de France Femmes (letourfemmes.fr; the same ASO deployment as letour.fr, so it shares every parser through `fetchAsoTourRankingsSnapshot` and differs only in entry point, page title and stage count)
 - Tour Auvergne-Rhône-Alpes
-- Tour of Greece
+- Tour of Greece — archived 2026-09-27 (L8): hellas-tour.gr Cloudflare-challenges even `/robots.txt`; see `archive/tour-of-greece-provider.js`
 - Giro d'Italia
 - Giro d'Italia Women
 - Vuelta Asturias
@@ -493,7 +493,6 @@ test/fixtures/
 ├── tour-de-france-femmes-stage6.wikitext
 ├── tour-de-france-rankings-stage21.html
 ├── tour-de-france-stage21-ite.html
-├── tour-of-greece-results-2026-stage1.html
 ├── vuelta-a-espana-stage2.wikitext
 ├── vuelta-a-espana-stages-1-11.wikitext
 └── youtube-search-tdf-stage21.html
