@@ -147,7 +147,15 @@ const NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS = 60 * 60 * 1000;
 const WIKI_REVISION_INDEX_TTL_MS = 45 * 1000;
 const WIKI_REVISION_QUERY_BATCH = 50;
 const WIKI_RAW_CACHE_IDLE_MS = 24 * 60 * 60 * 1000;
-const WIKI_FETCH_CONCURRENCY = 3;
+// Wikimedia's robot policy asks Action API clients for one request at a time and
+// fewer than five a second (L7, 2026-09-27; it was three at a time, up to 32 a second
+// on a cold build). Measured that day in the counting harness: the cold build's 88
+// Wikipedia requests spread from 13 s to 23 s (at most 4 a second), the cold build as
+// a whole ~9 s longer; a rebuild makes two or three, so it costs nothing there. The
+// interval is the knob if cold start matters more: 0 keeps one-at-a-time and gives
+// back ~8 s, at up to 13 requests a second while the cache is empty.
+const WIKI_FETCH_CONCURRENCY = 1;
+const WIKI_MIN_REQUEST_INTERVAL_MS = 250;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
 // Per-attempt request timeout. A hung upstream would otherwise stall a synchronous
 // live-race rebuild indefinitely; a timed-out attempt is retried like any other
@@ -1980,20 +1988,34 @@ function sleep(ms) {
 }
 
 let activeWikiFetches = 0;
+let lastWikiRequestAt = 0;
 const wikiFetchQueue = [];
 
+// Every Wikipedia request runs through here: at most WIKI_FETCH_CONCURRENCY at once,
+// started at least WIKI_MIN_REQUEST_INTERVAL_MS apart. A finished task hands its slot
+// straight to the next waiter; until 2026-09-27 it freed the slot first, so a new
+// caller arriving in between could run beside the woken one, over the limit.
 async function withWikiFetchSlot(task) {
   if (activeWikiFetches >= WIKI_FETCH_CONCURRENCY) {
     await new Promise((resolve) => wikiFetchQueue.push(resolve));
+  } else {
+    activeWikiFetches += 1;
   }
 
-  activeWikiFetches += 1;
-
   try {
+    const wait = lastWikiRequestAt + WIKI_MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      await sleep(wait);
+    }
+    lastWikiRequestAt = Date.now();
     return await task();
   } finally {
-    activeWikiFetches -= 1;
-    wikiFetchQueue.shift()?.();
+    const next = wikiFetchQueue.shift();
+    if (next) {
+      next();
+    } else {
+      activeWikiFetches -= 1;
+    }
   }
 }
 
@@ -2626,14 +2648,20 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT, maxBytes = FETCH_M
   }
 }
 
-// Raw wikitext by title, with the current revision id it was fetched under. Pages are
+// Raw wikitext by title, with the revision id it was fetched under. Pages are
 // refetched only when Wikipedia reports a new revision, which it is asked for at most
 // once per WIKI_REVISION_INDEX_TTL_MS for every tracked title in batched queries.
+// Neither the content read nor the index follows redirects: a redirect page's text is
+// what we parse (next season's pages are redirects until they are written, and
+// following one would read the generic "UCI World Tour" article as the season), so the
+// revision compared must be the redirect page's own. Until 2026-09-27 the index asked
+// with `redirects=1` while the text came from `action=raw`, which never follows one.
 const wikiRawCache = new Map();
 const wikiRevisionIndex = { checkedAt: 0, promise: null, revids: new Map() };
 
 // Maps each requested title to the revision id of the page it resolves to (0 when the
-// page is missing), following the query's normalization and redirect records.
+// page is missing), following the query's normalization records (and redirect records,
+// though the index no longer asks for redirects to be followed: see wikiRawCache).
 function indexWikiRevisions(payload, titles) {
   const query = payload?.query || {};
   const normalized = new Map((query.normalized || []).map((entry) => [entry.from, entry.to]));
@@ -2660,7 +2688,6 @@ async function fetchWikiRevisionIndex(titles) {
       action: "query",
       prop: "revisions",
       rvprop: "ids",
-      redirects: "1",
       format: "json",
       formatversion: "2",
       maxlag: "5",
@@ -2715,26 +2742,63 @@ async function getWikiRevision(title) {
 async function fetchWikiRaw(title) {
   const key = String(title || "").trim();
   const cached = wikiRawCache.get(key);
-  let revid;
   if (cached) {
+    let revid;
     try {
       revid = await getWikiRevision(key);
     } catch {
       revid = undefined;
     }
-    if (revid !== undefined && cached.revid !== null && cached.revid === revid) {
+    // Served from the cache when the index agrees, or when the text was read since the
+    // index last checked (it is then at least as new as anything the index could say):
+    // a page first read after a check is not read again on every call until the next.
+    const readSinceLastCheck = cached.fetchedAt > wikiRevisionIndex.checkedAt;
+    if (cached.revid !== null && (readSinceLastCheck || (revid !== undefined && cached.revid === revid))) {
       cached.lastUsed = Date.now();
       return cached.text;
     }
   }
 
-  const url = `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(key)}&action=raw`;
-  const fetched = await withWikiFetchSlot(() => fetchText(url));
-  const text = fetched.startsWith("<!DOCTYPE html>") ? "" : fetched;
-  // A page first seen without a known revision is stored as such and refetched once
-  // the index supplies one, so text fetched just before an edit is never pinned.
-  wikiRawCache.set(key, { revid: revid === undefined ? null : revid, text, lastUsed: Date.now() });
+  const { text, revid: fetchedRevid } = await fetchWikiPageContent(key);
+  // Stored under the revision the text itself came from, so a page read on a cold
+  // start is not read again when the index first reports on it. An index that lags an
+  // edit costs one more read, never a pinned stale page.
+  wikiRawCache.set(key, { revid: fetchedRevid, text, lastUsed: Date.now(), fetchedAt: Date.now() });
   return text;
+}
+
+// The wikitext of one page and the revision it belongs to, in one Action API query
+// (L7, 2026-09-27). Until then pages came from `/w/index.php?action=raw`, a path
+// Wikipedia's robots.txt disallows for every agent. Redirects are not followed, as
+// `action=raw` did not follow them; a missing or invalid title throws, as the raw
+// path's 404 did. No `maxlag` here: a lagged replica still serves reads, and the
+// revision index already steps aside under load.
+async function fetchWikiPageContent(title) {
+  const params = new URLSearchParams({
+    action: "query",
+    prop: "revisions",
+    rvprop: "ids|content",
+    rvslots: "main",
+    format: "json",
+    formatversion: "2",
+    titles: title,
+  });
+  const payload = await withWikiFetchSlot(() =>
+    fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`, { maxBytes: WIKI_MAX_BODY_BYTES }),
+  );
+  if (payload?.error) {
+    throw new Error(`Wikipedia content query failed: ${payload.error.code || "unknown"}`);
+  }
+  const page = payload?.query?.pages?.[0];
+  if (!page || page.missing || page.invalid) {
+    throw new Error("Request failed: 404 Not Found (no such Wikipedia page)");
+  }
+  const revision = page.revisions?.[0];
+  const content = revision?.slots?.main?.content;
+  return {
+    text: typeof content === "string" ? content : "",
+    revid: Number(revision?.revid) || null,
+  };
 }
 
 async function fetchJson(url, options = {}) {
@@ -3271,8 +3335,10 @@ async function resolveTeamNames(references) {
           .map((reference) => `{{UCI team code|${reference.code}${reference.edition ? `|${reference.edition}` : ""}}}`)
           .join(TEAM_NAME_SEPARATOR),
       });
-      const payload = await fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`);
-      const expanded = String(payload?.expandtemplates?.wikitext || "").split(TEAM_NAME_SEPARATOR);
+      // Through the same slots as every other Wikipedia request (until 2026-09-27 this
+      // one bypassed them, and a cold build reached ten concurrent Wikipedia requests).
+      const payload = await withWikiFetchSlot(() => fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`));
+      const expanded =String(payload?.expandtemplates?.wikitext || "").split(TEAM_NAME_SEPARATOR);
 
       wanted.forEach((reference, index) => {
         // The template expands to a wikilink; the display half is the readable name.

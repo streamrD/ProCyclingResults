@@ -44,7 +44,7 @@ no scraping of pages we do not show.
 
 | Source | What we take | When we ask |
 |---|---|---|
-| Wikipedia (English) | Race articles and their companion stage articles, the previous season's two WorldTour season pages (read once per process, for the "Last year" line on upcoming cards), plus the season's World Championships article for its schedule and, while an elite event that has been ridden is still waiting on a result, its medal summary, and, from each race day, the page of that elite Worlds event for its result, read as wikitext; one template-expansion call for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles, so one or two queries: in season the tracked set, some 66 race pages plus their companion stage articles and the season, Worlds and event pages, runs past 50). Only changed pages are fetched again. Team names are fetched once per process. Next season's pages are asked for at most once a day while they do not exist, once an hour after that, and, if the check itself fails, again after ten minutes. |
+| Wikipedia (English) | Race articles and their companion stage articles, the previous season's two WorldTour season pages (read once per process, for the "Last year" line on upcoming cards), plus the season's World Championships article for its schedule and, while an elite event that has been ridden is still waiting on a result, its medal summary, and, from each race day, the page of that elite Worlds event for its result, read as wikitext through the Action API (`/w/api.php?action=query&prop=revisions&rvprop=ids|content`, one page per request, redirects not followed); template-expansion calls (`action=expandtemplates`) for team names. Between one season's last race and the next one's first, the next season's two WorldTour pages, for the date it opens | Once per rebuild we ask the API which of the pages we track have a new revision (one query per 50 titles, so one or two queries: in season the tracked set, some 66 race pages plus their companion stage articles and the season, Worlds and event pages, runs past 50). Only changed pages are fetched again. Each team's name is looked up once per process: about twenty small batched calls after a restart, none after that. One request at a time, at most four a second. Next season's pages are asked for at most once a day while they do not exist, once an hour after that, and, if the check itself fails, again after ten minutes. |
 | Official race sites. ASO platform: letour.fr, letourfemmes.fr, lavuelta.es, lavueltafemenina.es, tour-auvergne-rhone-alpes.fr and eschborn-frankfurt.de (`/en/rankings` and `/en/rankings/stage-N`, or `/de/klassements` in Frankfurt; during a race also the general-classification partial the rankings page names under `/en/ajax/ranking/`, which their robots.txt disallows and which we have asked ASO about, plus the stage partial on the evening of a race's last stage and the team partial on a team time trial; for the Tour, Tour Femmes, Vuelta and Vuelta Femenina also `/en/stage-N`, for the profile embed). RCS: giroditalia.it (`/en/classifiche/`, `/en/classifiche/di-tappa/N/`, `/en/livefeed/tappa/N/`) and giroditaliawomen.it (`/en/rankings/`, `/en/rankings/di-tappa/N/` and `/en/video/`, for the stage's finish video). Vuelta a Burgos: vueltaburgos.com (`/feminas/wp-json/wp/v2/posts` and the liveblog feed a post names). Dormant, kept in the code but outside the races we show: lavueltaasturias.com (`/wp-json/wp/v2/posts`) | The published stage and general classifications, the stage profile embed the organiser links to, and on the Giro Women site the link to its own finish video | A race in progress is asked once per rebuild (an ASO race at most once every two minutes). A race that ended before today is asked once every six hours. A stage profile is fetched once and kept for a week; a stage with no profile is asked about again once an hour while the race runs and once a week after it. |
 | Bing News RSS | Headlines about a race | On demand, when a race card scrolls into view: at most ten searches per race while it is live or finished less than two days ago, at most eight once it is older than that, and five for a World Championships event (most races build fewer: five to nine), then cached for 15 minutes. For a race that finished two or more days ago the cache lasts six hours. A live race's headlines are refreshed on the same 15-minute cadence while it runs. |
 | Cyclingnews | The national championships index page | At most once an hour. |
@@ -79,8 +79,9 @@ above nothing.
   rankings pages, for example, are cached by their CDN for 60 seconds).
 - We do not retry aggressively: a failed request waits and retries twice, then gives
   up until the next rebuild.
-- We do not use more than three concurrent connections to Wikipedia, and our revision
-  query sets `maxlag` so it steps aside when their servers are busy.
+- We make one request to Wikipedia at a time, at most four a second, we read pages
+  through its API rather than paths its robots.txt disallows, and our revision query
+  sets `maxlag` so it steps aside when their servers are busy.
 - We do not store personal data about anyone, beyond anonymised page-view counts in
   our own analytics (self-hosted, no cookies, no addresses kept).
 
@@ -219,4 +220,21 @@ how the site fetches. The review log below is updated each time.
   classification instead) and the team partial on a team time trial. Counted from the
   code: a live Grand Tour stage costs two or three requests every two minutes, where it
   cost four every minute; a finished race two every six hours, where it cost four.
-
+- **2026-09-27, afternoon (Wikipedia through its API).** Page text was read from
+  `/w/index.php?action=raw`, a path Wikipedia's robots.txt disallows for every
+  agent; it is now read through the Action API, which returns the text and its
+  revision in one request. Knowing the revision with the text also stops a restart
+  from reading every page twice (once cold, once more when the revision index first
+  reported on it), and team-name lookups now wait their turn with every other
+  Wikipedia request. Wikipedia's robot policy asks API clients for one request at a
+  time and fewer than five a second; we made up to three at once and, measured after
+  a restart, 32 in one second. Now one at a time, at most four a second. Counted in
+  the harness the same day, all hosts: a build after a restart went from 138 requests
+  (89 to Wikipedia pages) to 115 (64, one per page), and a rebuild once the revision
+  index has expired from 46 (38 to Wikipedia) to 11 (two revision queries and one
+  changed page). The rest of that rebuild is the official sites, unchanged. The count
+  also showed that the team-name lookup this table called "one call" is about twenty
+  small calls after a restart (each team is still looked up once per process); the
+  table now says so. We also stop reading any response larger than 8 MB (4 MB from
+  Wikipedia), far above anything we read today, so a broken or hostile page cannot
+  stall the site; that adds no requests.

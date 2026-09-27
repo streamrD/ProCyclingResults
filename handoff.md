@@ -202,7 +202,7 @@ Primary race calendar and result source:
 
 - Wikipedia raw wikitext season pages
 - Active pages: `2026_UCI_World_Tour`, `2026_UCI_Women's_World_Tour`
-- Raw URL shape: `https://en.wikipedia.org/w/index.php?title=<PAGE>&action=raw`
+- Wikitext URL shape (since 2026-09-27, L7): `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=ids|content&rvslots=main&format=json&formatversion=2&titles=<PAGE>` (`fetchWikiPageContent`); redirects are not followed, a missing page throws. `action=raw` is robots-disallowed; do not go back to it
 
 World Championships (added 2026-09-07):
 
@@ -1088,9 +1088,8 @@ this check yet.
    treatment (their scripts are still inline template literals).
 4. Smaller items from the register: S7 (parse the rider index only on hover
    devices), C8 (per-panel unit toggles), A14's remainder (skip link, heading depth,
-   `aria-hidden` on icons), X12 (cap upstream body size before parsing), L7
-   (wikitext through the API instead of `action=raw`), R12 (a test for the backoff),
-   M6 (the clock-dependent-test lint), C9 (re-measure after S3).
+   `aria-hidden` on icons), C9 (re-measure after S3). (X12, L7, R12 and M6 closed
+   2026-09-27; see the end of `handoff-journal.md`.)
 5. Item 27, the ASO provider parameterisation, only when one of them next needs a
    change. The deferred-group machinery (`/api/competition-section`,
    `DEFERRED_COMPETITION_GROUP_IDS`) is still unused; S3 built its own fragment

@@ -6856,6 +6856,109 @@ test("indexWikiRevisions maps requested titles through normalization, redirects 
   assert.equal(revids.has("Unasked"), false);
 });
 
+// A stand-in for Wikipedia's Action API: the content query (rvprop=ids|content) answers
+// from `pages`, the batched revisions query (rvprop=ids) from `revids()` or its error.
+function stubWikipediaApi(setFetchForTest, state) {
+  const requests = [];
+  setFetchForTest(async (url, init) => {
+    const parsed = new URL(url);
+    const isContent = /content/.test(parsed.searchParams.get("rvprop") || "");
+    requests.push({ url: String(url), kind: isContent ? "content" : "revisions", params: parsed.searchParams, userAgent: init?.headers?.["user-agent"] });
+    let body;
+    if (isContent) {
+      const title = parsed.searchParams.get("titles");
+      const page = state.pages[title];
+      body = page
+        ? { query: { pages: [{ title, revisions: [{ revid: page.revid, slots: { main: { content: page.text } } }] }] } }
+        : { query: { pages: [{ title, missing: true }] } };
+    } else if (state.revisionsError) {
+      body = { error: { code: state.revisionsError, info: "Waiting for a database server" } };
+    } else {
+      const titles = parsed.searchParams.get("titles").split("|");
+      body = { query: { pages: titles.map((title) => ({ title, revisions: [{ revid: state.pages[title]?.revid || 0 }] })) } };
+    }
+    return { ok: true, status: 200, statusText: "OK", text: async () => JSON.stringify(body) };
+  });
+  return requests;
+}
+
+test("wikitext is read through the Action API with its revision, not the robots-disallowed action=raw (L7)", async () => {
+  const { fetchWikiRaw, wikiRevisionIndex, setFetchForTest, FETCH_USER_AGENT } = loadParserExports();
+  const state = { pages: { "2026 Test Race": { revid: 100, text: "{{Infobox cycling race report}}" }, "2027 UCI World Tour": { revid: 7, text: "#REDIRECT [[UCI World Tour]]" } } };
+  const requests = stubWikipediaApi(setFetchForTest, state);
+
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "{{Infobox cycling race report}}");
+  const [read] = requests;
+  assert.match(read.url, /^https:\/\/en\.wikipedia\.org\/w\/api\.php\?/);
+  assert.doesNotMatch(read.url, /action=raw|index\.php/);
+  assert.equal(read.params.get("rvslots"), "main");
+  assert.equal(read.params.has("redirects"), false, "a redirect page's own text is what the parsers expect");
+  assert.equal(read.userAgent, FETCH_USER_AGENT);
+  assert.equal(await fetchWikiRaw("2027 UCI World Tour"), "#REDIRECT [[UCI World Tour]]");
+
+  // The first read stored the revision it came with, so the first index check that
+  // agrees costs one revisions query and no second read (a raw read stored none and
+  // every page was read twice after a restart).
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "{{Infobox cycling race report}}");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"]);
+  assert.equal(requests[0].params.has("redirects"), false, "the index compares the redirect page's own revision");
+
+  // An edit is read again once the index reports it.
+  state.pages["2026 Test Race"] = { revid: 101, text: "edited" };
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "edited");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions", "content"]);
+
+  // A missing page throws, as the raw path's 404 did, and is not cached.
+  await assert.rejects(() => fetchWikiRaw("2026 No Such Race"), /404/);
+
+  // A page first read after the last index check is served from the cache until the
+  // next check, though the index has not seen it yet.
+  state.pages["2026 Late Race"] = { revid: 5, text: "late" };
+  wikiRevisionIndex.checkedAt = Date.now() - 1000;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
+  assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
+  assert.deepEqual(requests.map((request) => request.kind), ["content"]);
+});
+
+test("a failed revisions query backs off for the index window and keeps serving cached pages (R12)", async () => {
+  const { fetchWikiRaw, wikiRevisionIndex, setFetchForTest } = loadParserExports();
+  const state = { pages: { "2026 Test Race": { revid: 100, text: "race" }, "2026 Other Race": { revid: 200, text: "other" } } };
+  const requests = stubWikipediaApi(setFetchForTest, state);
+  await fetchWikiRaw("2026 Test Race");
+  await fetchWikiRaw("2026 Other Race");
+  wikiRevisionIndex.checkedAt = 0;
+  await fetchWikiRaw("2026 Test Race");
+  assert.equal(wikiRevisionIndex.lastIndexError ?? null, null);
+
+  // Wikipedia under load answers the revisions query with maxlag. That counts as a
+  // check: the pages are served from the cache under the last good index, the error is
+  // kept for the debug payload, and nothing is asked again until the window passes —
+  // before 8c564a5 every tracked page was refetched on every rebuild instead.
+  state.revisionsError = "maxlag";
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  for (let rebuild = 0; rebuild < 5; rebuild += 1) {
+    assert.equal(await fetchWikiRaw("2026 Test Race"), "race");
+    assert.equal(await fetchWikiRaw("2026 Other Race"), "other");
+  }
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"], "one failed query, no page reads");
+  assert.match(wikiRevisionIndex.lastIndexError?.message || "", /maxlag/);
+  assert.ok(Date.now() - wikiRevisionIndex.checkedAt < 5000, "the failure advanced checkedAt");
+
+  // Once the window has passed the query is tried again, and success clears the error.
+  state.revisionsError = "";
+  wikiRevisionIndex.checkedAt -= 46 * 1000;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "race");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"]);
+  assert.equal(wikiRevisionIndex.lastIndexError, null);
+});
+
 test("describeLiveRaceDay reads rest days, stage days and finish days off the route dates", () => {
   const { describeLiveRaceDay, buildLiveRaceDayNote } = loadParserExports();
   const race = {
