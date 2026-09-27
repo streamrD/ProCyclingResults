@@ -1016,6 +1016,10 @@ What shipped, with the numbers measured:
   names, so finished cards stack instead; and "Stage results (20)" counted raced
   stages while the strip showed 21 chips (stage 3 cancelled), so the header counts
   the race's stages.
+- **Card counts (01:25 UTC).** The deploy checker and `assessments/tools/area2/compose.js`
+  counted every `id="race-`, which the news drawers always shared and the folded
+  panels now share too (31 reported for 13 cards); both count `<article>`s now. The
+  "58 cards" and "22 cards" figures earlier in this journal are that inflated count.
 - **CSP, report-only (01:00 UTC).** `buildContentSecurityPolicy` on the results page:
   the client script by its sha256 (the script element holds exactly the file), the
   analytics host, `'unsafe-inline'` styles, reports posted to `/api/csp-report` and

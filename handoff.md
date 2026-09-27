@@ -972,13 +972,15 @@ date or a function name when a rule in `AGENTS.md` cites one of them. A session'
 closing notes go at the end of the journal; this map changes only when the shape of
 the project does.
 
-## Next Session Starts Here (written 2026-09-27, 00:45 UTC)
+## Next Session Starts Here (written 2026-09-27, 01:30 UTC)
 
-The state of play after the 2026-09-27 session, which took queue items 0 to 8 of the
-list written at 00:00 UTC (commits 1ac9f2f → 0532b1e, all on `main` and verified
-live). `assessments/2026-09-26/status.md` is the complete list; what closed today is
-R7, S8, X2, L8, P5, A13, F2/F3/F23, S4, S9, M7, M8, and S3 went to partial. The
-session's notes are the last section of `handoff-journal.md`.
+The state of play at the close of the 2026-09-27 session, which took every item of
+the queue written at 00:00 UTC and then A10 at the maintainer's request (commits
+1ac9f2f → 6f44500, all on `main`, each deploy verified live).
+`assessments/2026-09-26/status.md` is the complete list; closed today: R7, S8, X2,
+L8, P5, A13, F2/F3/F23, S4, S9, M7, M8, A10; partial: S3 and the CSP. The session's
+notes are the last section of `handoff-journal.md`. Start by reading this section,
+then the status file, and take the queue below in order.
 
 **First, on 27 September (race day):** the Worlds men's road race is 09:00–15:40
 Montréal (13:00–19:40 UTC). Nothing to push in those hours. Check in the evening: the
@@ -996,7 +998,8 @@ this check yet.
 1. **Keep the finish-video file growing.** The backlog fills at 60 a day (about 170
    to find from empty); run `npm run refresh:finish-videos` and commit
    `data/finish-videos.json` at the start of each session until
-   `/api/data-status` → `finishVideos.known` stops rising. Watch for
+   `/api/data-status` → `finishVideos.known` stops rising (at the close of this
+   session production reported 4 known, 7 lookups in this process; the file holds four). Watch for
    `finish-video-lookup-failed` in Railway's logs: it means the API refused (most
    likely the day's quota, which every deploy's fresh counter can overrun), and the
    backlog pauses an hour. If deploys stay frequent, persist the day's count or lower
@@ -1004,7 +1007,9 @@ this check yet.
 2. **Bytes, after A10.** A10 shipped on 2026-09-27 (finished cards fold their
    jerseys and stage results, GC open; the maintainer chose the default from a comp),
    which fixes the height but not the bytes: the folded stage panels still travel
-   with the page (555 KB / 22 cards after S3, target 400 KB). The next lever is to
+   with the page (555 KB after S3, target 400 KB; 13 cards, the true count since
+   the deploy checker and `compose.js` learned to count `<article>`s rather than
+   every `race-` id, which the news drawers and now the panels share). The next lever is to
    serve a finished card's folded stage results on first open (`/api/race-stages`
    already renders a switcher; the folded panel could hold only the strip until the
    header is tapped). Re-measure S2 (first rider name on a phone) after that.
@@ -1048,8 +1053,10 @@ tests to `test/parser-regressions.test.js`, and on two of the three conflicting
 merges git dropped the shared closing `});` at the seam: run `node -c` on the test
 file after every merge and put the brace back. `git pull --rebase` with local merge
 commits replays and re-conflicts them; fetch, confirm origin has not moved, and push.
-The agents' worktrees are under `.claude/worktrees/` (untracked) and their
-`worktree-agent-*` branches are merged; both can be deleted. After pushing,
+The agents' worktrees and `worktree-agent-*` branches were merged and deleted at
+the close. The second half of the session was the maintainer's own request (A10),
+done the standing way: build it, render the real card in both states at phone and
+desktop widths, ask which default to ship, push on the answer. After pushing,
 `npm run verify:deploy`.
 
 ## Suggested First Checks For A New Agent
