@@ -129,6 +129,9 @@ const RACE_HOST_TIME_ZONES = {
 // A race that ended before today has an official result that no longer changes by
 // the minute; its provider is asked again after this long rather than every rebuild.
 const OFFICIAL_SNAPSHOT_SETTLED_TTL_MS = 6 * 60 * 60 * 1000;
+// A live race on an ASO site is read at most this often, whatever the rebuild cadence
+// (once a minute in racing hours): the pace our letter to ASO offers (2026-09-27).
+const ASO_LIVE_MIN_INTERVAL_MS = 2 * 60 * 1000;
 // News about a race that finished two or more days ago moves slowly: fewer searches,
 // kept for longer. The caps are the figures DATA-SOURCES.md promises the news feed:
 // ten searches while a race is live or fresh, eight (the card shows eight stories)
@@ -4836,6 +4839,39 @@ function extractAsoRankingsAjaxUrl(html, baseUrl, type) {
   return new URL(path.replace(/\\\//g, "/"), baseUrl).toString();
 }
 
+// The public, robots-allowed page for one stage's rankings (`/en/rankings/stage-N`).
+// It carries that stage's result inline; the general classification during a race is
+// published only in the /en/ajax/ itg partial (see fetchAsoTourRankingsSnapshot).
+function getAsoPublicStageRankingsUrl(rankingsUrl, stageNumber) {
+  return `${new URL(rankingsUrl).origin}/en/rankings/stage-${stageNumber}`;
+}
+
+const ASO_TEAM_TIME_TRIAL_NOTICE = /No edition of individual classification during a Team Time Trial/i;
+
+// After a race the rankings page carries the general classification inline, tagged ITG.
+function carriesInlineAsoGeneralClassification(html) {
+  return /rankingTable::ITG/i.test(html || "") && !/rankingTable::ITE/i.test(html || "");
+}
+
+// The HTML holding stage N's result. The public stage page carries it for every stage
+// but the last, whose page shows the final general classification instead (checked on
+// lavuelta.es and tour-auvergne-rhone-alpes.fr, 2026-09-27); a page tagged ITG is never
+// taken for a stage result, because the Vuelta Femenina and Auvergne parsers read the
+// first table whatever its type and would print the GC leader as the stage winner. For
+// that last stage the ite partial is read while the race is live or just over; once it
+// has settled, Wikipedia carries every stage result and the partial is left alone.
+async function fetchAsoStageRankingsHtml(rankingsHtml, rankingsUrl, stageNumber, race, fetchHtml) {
+  const pageHtml = stageNumber > 0 ? await fetchHtml(getAsoPublicStageRankingsUrl(rankingsUrl, stageNumber)) : "";
+  if (pageHtml && !carriesInlineAsoGeneralClassification(pageHtml)) {
+    return pageHtml;
+  }
+  if (hasRaceEndedDaysAgo(race, 1)) {
+    return "";
+  }
+  const stagePartialUrl = extractAsoRankingsAjaxUrl(rankingsHtml, rankingsUrl, "ite");
+  return stagePartialUrl ? fetchHtml(stagePartialUrl) : "";
+}
+
 async function fetchResolvedAsoRankingsAjaxHtml(url, baseUrl, type, fetchHtml = fetchText) {
   if (!url) {
     return "";
@@ -4923,9 +4959,6 @@ function extractLaVueltaFemeninaGeneralAjaxUrl(html) {
   return extractAsoRankingsAjaxUrl(html, LA_VUELTA_FEMENINA_RANKINGS_URL, "itg");
 }
 
-function extractLaVueltaFemeninaStageAjaxUrl(html) {
-  return extractAsoRankingsAjaxUrl(html, LA_VUELTA_FEMENINA_RANKINGS_URL, "ite");
-}
 
 function parseLaVueltaFemeninaOfficialStandings(html) {
   return parseAsoOfficialStandings(html);
@@ -4964,7 +4997,7 @@ function buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, stageHtml, generalH
   };
 }
 
-async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
+async function fetchLaVueltaFemeninaOfficialSnapshot(race, fetchHtml = fetchText) {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const startUtc = toUtcDateOnly(race?.startDate) || new Date(Date.UTC(2026, 4, 3));
@@ -4978,11 +5011,17 @@ async function fetchLaVueltaFemeninaOfficialSnapshot(race) {
     return null;
   }
 
-  const rankingsHtml = await fetchText(LA_VUELTA_FEMENINA_RANKINGS_URL);
-  const stageUrl = extractLaVueltaFemeninaStageAjaxUrl(rankingsHtml);
+  // The stage result from the public stage page (fetchAsoStageRankingsHtml, 2026-09-27,
+  // L2); the itg partial is still read for the general classification until ASO answers.
+  const rankingsHtml = await fetchHtml(LA_VUELTA_FEMENINA_RANKINGS_URL);
+  const { stageNumber } = extractLaVueltaFemeninaOfficialStageInfo(rankingsHtml, race);
+  const stageHtml = await fetchAsoStageRankingsHtml(rankingsHtml, LA_VUELTA_FEMENINA_RANKINGS_URL, stageNumber, race, fetchHtml);
   const generalUrl = extractLaVueltaFemeninaGeneralAjaxUrl(rankingsHtml);
-  const stageHtml = stageUrl ? await fetchText(stageUrl) : rankingsHtml;
-  const generalHtml = generalUrl ? await fetchText(generalUrl) : "";
+  const generalHtml = carriesInlineAsoGeneralClassification(rankingsHtml)
+    ? rankingsHtml
+    : generalUrl
+      ? await fetchHtml(generalUrl)
+      : "";
   return buildLaVueltaFemeninaOfficialSnapshot(rankingsHtml, stageHtml, generalHtml, race);
 }
 
@@ -5012,9 +5051,6 @@ function extractTourAuvergneRhoneAlpesGeneralAjaxUrl(html) {
   return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "itg");
 }
 
-function extractTourAuvergneRhoneAlpesStageAjaxUrl(html) {
-  return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "ite");
-}
 
 function extractTourAuvergneRhoneAlpesTeamStageAjaxUrl(html) {
   return extractAsoRankingsAjaxUrl(html, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, "ete");
@@ -5072,13 +5108,21 @@ async function fetchTourAuvergneRhoneAlpesOfficialSnapshot(race, fetchHtml = fet
     return null;
   }
 
+  // The stage result from the public stage page (fetchAsoStageRankingsHtml, 2026-09-27,
+  // L2). Two partials are still read until ASO answers: itg for the general
+  // classification during the race, and ete on a team time trial, whose public page
+  // carries only a notice.
   const rankingsHtml = await fetchHtml(TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL);
-  const stageUrl = extractTourAuvergneRhoneAlpesStageAjaxUrl(rankingsHtml);
-  const teamStageUrl = extractTourAuvergneRhoneAlpesTeamStageAjaxUrl(rankingsHtml);
+  const { stageNumber } = extractTourAuvergneRhoneAlpesOfficialStageInfo(rankingsHtml, race);
+  const stageHtml = await fetchAsoStageRankingsHtml(rankingsHtml, TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL, stageNumber, race, fetchHtml);
+  const teamStageUrl = ASO_TEAM_TIME_TRIAL_NOTICE.test(stageHtml) ? extractTourAuvergneRhoneAlpesTeamStageAjaxUrl(rankingsHtml) : "";
+  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : stageHtml;
   const generalUrl = extractTourAuvergneRhoneAlpesGeneralAjaxUrl(rankingsHtml);
-  const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
-  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
-  const generalHtml = generalUrl ? await fetchHtml(generalUrl) : "";
+  const generalHtml = carriesInlineAsoGeneralClassification(rankingsHtml)
+    ? rankingsHtml
+    : generalUrl
+      ? await fetchHtml(generalUrl)
+      : "";
   return buildTourAuvergneRhoneAlpesOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race);
 }
 
@@ -5214,10 +5258,6 @@ function extractTourDeFranceStageAjaxUrl(html, rankingsUrl = TOUR_DE_FRANCE_RANK
   return extractAsoRankingsAjaxUrl(html, rankingsUrl, "ite");
 }
 
-function extractTourDeFranceTeamStageAjaxUrl(html, rankingsUrl = TOUR_DE_FRANCE_RANKINGS_URL) {
-  return extractAsoRankingsAjaxUrl(html, rankingsUrl, "ete");
-}
-
 function resolveLetourStageStandings(stageHtml, teamStageHtml = "") {
   // Normal stages expose an individual stage classification. A team time trial has
   // none (letour.fr may not even offer an "ite" tab, so stageHtml can be empty or a
@@ -5310,13 +5350,42 @@ async function fetchAsoTourRankingsSnapshot(race, fetchHtml, source) {
     return null;
   }
 
+  // Only pages robots.txt allows, except one (2026-09-27, assessment L2). During a race
+  // the public rankings page carries the latest stage's result inline, and
+  // /en/rankings/stage-N carries any stage's but the last; after the race the rankings
+  // page carries the general classification instead. The stage and team-stage partials
+  // under /en/ajax/ (disallowed) are read only where no public page has the table: the
+  // last stage's result on its final evening (fetchAsoStageRankingsHtml) and a team
+  // time trial's team result. The general classification during a race
+  // is published only in the /en/ajax/ itg partial, which is still read. The maintainer
+  // decided to keep these until ASO answers the letter that asks for exactly that.
   const rankingsHtml = await fetchHtml(source.rankingsUrl);
-  const stageUrl = extractTourDeFranceStageAjaxUrl(rankingsHtml, source.rankingsUrl);
-  const teamStageUrl = extractTourDeFranceTeamStageAjaxUrl(rankingsHtml, source.rankingsUrl);
-  const generalUrl = extractTourDeFranceGeneralAjaxUrl(rankingsHtml, source.rankingsUrl);
-  const stageHtml = stageUrl ? await fetchHtml(stageUrl) : "";
-  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : "";
-  const generalHtml = await fetchResolvedAsoRankingsAjaxHtml(generalUrl, source.rankingsUrl, "itg", fetchHtml);
+  let stageHtml = rankingsHtml;
+  if (resolveLetourStageStandings(rankingsHtml, rankingsHtml).length < MAX_RESULT_RIDERS) {
+    const { stageNumber } = extractTourDeFranceOfficialStageInfo(rankingsHtml, race, source);
+    const stagePageHtml = await fetchAsoStageRankingsHtml(rankingsHtml, source.rankingsUrl, stageNumber, race, fetchHtml);
+    // Prefer the stage's own page unless it has fewer rows: on a team time trial neither
+    // has individual rows, and only the stage page says why.
+    if (stagePageHtml && resolveLetourStageStandings(stagePageHtml, stagePageHtml).length >= resolveLetourStageStandings(rankingsHtml, rankingsHtml).length) {
+      stageHtml = stagePageHtml;
+    }
+  }
+  // A team time trial's public page carries only a notice; its team result is published
+  // only in the ete partial, read on that day alone.
+  const teamStageUrl =
+    resolveLetourStageStandings(stageHtml, stageHtml).length === 0 && ASO_TEAM_TIME_TRIAL_NOTICE.test(stageHtml)
+      ? extractAsoRankingsAjaxUrl(rankingsHtml, source.rankingsUrl, "ete")
+      : "";
+  const teamStageHtml = teamStageUrl ? await fetchHtml(teamStageUrl) : stageHtml;
+  const generalHtml =
+    parseLetourOfficialStandings(rankingsHtml, { rankingType: "ITG" }).length > 0
+      ? rankingsHtml
+      : await fetchResolvedAsoRankingsAjaxHtml(
+          extractTourDeFranceGeneralAjaxUrl(rankingsHtml, source.rankingsUrl),
+          source.rankingsUrl,
+          "itg",
+          fetchHtml,
+        );
   return buildTourDeFranceOfficialSnapshot(rankingsHtml, stageHtml, teamStageHtml, generalHtml, race, source);
 }
 
@@ -6859,20 +6928,22 @@ function hasRaceEndedDaysAgo(race, days = 1, now = new Date()) {
 }
 
 // Official lookups for settled races, keyed by provider and race, kept for
-// OFFICIAL_SNAPSHOT_SETTLED_TTL_MS. Live and just-finished races are never cached here:
+// OFFICIAL_SNAPSHOT_SETTLED_TTL_MS. Live and just-finished races are cached only for a
+// provider that asks for a minimum interval (ASO's, ASO_LIVE_MIN_INTERVAL_MS); otherwise
 // their result is exactly what the rebuild is for. Copies are handed out because the
 // merge annotates what it receives.
 const officialSnapshotCache = new Map();
 
-async function loadOfficialSnapshotThroughCache(cacheKey, race, load) {
+async function loadOfficialSnapshotThroughCache(cacheKey, race, load, { liveMinIntervalMs = 0 } = {}) {
   const settled = hasRaceEndedDaysAgo(race, 1);
-  const cached = settled ? officialSnapshotCache.get(cacheKey) : null;
-  if (cached && Date.now() - cached.updatedAt < OFFICIAL_SNAPSHOT_SETTLED_TTL_MS) {
+  const ttl = settled ? OFFICIAL_SNAPSHOT_SETTLED_TTL_MS : liveMinIntervalMs;
+  const cached = ttl > 0 ? officialSnapshotCache.get(cacheKey) : null;
+  if (cached && Date.now() - cached.updatedAt < ttl) {
     return JSON.parse(JSON.stringify(cached.value));
   }
 
   const value = await load();
-  if (settled) {
+  if (ttl > 0) {
     officialSnapshotCache.set(cacheKey, { updatedAt: Date.now(), value });
     return JSON.parse(JSON.stringify(value));
   }
@@ -6890,8 +6961,11 @@ async function loadOfficialStageRaceSnapshot(race) {
     return null;
   }
 
-  return loadOfficialSnapshotThroughCache(`stage|${provider.id}|${getRaceId(race)}`, race, async () =>
-    annotateStageRaceSnapshotSource(await provider.load(race), provider.id),
+  return loadOfficialSnapshotThroughCache(
+    `stage|${provider.id}|${getRaceId(race)}`,
+    race,
+    async () => annotateStageRaceSnapshotSource(await provider.load(race), provider.id),
+    { liveMinIntervalMs: provider.aso ? ASO_LIVE_MIN_INTERVAL_MS : 0 },
   );
 }
 
@@ -6923,7 +6997,9 @@ async function loadOfficialOneDayResultStandings(race) {
   if (!provider) {
     return [];
   }
-  return loadOfficialSnapshotThroughCache(`one-day|${provider.id}|${getRaceId(race)}`, race, () => provider.load(race));
+  return loadOfficialSnapshotThroughCache(`one-day|${provider.id}|${getRaceId(race)}`, race, () => provider.load(race), {
+    liveMinIntervalMs: provider.aso ? ASO_LIVE_MIN_INTERVAL_MS : 0,
+  });
 }
 
 function extractLeadLocation(rawText) {

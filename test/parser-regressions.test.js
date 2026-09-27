@@ -39,10 +39,10 @@ function loadParserExports() {
     `${executableSource}\n;globalThis.__PCR_TEST__ = {
       extractStageRaceSnapshot,
       selectStageArticleGcFallback,
+      loadOfficialSnapshotThroughCache,
       applyKnownStageRaceCorrections,
       buildLaVueltaFemeninaOfficialSnapshot,
       extractLaVueltaFemeninaGeneralAjaxUrl,
-      extractLaVueltaFemeninaStageAjaxUrl,
       fetchGiroDItaliaOfficialSnapshot,
       fetchGiroDItaliaWomenOfficialSnapshot,
       extractGiroDItaliaFinishVideoUrl,
@@ -561,21 +561,6 @@ test("extractLaVueltaFemeninaGeneralAjaxUrl prefers the nested general-tab ajax 
   assert.equal(
     extractLaVueltaFemeninaGeneralAjaxUrl(html),
     "https://www.lavueltafemenina.es/en/ajax/ranking/7/itg/gc-table-hash/subtab",
-  );
-});
-
-test("extractLaVueltaFemeninaStageAjaxUrl extracts the stage-tab ajax URL", () => {
-  const { extractLaVueltaFemeninaStageAjaxUrl } = loadParserExports();
-  const html = `
-    <button
-      class="tabs__link js-tabs-ranking"
-      data-ajax-stack="{&quot;ite&quot;:&quot;\\/en\\/ajax\\/ranking\\/7\\/ite\\/stage-table-hash\\/none&quot;,&quot;itg&quot;:&quot;\\/en\\/ajax\\/ranking\\/7\\/itg\\/gc-table-hash\\/none&quot;}"
-    ></button>
-  `;
-
-  assert.equal(
-    extractLaVueltaFemeninaStageAjaxUrl(html),
-    "https://www.lavueltafemenina.es/en/ajax/ranking/7/ite/stage-table-hash/none",
   );
 });
 
@@ -1382,6 +1367,7 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
     </table>
   `;
 
+  const fetchedUrls = [];
   const snapshot = JSON.parse(
     JSON.stringify(
       await fetchTourAuvergneRhoneAlpesOfficialSnapshot(
@@ -1391,11 +1377,13 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
           endDate: new Date("2026-06-14T00:00:00Z"),
         },
         async (url) => {
+          fetchedUrls.push(url);
           if (url.includes("/itg/")) {
             return generalHtml;
           }
 
-          if (url.includes("/ite/")) {
+          // The public stage page of a team time trial carries only the notice.
+          if (url === "https://www.tour-auvergne-rhone-alpes.fr/en/rankings/stage-3") {
             return stageHtml;
           }
 
@@ -1403,7 +1391,11 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
             return teamStageHtml;
           }
 
-          return rankingsHtml;
+          if (url === "https://www.tour-auvergne-rhone-alpes.fr/en/rankings") {
+            return rankingsHtml;
+          }
+
+          throw new Error(`unexpected request ${url}`);
         },
       ),
     ),
@@ -1420,6 +1412,9 @@ test("fetchTourAuvergneRhoneAlpesOfficialSnapshot keeps GC during a team time tr
     ],
     winner: "Team Visma | Lease A Bike",
   });
+  // The stage partial is never read; the team partial only because the day is a TTT.
+  assert.ok(!fetchedUrls.some((url) => url.includes("/ite/")));
+  assert.ok(fetchedUrls.some((url) => url.includes("/ete/")));
   assert.deepEqual(snapshot.generalClassification.standings, [
     { place: "1", rider: "Alex Baudin", countryCode: "FRA", time: "10:01:01" },
     { place: "2", rider: "Kévin Vauquelin", countryCode: "FRA", gap: "+00:12", time: "10:01:13" },
@@ -1505,6 +1500,103 @@ test("extractTourDeFranceOfficialStageInfo uses the stage menu, not rest-day cal
 
   assert.equal(info.stageNumber, 21);
   assert.equal(info.totalStages, 21);
+});
+
+test("the last stage's public page shows the final GC, which is never taken for the stage result", async () => {
+  const { fetchTourAuvergneRhoneAlpesOfficialSnapshot } = loadParserExports();
+  const row = (place, rider, time) =>
+    `<tr><td class="is-alignCenter">${place}</td><td class="runner is-sticky"><a href="/en/rider/${place}" data-xtclick="rankingTable::ITG">${rider}</a></td><td class="is-alignCenter time">${time}</td><td class="is-alignCenter time">-</td></tr>`;
+  const finalGcPage = `<title>Official classifications of Tour Auvergne-Rhône-Alpes - Stage 8</title>
+    <span class="stage-select__option__stage">Stage 8</span>
+    <button data-ajax-stack = {&quot;ite&quot;:&quot;\\/en\\/ajax\\/ranking\\/8\\/ite\\/stage\\/none&quot;}></button>
+    <table class="rankingTable"><tbody>${row(1, "ISAAC DEL TORO", "29h 35' 05''")}${row(2, "LUKE TUCKWELL", "29h 35' 59''")}</tbody></table>`;
+  const stagePartial = `<table class="rankingTable"><tbody>${row(1, "MATTEO JORGENSON", "04h 01' 00''").replace("ITG", "ITE")}</tbody></table>`;
+  const race = (endDate) => ({ pageTitle: "2026 Tour Auvergne-Rhône-Alpes", startDate: new Date("2026-06-07T00:00:00Z"), endDate });
+  const run = async (endDate) => {
+    const fetchedUrls = [];
+    const snapshot = await fetchTourAuvergneRhoneAlpesOfficialSnapshot(race(endDate), async (url) => {
+      fetchedUrls.push(url);
+      if (url.includes("/ite/")) return stagePartial;
+      return finalGcPage; // the rankings page and /en/rankings/stage-8 alike
+    });
+    return { snapshot, fetchedUrls };
+  };
+
+  // Settled: Wikipedia has the stage; no partial, and the GC is not passed off as the stage.
+  const settled = await run(new Date("2026-06-14T00:00:00Z"));
+  assert.ok(!settled.fetchedUrls.some((url) => url.includes("/ajax/")));
+  assert.notEqual(settled.snapshot?.latestStage?.winner, "Isaac Del Toro");
+  // The final evening: the stage partial is read for the last stage's result.
+  const today = new Date();
+  const live = await run(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())));
+  assert.ok(live.fetchedUrls.some((url) => url.includes("/ite/")));
+  assert.equal(live.snapshot.latestStage.winner, "Matteo Jorgenson");
+});
+
+test("a Tour team time trial reads the team partial because its public stage page has only a notice", async () => {
+  const { fetchTourDeFranceOfficialSnapshot } = loadParserExports();
+  const rankingsHtml = `
+    <title>Official classifications of Tour de France 2026 - Stage 1</title>
+    <h2>2026 Rankings - Stage 1</h2>
+    <button data-ajax-stack = {&quot;itg&quot;:&quot;\\/en\\/ajax\\/ranking\\/1\\/itg\\/gc\\/none&quot;}></button>
+    <button data-ajax-stack = {&quot;ete&quot;:&quot;\\/en\\/ajax\\/ranking\\/1\\/ete\\/team\\/none&quot;}></button>
+  `;
+  const fetchedUrls = [];
+  const snapshot = await fetchTourDeFranceOfficialSnapshot(
+    { pageTitle: "2026 Tour de France", startDate: new Date("2026-07-04T00:00:00Z"), endDate: new Date("2026-07-26T00:00:00Z") },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.letour.fr/en/rankings") return rankingsHtml;
+      if (url === "https://www.letour.fr/en/rankings/stage-1") {
+        return `<p class="noRanking">No edition of individual classification during a Team Time Trial</p>`;
+      }
+      if (url.includes("/ete/")) return LETOUR_TEAM_TTT_HTML;
+      if (url.includes("/itg/")) return "";
+      throw new Error(`unexpected request ${url}`);
+    },
+  );
+  assert.equal(snapshot.latestStage.winner, "Team Visma | Lease A Bike");
+  assert.ok(fetchedUrls.some((url) => url.includes("/ete/")));
+  assert.ok(!fetchedUrls.some((url) => url.includes("/ite/")));
+});
+
+test("after the race the Tour's rankings are read from public pages only", async () => {
+  const { fetchTourDeFranceOfficialSnapshot } = loadParserExports();
+  const readFixture = (name) => fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
+  const fetchedUrls = [];
+  const snapshot = await fetchTourDeFranceOfficialSnapshot(
+    { pageTitle: "2026 Tour de France", startDate: new Date("2026-07-04T00:00:00Z"), endDate: new Date("2026-07-26T00:00:00Z") },
+    async (url) => {
+      fetchedUrls.push(url);
+      if (url === "https://www.letour.fr/en/rankings") {
+        return readFixture("tour-de-france-rankings-stage21.html");
+      }
+      if (url === "https://www.letour.fr/en/rankings/stage-21") {
+        return readFixture("tour-de-france-stage21-ite.html");
+      }
+      throw new Error(`unexpected request ${url}`);
+    },
+  );
+  // Once the race is over the rankings page carries the general classification inline.
+  assert.deepEqual(fetchedUrls, ["https://www.letour.fr/en/rankings", "https://www.letour.fr/en/rankings/stage-21"]);
+  assert.ok(snapshot.generalClassification.standings.length > 0);
+  assert.ok(snapshot.latestStage.standings.length > 0);
+});
+
+test("a live race on an ASO site is read at most every two minutes", async () => {
+  const { loadOfficialSnapshotThroughCache } = loadParserExports();
+  const today = new Date();
+  const live = { pageTitle: "2026 Tour de France", startDate: today, endDate: today };
+  let loads = 0;
+  const load = async () => ({ loads: ++loads });
+  await loadOfficialSnapshotThroughCache("stage|aso|x", live, load, { liveMinIntervalMs: 2 * 60 * 1000 });
+  const second = await loadOfficialSnapshotThroughCache("stage|aso|x", live, load, { liveMinIntervalMs: 2 * 60 * 1000 });
+  assert.equal(loads, 1);
+  assert.equal(second.loads, 1);
+  // Other providers keep reading a live race on every rebuild.
+  await loadOfficialSnapshotThroughCache("stage|other|x", live, load);
+  await loadOfficialSnapshotThroughCache("stage|other|x", live, load);
+  assert.equal(loads, 3);
 });
 
 test("buildTourDeFranceOfficialSnapshot builds a full stage + GC snapshot from letour.fr", () => {
@@ -2745,20 +2837,19 @@ test("fetchTourDeFranceFemmesOfficialSnapshot builds a stage + GC snapshot from 
         return readFixture("tour-de-france-femmes-rankings-stage6.html");
       }
 
-      if (url.includes("/ite/")) {
-        return readFixture("tour-de-france-femmes-stage6-ite.html");
-      }
-
       if (url.includes("/itg/")) {
         return readFixture("tour-de-france-femmes-stage6-itg.html");
       }
 
-      return "";
+      throw new Error(`unexpected request ${url}`);
     },
   );
 
   // The men's providers must not leak in: every request has to stay on letourfemmes.fr.
   assert.ok(fetchedUrls.every((url) => url.startsWith("https://www.letourfemmes.fr/")));
+  // The stage result is inline on the rankings page, five deep: no stage request at all.
+  assert.equal(fetchedUrls.length, 2);
+  assert.ok(fetchedUrls[1].includes("/itg/"));
   assert.equal(snapshot.totalStages, 9);
   assert.equal(snapshot.completedStages, 6);
   assert.equal(snapshot.latestStage.number, 6);
@@ -2806,15 +2897,24 @@ test("fetchVueltaAEspanaOfficialSnapshot builds a stage + GC snapshot from lavue
         return readFixture("vuelta-a-espana-stage5-itg.html");
       }
 
-      if (url.includes("/ite/")) {
+      // The public stage page (robots.txt allows it) carries the stage's table inline.
+      if (url === "https://www.lavuelta.es/en/rankings/stage-5") {
         return readFixture("vuelta-a-espana-stage5-ite.html");
       }
 
-      return "";
+      throw new Error(`unexpected request ${url}`);
     },
   );
 
   assert.ok(fetchedUrls.every((url) => url.startsWith("https://www.lavuelta.es/")));
+  // The inline stage table in this capture stops at three riders, so the public stage
+  // page is read for five; the stage partials under /en/ajax/ never are, and the GC
+  // partial is the one disallowed request left (kept until ASO answers).
+  assert.deepEqual(
+    fetchedUrls.map((url) => url.replace(/\/ajax\/ranking\/.*\/itg\/.*/, "/ajax/…/itg")),
+    ["https://www.lavuelta.es/en/rankings", "https://www.lavuelta.es/en/rankings/stage-5", "https://www.lavuelta.es/en/ajax/…/itg"],
+  );
+  assert.equal(snapshot.latestStage.standings.length, 5);
   // The stage menu, not the calendar span, is authoritative: the Vuelta has rest days.
   assert.equal(snapshot.totalStages, 21);
   assert.equal(snapshot.completedStages, 5);

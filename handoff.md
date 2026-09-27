@@ -1015,11 +1015,17 @@ ranking partials we read live (assessment L2, L6). The maintainer is writing to 
   article has no top five for that stage, and only when its leader matches the
   leadership table's leader for the stage (the guard against the drift that made
   `extractStageRaceSnapshot` ignore those blocks: the 2026 Vuelta's stage 2 block
-  carried the stage 1 leader). It helps every race, ASO or not. (2) Read ASO only
-  through the public pages `robots.txt` allows: `/en/rankings` carries the general
-  classification inline and `/en/rankings/stage-N` the stage result (checked on
-  lavuelta.es on 2026-09-27), two requests where today's path makes four, two of them
-  to disallowed partials. (3) A credit and a link to the organiser's rankings page on
+  carried the stage 1 leader). It helps every race, ASO or not. (2) Done 2026-09-27: ASO is read
+  through the public pages first (`fetchAsoStageRankingsHtml`,
+  `getAsoPublicStageRankingsUrl`). During a race `/en/rankings` carries the latest
+  stage's result inline; `/en/rankings/stage-N` carries any stage's *except the last*,
+  whose page shows the final GC tagged ITG; after the race `/en/rankings` carries the
+  final GC. The Vuelta Femenina and Auvergne parsers read the first table whatever its
+  type, so a page tagged ITG is never taken for a stage (it would print the GC leader
+  as the stage winner: caught on Auvergne's stage 8 page before shipping). Still
+  disallowed and still read until ASO answers: the itg partial during a race, the ite
+  partial on the last stage's evening, the ete partial on a team time trial. A live
+  ASO race is read at most every two minutes (`ASO_LIVE_MIN_INTERVAL_MS`). (3) A credit and a link to the organiser's rankings page on
   every ASO race card.
 
 ## The Journal

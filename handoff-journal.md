@@ -1158,4 +1158,9 @@ Traps met:
 - `selectStageArticleGcFallback` is built with tests; on the 13 finished stage races'
   current pages it changes only the Giro d'Italia Women (the main article names only
   the winner; the stage article fills the top five).
+- ASO public pages: checked against the live sites before shipping, and the check
+  found what fixtures could not: the last stage's public page carries the final GC,
+  not the stage. Run a changed provider against the real site (the races are over, so
+  it costs two requests each) before trusting captured fixtures. The before/after
+  `/api/races` diff was clean apart from one rider spelling now taken from Wikipedia.
 
