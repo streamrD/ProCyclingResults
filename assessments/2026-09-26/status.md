@@ -24,7 +24,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | L2 | open | Email to ASO (maintainer); code half (prefer the public rankings page) untouched |
 | R5 | closed | b644062 |
 | R6 | closed | b644062 |
-| R7 | open | Persist found finish videos; low value until L1 is settled |
+| R7 | closed | 2026-09-27: backlog search of every finished race and stage under per-rebuild and daily caps, `data/finish-videos.json` seeded at boot, `npm run refresh:finish-videos`, `/api/finish-videos` |
 | R8 | closed | 8c564a5 |
 | S3 | open | Queue item 6 |
 | S4 | open | Queue item 4 (`woff2_compress` is installed) |

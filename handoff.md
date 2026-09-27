@@ -442,6 +442,37 @@ clicking back to stage 1 of a Grand Tour offers that stage's finish.
   That entry is the video of the *race* finishing and belongs to the final stage; a
   per-stage map entry still outranks a searched one.
 
+### The backlog and the persisted file (2026-09-27)
+
+With `YOUTUBE_API_KEY` set, `enrichFinishVideoBacklog()` (called right after the two
+passes above in `buildRaceData`) covers everything the six-day window leaves out:
+every settled one-day race older than the window and every stage of every finished
+stage race, from `[...recentResults, ...finalizedStageRaces]`.
+`listFinishVideoBacklogSubjects()` lists them newest race first, last stage first,
+applies every cached hit without a search, and the pass then searches at most
+`FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT` (6) of the rest with `backlog: true`, which makes
+a hit final and a miss wait `FINISH_VIDEO_BACKLOG_MISS_TTL_MS` (a week), under a
+`FINISH_VIDEO_BACKLOG_BUDGET_MS` (4 s) wait; a slow lookup still lands in the cache
+for the next rebuild. The lookups are counted in `finishVideoLookupLog` (a rolling
+day) and `resolveRaceFinishVideoUrl` refuses the 91st in 24 hours
+(`FINISH_VIDEO_DAILY_LOOKUP_CAP`); the backlog stops at 60
+(`FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP`) so the live and recent passes keep their
+room. The final stage of a finished stage race and the race itself share one cache
+key (`getFinishVideoCacheKey`: page title plus `getRaceCoverageStageNumber`), which is
+why the backlog's stage subject also writes `latestStage.finishVideoUrl`. Without a
+key the backlog applies cached hits but searches nothing: the search page is not to be
+read for old races.
+
+`data/finish-videos.json` is the persisted store, kept the way `stage-profiles.json`
+is: `loadPersistedFinishVideos()` seeds `finishVideoCache` at load with
+`persistent: true` entries that never expire, `/api/finish-videos` lists every video
+the process knows in the file's shape, and `npm run refresh:finish-videos` (default
+`--from https://procyclingresults.up.railway.app`) merges that into the file for the
+maintainer to commit. Run it every few days while the backlog fills (roughly 170
+videos at 60 a day). `/api/data-status` reports `finishVideos.known` and
+`finishVideos.lookupsLast24h`, and each rebuild that searched logs one
+`finish-video-backlog` line with what it searched, found and still has pending.
+
 ## Full Results Links (2026-09-12)
 
 The cards stop at five on purpose; the full placings are one click away on

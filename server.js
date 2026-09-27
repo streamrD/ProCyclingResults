@@ -57,6 +57,20 @@ const FINISH_VIDEO_LOOKUP_LIMIT = 6;
 // Earlier stages of a live race are resolved a few per refresh rather than all at once.
 const STAGE_FINISH_VIDEO_LOOKUP_LIMIT = 4;
 const FINISH_VIDEO_MAX_AGE_DAYS = 6;
+// Everything finished earlier than that is the backlog: every settled one-day race and
+// every stage of every finished stage race. It is searched only through the Data API
+// (never the search page), a few per rebuild and never past the daily cap, newest race
+// first so the cards nearest the top of the page fill first. A backlog hit is kept for
+// good and a miss for a week, and whatever is found is committed to
+// data/finish-videos.json by `npm run refresh:finish-videos`, so a redeploy starts
+// from it instead of forgetting every video. The caps keep the API inside its free
+// quota: a lookup is 102 of the 10,000 units a day, so 90 lookups in any 24 hours,
+// 60 of them backlog, leaving the rest for the live and recent races.
+const FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT = 6;
+const FINISH_VIDEO_BACKLOG_BUDGET_MS = 4000;
+const FINISH_VIDEO_BACKLOG_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const FINISH_VIDEO_DAILY_LOOKUP_CAP = 90;
+const FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP = 60;
 // A plausible highlights runtime: long enough to be real coverage rather than a
 // clip/Short, short enough to exclude full-stage replays and livestream VODs.
 const FINISH_VIDEO_MIN_LENGTH_SECONDS = 2 * 60;
@@ -1443,6 +1457,8 @@ const deferredGroupDataCaches = new Map();
 
 const articleCache = new Map();
 const finishVideoCache = new Map();
+// Timestamps of the YouTube lookups made in the last day, for the daily caps.
+const finishVideoLookupLog = [];
 // Channels whose cycling highlights are reliable. The race's own official channel
 // is scored separately (by matching race tokens in the channel name), so this list
 // is for the major broadcasters that cover many races.
@@ -8691,6 +8707,7 @@ async function buildRaceData(metadata, options = {}) {
   // dominate cold-start latency; failures degrade silently to no link.
   await enrichFinishVideos([...recentResults, ...liveStageRaces, ...selectedEuropeTourRecentResults, ...selectedEuropeTourLiveStageRaces]);
   await enrichStageFinishVideos([...liveStageRaces, ...selectedEuropeTourLiveStageRaces]);
+  await enrichFinishVideoBacklog([...recentResults, ...finalizedStageRaces], now);
   await enrichStageProfiles([...liveStageRaces, ...finalizedStageRaces, ...recentResults]);
   // Settle a rider's spelling before anything renders, so a card cannot show its
   // general classification and its stage table calling the same rider two names.
@@ -9286,6 +9303,10 @@ function describeDataStatus(data, { now = Date.now(), raceCache = raceDataCache,
       nationalChampionships: countOf(nationals?.rows),
     },
     nationalsError: nationals?.error ? String(nationals.error) : null,
+    finishVideos: {
+      known: [...finishVideoCache.values()].filter((entry) => entry?.url).length,
+      lookupsLast24h: countRecentFinishVideoLookups(now),
+    },
     lastBuildAt: raceCache.lastBuildAt || null,
     lastBuildError: raceCache.lastBuildError || null,
     metadata: {
@@ -9755,26 +9776,63 @@ function hasCuratedFinishVideo(race) {
   return Boolean(mapped[getRaceCoverageStageNumber(race)]);
 }
 
-async function resolveRaceFinishVideoUrl(race, { now = Date.now(), lookup = fetchYouTubeFinishVideoUrl } = {}) {
-  const key = `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
-  const cached = finishVideoCache.get(key);
-  // A miss is retried every 20 minutes for the first six hours after a stage is first
-  // searched, when its video is expected to appear, and every six hours after that; a
-  // hit is kept for six hours. So a stage costs at most 18 searches in its first six
-  // hours and four a day thereafter, video or not, until the six-day window closes.
-  // Until 2026-09-27 a miss was retried every 20 minutes for the whole window.
-  const firstSearchedAt = cached?.firstSearchedAt || cached?.updatedAt || now;
-  if (cached) {
-    const missRetriesQuickly = !cached.url && now - firstSearchedAt < FINISH_VIDEO_CACHE_TTL_MS;
-    const ttl = missRetriesQuickly ? FINISH_VIDEO_MISS_CACHE_TTL_MS : FINISH_VIDEO_CACHE_TTL_MS;
-    if (now - cached.updatedAt < ttl) {
-      return cached.url;
-    }
+function getFinishVideoCacheKey(race) {
+  return `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
+}
+
+function countRecentFinishVideoLookups(now = Date.now()) {
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  while (finishVideoLookupLog.length > 0 && finishVideoLookupLog[0] <= dayAgo) {
+    finishVideoLookupLog.shift();
   }
+  return finishVideoLookupLog.length;
+}
+
+// Whether a cache entry is stale enough to search again. A miss is retried every 20
+// minutes for the first six hours after a stage is first searched, when its video is
+// expected to appear, and every six hours after that; a hit is kept for six hours. So
+// a stage costs at most 18 searches in its first six hours and four a day thereafter,
+// video or not, until the six-day window closes. Until 2026-09-27 a miss was retried
+// every 20 minutes for the whole window. A backlog entry (a race older than the window)
+// is different: its hit is final and its miss waits a week, and a seeded entry from
+// data/finish-videos.json never expires.
+function isFinishVideoLookupDue(cached, now, backlog = false) {
+  if (!cached) {
+    return true;
+  }
+  if (cached.url && (cached.persistent || backlog)) {
+    return false;
+  }
+  const firstSearchedAt = cached.firstSearchedAt || cached.updatedAt || now;
+  const missRetriesQuickly = !cached.url && now - firstSearchedAt < FINISH_VIDEO_CACHE_TTL_MS;
+  const ttl = backlog
+    ? FINISH_VIDEO_BACKLOG_MISS_TTL_MS
+    : missRetriesQuickly
+      ? FINISH_VIDEO_MISS_CACHE_TTL_MS
+      : FINISH_VIDEO_CACHE_TTL_MS;
+  return now - cached.updatedAt >= ttl;
+}
+
+async function resolveRaceFinishVideoUrl(
+  race,
+  { now = Date.now(), lookup = fetchYouTubeFinishVideoUrl, backlog = false } = {},
+) {
+  const key = getFinishVideoCacheKey(race);
+  const cached = finishVideoCache.get(key);
+  const firstSearchedAt = cached?.firstSearchedAt || cached?.updatedAt || now;
+  if (!isFinishVideoLookupDue(cached, now, backlog)) {
+    return cached.url;
+  }
+  // The daily cap is the API's quota; past it a live stage keeps whatever it has
+  // until the window rolls on.
+  if (countRecentFinishVideoLookups(now) >= FINISH_VIDEO_DAILY_LOOKUP_CAP) {
+    return cached?.url || "";
+  }
+  finishVideoLookupLog.push(now);
 
   try {
     const url = await lookup(race);
-    finishVideoCache.set(key, { updatedAt: now, url, firstSearchedAt });
+    finishVideoCache.set(key, { updatedAt: now, url, firstSearchedAt, persistent: backlog && Boolean(url) });
     return url;
   } catch {
     if (cached) {
@@ -9783,6 +9841,52 @@ async function resolveRaceFinishVideoUrl(race, { now = Date.now(), lookup = fetc
     finishVideoCache.set(key, { updatedAt: now, url: "", firstSearchedAt });
     return "";
   }
+}
+
+// The in-memory cache dies with every deploy, so the videos found are also committed
+// to data/finish-videos.json by scripts/refresh-finish-videos.js (which reads them
+// from a running server's /api/finish-videos) and seeded from there at startup. The
+// path is resolved here and not at load time because the test harness has no
+// __dirname. Hand-picked videos stay in RACE_FINISH_VIDEO_URLS, which wins at render.
+function getPersistedFinishVideoPath() {
+  return path.join(process.cwd(), "data", "finish-videos.json");
+}
+
+function loadPersistedFinishVideos(filePath = getPersistedFinishVideoPath()) {
+  let entries;
+  try {
+    entries = JSON.parse(require("fs").readFileSync(filePath, "utf8"));
+  } catch (error) {
+    return 0;
+  }
+
+  let seeded = 0;
+  Object.entries(entries?.videos || {}).forEach(([key, entry]) => {
+    const url = safeHttpUrl(typeof entry === "string" ? entry : entry?.url || "");
+    if (!url || !/\|\d+$/.test(key)) {
+      return;
+    }
+    const foundAt = Date.parse(entry?.foundAt || "") || Date.now();
+    finishVideoCache.set(key, { updatedAt: Date.now(), url, firstSearchedAt: foundAt, foundAt, persistent: true });
+    seeded += 1;
+  });
+  return seeded;
+}
+
+loadPersistedFinishVideos();
+
+// Every video the process knows, seeded or found, in the file's own shape so the
+// refresh script can merge it straight in. Misses are not listed: a redeploy asks
+// about them again, within the caps.
+function listFoundFinishVideos() {
+  const videos = {};
+  [...finishVideoCache.entries()]
+    .filter(([, entry]) => entry?.url)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([key, entry]) => {
+      videos[key] = { url: entry.url, foundAt: new Date(entry.foundAt || entry.updatedAt || Date.now()).toISOString() };
+    });
+  return { videos };
 }
 
 function shouldSearchFinishVideo(race, todayUtc) {
@@ -9818,7 +9922,7 @@ async function enrichFinishVideos(races, now = new Date()) {
     if (!shouldSearchFinishVideo(race, todayUtc)) {
       continue;
     }
-    const key = `${getRaceId(race)}|${getRaceCoverageStageNumber(race)}`;
+    const key = getFinishVideoCacheKey(race);
     if (seenKeys.has(key)) {
       continue;
     }
@@ -10267,6 +10371,130 @@ async function enrichStageFinishVideos(races, now = new Date()) {
   );
 
   return races;
+}
+
+// The backlog: every finished one-day race older than the recent window and every
+// stage of every finished stage race. Known videos (seeded from the file or found on
+// an earlier rebuild) are applied to every card without a search; the rest are
+// searched newest race first, last stage first, at most
+// FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT per rebuild and only while the day's count is
+// under FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP, so a season's 170-odd missing videos
+// fill in over a few days. Only with the Data API key: the search page is not to be
+// read for old races. The lookups are given a short budget; a slow one still lands in
+// the cache and shows on the next rebuild.
+function listFinishVideoBacklogSubjects(races, todayUtc) {
+  const subjects = [];
+  const seenRaces = new Set();
+  const seenKeys = new Set();
+  const finished = (races || [])
+    .filter((race) => {
+      const endUtc = toUtcDateOnly(race?.endDate);
+      return endUtc && endUtc.getTime() <= todayUtc.getTime() && (!isMultiDayRace(race) || isFinalizedStageRace(race));
+    })
+    .sort((left, right) => right.endDate - left.endDate);
+
+  for (const race of finished) {
+    const raceId = getRaceId(race);
+    if (seenRaces.has(raceId)) {
+      continue;
+    }
+    seenRaces.add(raceId);
+    const ageDays = Math.floor((todayUtc.getTime() - toUtcDateOnly(race.endDate).getTime()) / (24 * 60 * 60 * 1000));
+
+    if (!isMultiDayRace(race)) {
+      // The recent pass owns the window; the backlog starts where it stops.
+      if (ageDays <= FINISH_VIDEO_MAX_AGE_DAYS || hasCuratedFinishVideo(race) || race.finishVideoUrl) {
+        continue;
+      }
+      subjects.push({
+        key: getFinishVideoCacheKey(race),
+        subject: race,
+        apply: (url) => {
+          race.finishVideoUrl = race.finishVideoUrl || url;
+        },
+      });
+      continue;
+    }
+
+    for (const stage of [...(race.stageRace?.stages || [])].reverse()) {
+      if ((stage?.standings?.length || 0) === 0 || !(stage.number > 0)) {
+        continue;
+      }
+      const subject = buildStageFinishVideoSubject(race, stage);
+      const key = getFinishVideoCacheKey(subject);
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      const isLatest = stage.number === getRaceCoverageStageNumber(race);
+      if (hasCuratedFinishVideo(subject)) {
+        stage.finishVideoUrl = stage.finishVideoUrl || getRaceFinishVideoUrl(subject);
+        continue;
+      }
+      if (stage.finishVideoUrl || (isLatest && race.stageRace?.latestStage?.finishVideoUrl)) {
+        continue;
+      }
+      subjects.push({
+        key,
+        subject,
+        apply: (url) => {
+          stage.finishVideoUrl = stage.finishVideoUrl || url;
+          if (isLatest && race.stageRace?.latestStage) {
+            race.stageRace.latestStage.finishVideoUrl = race.stageRace.latestStage.finishVideoUrl || url;
+          }
+        },
+      });
+    }
+  }
+  return subjects;
+}
+
+async function enrichFinishVideoBacklog(
+  races,
+  now = new Date(),
+  { apiKey = process.env.YOUTUBE_API_KEY, lookup, budgetMs = FINISH_VIDEO_BACKLOG_BUDGET_MS } = {},
+) {
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const nowMs = now.getTime();
+  const subjects = listFinishVideoBacklogSubjects(races, todayUtc);
+  const searchable = [];
+  let known = 0;
+  subjects.forEach((entry) => {
+    const cached = finishVideoCache.get(entry.key);
+    if (cached?.url) {
+      entry.apply(cached.url);
+      known += 1;
+    } else if (isFinishVideoLookupDue(cached, nowMs, true)) {
+      searchable.push(entry);
+    }
+  });
+
+  // known: videos applied from the cache this time; pending: stages due a search.
+  const summary = { known, pending: searchable.length, searched: 0, found: 0 };
+  if (!String(apiKey || "").trim() || searchable.length === 0) {
+    return summary;
+  }
+
+  const room = FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP - countRecentFinishVideoLookups(nowMs);
+  const batch = searchable.slice(0, Math.max(0, Math.min(FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT, room)));
+  summary.searched = batch.length;
+  const lookups = batch.map(async (entry) => {
+    const url = await resolveRaceFinishVideoUrl(entry.subject, { now: nowMs, backlog: true, ...(lookup ? { lookup } : {}) });
+    if (url) {
+      entry.apply(url);
+      summary.found += 1;
+    }
+  });
+  if (lookups.length > 0) {
+    await Promise.race([Promise.all(lookups), sleep(budgetMs)]);
+    logEvent("info", "finish-video-backlog", {
+      searched: summary.searched,
+      found: summary.found,
+      pending: summary.pending - summary.searched,
+      lookupsToday: countRecentFinishVideoLookups(nowMs),
+    });
+  }
+  return summary;
 }
 
 // Both getters answer with an http(s) address or nothing: the curated map is ours,
@@ -18691,6 +18919,12 @@ const server = http.createServer(async (request, response) => {
 
       if (url.pathname === "/api/data-status") {
         sendJson(response, 200, await buildDataStatusPayload());
+        return;
+      }
+
+      // Every finish video this process knows, for scripts/refresh-finish-videos.js.
+      if (url.pathname === "/api/finish-videos") {
+        sendJson(response, 200, listFoundFinishVideos());
         return;
       }
 

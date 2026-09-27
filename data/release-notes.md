@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 27 September 2026
+
+- **Every finished race gets its finish video back.** The site now looks for the finish highlights of every race and stage run this season, not only the last week's, a few at a time, and remembers what it finds across updates instead of starting over.
+
 ## 26 September 2026
 
 - **The first screen says where the season stands.** The hero now opens with how many WorldTour races have been run and what comes next, the Worlds included, and names the day's winner under the timestamp. On a phone the five section buttons are one row of chips, so the first result is a shorter scroll away.

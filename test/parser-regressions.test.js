@@ -253,6 +253,12 @@ function loadParserExports() {
       describeYouTubePublishedAge,
       resolveRaceFinishVideoUrl,
       finishVideoCache,
+      finishVideoLookupLog,
+      isFinishVideoLookupDue,
+      loadPersistedFinishVideos,
+      listFoundFinishVideos,
+      listFinishVideoBacklogSubjects,
+      enrichFinishVideoBacklog,
       getStaticStageRaceSnapshotForTest: (pageTitle, endDateIso) =>
         getStaticStageRaceSnapshot({ pageTitle, endDate: new Date(endDateIso) }),
       logEvent,
@@ -5171,6 +5177,156 @@ test("buildStageSwitcherMarkup links each stage to its own finish video", () => 
   assert.doesNotMatch(stageOnePanel, /watch\?v=stage2/);
   assert.match(stageTwoPanel, /watch\?v=stage2/);
   assert.equal((html.match(/race-finish-link/g) || []).length, 2);
+});
+
+test("resolveRaceFinishVideoUrl stops searching at the daily cap and keeps what it has", async () => {
+  const { resolveRaceFinishVideoUrl, finishVideoCache, finishVideoLookupLog } = loadParserExports();
+  finishVideoCache.clear();
+  const now = Date.parse("2026-07-26T17:00:00Z");
+  let calls = 0;
+  const lookup = async () => {
+    calls += 1;
+    return "https://www.youtube.com/watch?v=found";
+  };
+  for (let index = 0; index < 90; index += 1) {
+    finishVideoLookupLog.push(now - index * 60 * 1000);
+  }
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now, lookup }), "");
+  assert.equal(calls, 0, "the 91st lookup of the day is not made");
+  // A day later the window has rolled on.
+  const later = now + 25 * 60 * 60 * 1000;
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now: later, lookup }), "https://www.youtube.com/watch?v=found");
+  assert.equal(calls, 1);
+  assert.equal(finishVideoLookupLog.length, 1, "the log forgets lookups older than a day");
+});
+
+test("loadPersistedFinishVideos seeds the cache with entries that never expire", async () => {
+  const { loadPersistedFinishVideos, listFoundFinishVideos, isFinishVideoLookupDue, resolveRaceFinishVideoUrl, finishVideoCache } =
+    loadParserExports();
+  finishVideoCache.clear();
+  const filePath = path.join(require("os").tmpdir(), `finish-videos-${process.pid}.json`);
+  fs.writeFileSync(
+    filePath,
+    JSON.stringify({
+      videos: {
+        "2026 Tour de France|21": { url: "https://www.youtube.com/watch?v=seeded", foundAt: "2026-07-26T20:00:00.000Z" },
+        "2026 Tour de France|20": { url: "javascript:alert(1)", foundAt: "2026-07-25T20:00:00.000Z" },
+        "not a key": { url: "https://www.youtube.com/watch?v=stray" },
+      },
+    }),
+  );
+  try {
+    assert.equal(loadPersistedFinishVideos(filePath), 1, "only a well-formed key with an http(s) address is seeded");
+    assert.equal(loadPersistedFinishVideos(path.join(require("os").tmpdir(), "missing-finish-videos.json")), 0);
+  } finally {
+    fs.unlinkSync(filePath);
+  }
+  const seeded = finishVideoCache.get("2026 Tour de France|21");
+  assert.equal(seeded.url, "https://www.youtube.com/watch?v=seeded");
+  assert.equal(isFinishVideoLookupDue(seeded, Date.now() + 365 * 24 * 60 * 60 * 1000), false, "a seeded hit is never searched again");
+  let calls = 0;
+  const url = await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, {
+    now: Date.now() + 365 * 24 * 60 * 60 * 1000,
+    lookup: async () => {
+      calls += 1;
+      return "";
+    },
+  });
+  assert.equal(url, "https://www.youtube.com/watch?v=seeded");
+  assert.equal(calls, 0);
+  // The VM realm has its own Object, so compare plain copies.
+  assert.deepEqual(JSON.parse(JSON.stringify(listFoundFinishVideos())), {
+    videos: { "2026 Tour de France|21": { url: "https://www.youtube.com/watch?v=seeded", foundAt: "2026-07-26T20:00:00.000Z" } },
+  });
+});
+
+test("enrichFinishVideoBacklog applies known videos to every finished stage and searches the rest newest first within the caps", async () => {
+  const { enrichFinishVideoBacklog, buildFinishVideoQuery, finishVideoCache, finishVideoLookupLog } = loadParserExports();
+  finishVideoCache.clear();
+  finishVideoLookupLog.length = 0;
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  const stage = (number) => ({ number, order: number, label: `Stage ${number}`, standings: [{ place: "1", rider: "Rider" }] });
+  const stageRaceOf = (pageTitle, start, end, stageCount) => ({
+    pageTitle,
+    title: pageTitle.slice(5),
+    startDate: new Date(start),
+    endDate: new Date(end),
+    stageRace: {
+      totalStages: stageCount,
+      completedStages: stageCount,
+      latestStage: { number: stageCount, standings: [{ place: "1", rider: "Rider" }] },
+      stages: Array.from({ length: stageCount }, (_, index) => stage(index + 1)),
+    },
+  });
+  const oneDayOf = (pageTitle, day) => ({ pageTitle, title: pageTitle.slice(5), startDate: new Date(day), endDate: new Date(day) });
+  const pologne = stageRaceOf("2026 Tour de Pologne", "2026-08-24T00:00:00Z", "2026-08-30T00:00:00Z", 3);
+  const basque = stageRaceOf("2026 Tour of the Basque Country", "2026-04-06T00:00:00Z", "2026-04-11T00:00:00Z", 4);
+  const bretagne = oneDayOf("2026 Bretagne Classic", "2026-09-05T00:00:00Z");
+  const recent = oneDayOf("2026 Clásica de San Sebastián", "2026-09-24T00:00:00Z");
+  const live = stageRaceOf("2026 Tour of Britain", "2026-09-22T00:00:00Z", "2026-09-28T00:00:00Z", 6);
+  live.stageRace.completedStages = 4;
+  const now = new Date("2026-09-27T12:00:00Z");
+  finishVideoCache.set("2026 Tour de Pologne|3", { updatedAt: 0, url: "https://www.youtube.com/watch?v=known", persistent: true });
+
+  const queries = [];
+  const lookup = async (subject) => {
+    const query = buildFinishVideoQuery(subject);
+    queries.push(query);
+    return /stage 2/.test(query) ? `https://www.youtube.com/watch?v=${queries.length}` : "";
+  };
+
+  // No key: known videos are applied, nothing is searched.
+  let summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "", lookup });
+  assert.equal(pologne.stageRace.stages[2].finishVideoUrl, "https://www.youtube.com/watch?v=known");
+  assert.equal(pologne.stageRace.latestStage.finishVideoUrl, "https://www.youtube.com/watch?v=known", "the final stage is the race's video too");
+  assert.deepEqual(queries, []);
+  assert.deepEqual(plain(summary), { known: 1, pending: 7, searched: 0, found: 0 });
+
+  // With the key: six per rebuild, newest race first, last stage first; the recent
+  // race and the live race belong to the other passes.
+  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "test", lookup });
+  assert.deepEqual(queries, [
+    "Bretagne Classic 2026 highlights",
+    "Tour de Pologne 2026 stage 2 highlights",
+    "Tour de Pologne 2026 stage 1 highlights",
+    "Tour of the Basque Country 2026 stage 4 highlights",
+    "Tour of the Basque Country 2026 stage 3 highlights",
+    "Tour of the Basque Country 2026 stage 2 highlights",
+  ]);
+  // "known" counts what this call applied; stage 3 already carried its video.
+  assert.deepEqual(plain(summary), { known: 0, pending: 7, searched: 6, found: 2 });
+  assert.equal(pologne.stageRace.stages[1].finishVideoUrl, "https://www.youtube.com/watch?v=2");
+  assert.equal(basque.stageRace.stages[1].finishVideoUrl, "https://www.youtube.com/watch?v=6");
+  assert.equal(basque.stageRace.stages[0].finishVideoUrl, undefined, "the seventh waits for the next rebuild");
+  assert.equal(bretagne.finishVideoUrl, undefined);
+  assert.equal(recent.finishVideoUrl, undefined);
+  assert.equal(live.stageRace.stages[3].finishVideoUrl, undefined);
+  assert.equal(finishVideoLookupLog.length, 6);
+
+  // The next rebuild searches only the one left over: a backlog hit is final and a
+  // miss waits a week.
+  queries.length = 0;
+  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "test", lookup });
+  assert.deepEqual(queries, ["Tour of the Basque Country 2026 stage 1 highlights"]);
+  assert.deepEqual(plain(summary), { known: 0, pending: 1, searched: 1, found: 0 });
+  queries.length = 0;
+  const weekLater = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+  await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], weekLater, { apiKey: "test", lookup });
+  // The five misses again, plus the one-day race that has aged out of the recent window.
+  assert.equal(queries.length, 6, "the misses are asked about again after a week");
+  assert.ok(queries.includes("Clásica de San Sebastián 2026 highlights"));
+
+  // The daily backlog cap: with sixty lookups in the last day nothing more is searched.
+  queries.length = 0;
+  finishVideoLookupLog.length = 0;
+  for (let index = 0; index < 60; index += 1) {
+    finishVideoLookupLog.push(now.getTime() - index * 1000);
+  }
+  const fresh = stageRaceOf("2026 Tour de Pologne", "2026-08-24T00:00:00Z", "2026-08-30T00:00:00Z", 3);
+  finishVideoCache.clear();
+  summary = await enrichFinishVideoBacklog([fresh], now, { apiKey: "test", lookup });
+  assert.deepEqual(queries, []);
+  assert.deepEqual(plain(summary), { known: 0, pending: 3, searched: 0, found: 0 });
 });
 
 test("enrichStageFinishVideos leaves finished races alone and fills curated stages without a search", async () => {
