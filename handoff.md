@@ -993,17 +993,24 @@ ranking partials we read live (assessment L2, L6). The maintainer is writing to 
   Wikipedia, sequential, cached). Minutes after the first Wikipedia revision naming
   the stage winner, which lands within minutes of the finish (17:10–17:50 local):
 
-  | Race | Stage top five | GC leader | GC top five, main article only | GC top five, with companion articles |
+  | Race | Stage top five | GC leader | GC top five, main article only | GC top five, with the guarded fallback |
   |---|---|---|---|---|
-  | Tour de France | 34m median | 1m | 36m median, 5 of 20 stages over 3h | 21m, none over 3h |
-  | Vuelta a España | 51m | 36m | 14.5h, 13 of 20 over 3h | 52m, 2 over 3h |
-  | Tour de France Femmes | 69m | 2m | 24.2h, 5 of 9 over 3h | 38m, 1 over 3h |
-  | La Vuelta Femenina | 4.6h | 3m | 6.3h, 5 of 7 over 3h | 52m, 2 over 3h |
+  | Tour de France | 34m median | 1m | 27m, none over 3h | 21m, none over 3h |
+  | Vuelta a España | 51m | 36m | 2.8h, 8 of 20 over 3h | 1.6h, 5 of 20 over 3h |
+  | Tour de France Femmes | 69m | 2m | 1.7h, 1 of 9 over 3h | 84m, 1 of 9 over 3h |
+  | La Vuelta Femenina | 4.6h | 3m | 2.1h, 3 of 7 over 3h | 52m, 2 of 7 over 3h |
+
+  An unguarded fallback would reach the Vuelta's top five in 52m (2 over 3h), but one
+  of the stages it wins is the stale stage 2 copy; the rest wait for the leadership
+  table to name that stage's leader. A first version of the replay bisected the
+  revisions and reported many stages a day late: edits that remove a table and restore
+  it later make the condition non-monotonic, so the tool now scans every revision.
 
   The Tour's stage 21 *is* on Wikipedia (it arrived with its top five at 20:09 local);
   the older note that only letour.fr had it does not hold for 2026. Stage 1 of the
   Tour was a team time trial, so it has no rider winner in either source.
-- **What to build for the fallback, in order.** (1) A GC fallback from the companion
+- **What to build for the fallback, in order.** (1) Built 2026-09-27
+  (`selectStageArticleGcFallback`): a GC fallback from the companion
   articles' "General classification after Stage N" blocks, used only while the main
   article has no top five for that stage, and only when its leader matches the
   leadership table's leader for the stage (the guard against the drift that made

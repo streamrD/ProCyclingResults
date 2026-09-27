@@ -4,8 +4,8 @@
 // its route table linked at that moment). Read-only, sequential, cached on disk.
 // Written 2026-09-27 to answer "what would the Grand Tour cards look like without
 // ASO's rankings pages?" (see "If ASO Says No" in handoff.md). Conditions per stage:
-// winner, stage top five, GC leader, GC top five from the main article (what the
-// parser reads today), and GC top five from the companion stage articles.
+// winner, stage top five, GC leader, GC top five as the parser reads it now, from the
+// main article alone, from the companion stage articles alone, and from either.
 // Usage: node assessments/tools/area9/wiki-replay.js "2026 Tour de France" [more titles...]
 // Revisions are cached in $REPLAY_CACHE (default: the OS temp dir); results are
 // written to $OUT (default wiki-replay-results.json) in the current directory.
@@ -118,6 +118,8 @@ async function replayRace(title) {
     const texts = [];
     for (const revid of companionRevs) texts.push(await revisionText(revid));
     const snapshot = D.extractStageRaceSnapshot(mainText, texts, new Map());
+    // What the main article alone gives, for comparison with the companion fallback.
+    snapshot.mainOnlyGc = D.extractStageRaceSnapshot(mainText, [], new Map()).generalClassification;
     snapshot.companionGc = new Map();
     texts.flatMap((text) => D.extractCyclingResultBlocks(text)).forEach((block) => {
       const match = D.normalizeSearchText(block.title).match(/\bgeneral classification after stage\s+(\d+)\b/);
@@ -143,7 +145,8 @@ async function replayRace(title) {
     top5: (s, n) => (s?.stages || []).some((stage) => stage.number === n && stage.standings.length >= 5),
     gcLeader: (s, n) => (s?.generalClassification?.stageNumber || 0) >= n && s.generalClassification.standings.length >= 1,
     companionGcTop5: (s, n) => (s?.companionGc?.get(n) || 0) >= 5,
-    eitherGcTop5: (s, n) => (s?.companionGc?.get(n) || 0) >= 5 || ((s?.generalClassification?.stageNumber || 0) >= n && s.generalClassification.standings.length >= 5),
+    mainGcTop5: (s, n) => (s?.mainOnlyGc?.stageNumber || 0) >= n && s.mainOnlyGc.standings.length >= 5,
+    eitherGcTop5: (s, n) => (s?.companionGc?.get(n) || 0) >= 5 || ((s?.mainOnlyGc?.stageNumber || 0) >= n && s.mainOnlyGc.standings.length >= 5),
     gcTop5: (s, n) => (s?.generalClassification?.stageNumber || 0) >= n && s.generalClassification.standings.length >= 5,
   };
 
@@ -157,14 +160,15 @@ async function replayRace(title) {
     const points = await timeline(lo, hi);
     const row = { stage: n, date: entry.date };
     for (const [name, test] of Object.entries(conditions)) {
-      if (!test(await snapshotAt(points[points.length - 1]), n)) { row[name] = null; continue; }
+      // The first moment the condition holds, scanning every revision in order. Not a
+      // binary search: edits remove a table and restore it later often enough that a
+      // bisection lands on a later reappearance (it put a stage 24 hours late whose
+      // table was there 30 minutes after the finish).
       if (test(await snapshotAt(points[0]), n)) { row[name] = "before"; continue; }
-      let low = 0, high = points.length - 1; // test false at low, true at high
-      while (high - low > 1) {
-        const mid = (low + high) >> 1;
-        if (test(await snapshotAt(points[mid]), n)) high = mid; else low = mid;
+      row[name] = null;
+      for (const point of points.slice(1)) {
+        if (test(await snapshotAt(point), n)) { row[name] = new Date(point).toISOString(); break; }
       }
-      row[name] = new Date(points[high]).toISOString();
     }
     const finalAtHi = await snapshotAt(hi);
     row.depthAt72h = (finalAtHi?.stages || []).find((stage) => stage.number === n)?.standings.length || 0;

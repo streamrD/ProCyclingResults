@@ -4381,14 +4381,77 @@ async function loadStageRaceTeamNames(rawText, stageArticleTexts = []) {
   return references.length > 0 ? resolveTeamNames(references) : new Map();
 }
 
+// A companion article's "General classification after Stage N" block, used only while
+// the main article has nothing as new or as deep for that stage. Replayed over the 2026
+// Grand Tours' revision histories (assessments/tools/area9/wiki-replay.js), the main
+// article's classification table trailed the finish by a median 14.5 hours on the
+// Vuelta and a day on the Tour Femmes, while the companion blocks landed within the
+// hour. Because those blocks are hand-copied, one is taken only when its leader is the
+// leader the main article's leadership table names for the same stage, and its
+// leader's time is later than the previous stage's classification and no shorter than
+// the stage winner's time — the stale copy found on the 2026 Vuelta (the stage 2
+// block carrying the stage 1 time, 10:57 for 4:58:40) fails the second test.
+function selectStageArticleGcFallback(mainLatestGc, stageArticleGcResults, { leadershipGcResults = [], earlierGcResults = [], stages = [] } = {}) {
+  const mainStage = mainLatestGc?.stageNumber || 0;
+  const candidates = [...(stageArticleGcResults || [])]
+    .filter((entry) => entry.stageNumber >= mainStage && entry.standings.length > 1)
+    .sort((left, right) => right.stageNumber - left.stageNumber);
+
+  for (const candidate of candidates) {
+    if (candidate.stageNumber === mainStage && mainLatestGc.standings.length >= candidate.standings.length) {
+      return null;
+    }
+    const leader = candidate.standings[0];
+    const tableLeader = leadershipGcResults.find((entry) => entry.stageNumber === candidate.stageNumber)?.standings[0];
+    if (!tableLeader || !isSameRiderEntry(leader, tableLeader)) {
+      continue;
+    }
+    const leaderSeconds = parseClockSeconds(leader.time || "");
+    if (leaderSeconds === null) {
+      continue;
+    }
+    const previous = earlierGcResults
+      .filter((entry) => entry.stageNumber < candidate.stageNumber && parseClockSeconds(entry.standings[0]?.time || "") !== null)
+      .sort((left, right) => right.stageNumber - left.stageNumber)[0];
+    if (previous && leaderSeconds <= parseClockSeconds(previous.standings[0].time)) {
+      continue;
+    }
+    const stageWinnerSeconds = parseClockSeconds(
+      (stages.find((stage) => stage.number === candidate.stageNumber)?.standings[0]?.time) || "",
+    );
+    if (stageWinnerSeconds !== null && leaderSeconds < stageWinnerSeconds) {
+      continue;
+    }
+    return candidate;
+  }
+  return null;
+}
+
+function isSameRiderEntry(left, right) {
+  if (left?.pageTitle && right?.pageTitle && left.pageTitle === right.pageTitle) {
+    return true;
+  }
+  const leftKey = foldRiderKey(left?.rider || "");
+  const rightKey = foldRiderKey(right?.rider || "");
+  if (!leftKey || !rightKey) {
+    return false;
+  }
+  if (leftKey === rightKey) {
+    return true;
+  }
+  const [shorter, longer] = leftKey.length <= rightKey.length ? [leftKey, rightKey] : [rightKey, leftKey];
+  return isRiderNameVariant(shorter.split(" "), longer.split(" "));
+}
+
 function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = new Map()) {
   const blocks = extractCyclingResultBlocks(rawText);
   const stageArticleBlocks = (Array.isArray(stageArticleTexts) ? stageArticleTexts : [stageArticleTexts])
     .flatMap((text) => extractCyclingResultBlocks(text));
   const stageResults = [];
   const gcResults = [];
+  const stageArticleGcResults = [];
 
-  const readResultBlock = (block, allowGeneralClassification) => {
+  const readResultBlock = (block, gcTarget) => {
     const title = normalizeSearchText(block.title);
     const stageMatch = title.match(/\bstage\s+(\d+)\s+result\b/);
     const gcMatch = title.match(/\bgeneral classification after stage\s+(\d+)\b/);
@@ -4401,21 +4464,21 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
       });
     }
 
-    if (allowGeneralClassification && gcMatch && standings.length > 0) {
-      gcResults.push({
+    if (gcTarget && gcMatch && standings.length > 0) {
+      gcTarget.push({
         stageNumber: Number(gcMatch[1]),
         standings,
       });
     }
   };
 
-  blocks.forEach((block) => readResultBlock(block, true));
-  // Companion stage articles contribute their stage podiums only. They also repeat a
-  // "General classification after Stage N" block, but those are hand-copied and drift
-  // from the main article's classification table — on the 2026 Vuelta the stage 2 GC
-  // block still carries the stage 1 leader time, which would contradict the gaps
-  // rendered beneath it.
-  stageArticleBlocks.forEach((block) => readResultBlock(block, false));
+  blocks.forEach((block) => readResultBlock(block, gcResults));
+  // Companion stage articles contribute their stage podiums, and their "General
+  // classification after Stage N" blocks only as a guarded fallback
+  // (selectStageArticleGcFallback): those are hand-copied and drift from the main
+  // article's classification table — on the 2026 Vuelta the stage 2 GC block still
+  // carried the stage 1 leader time, which would contradict the gaps rendered beneath it.
+  stageArticleBlocks.forEach((block) => readResultBlock(block, stageArticleGcResults));
 
   const routeStages = extractRouteStages(rawText, teamNames);
   const routeStageWinners = routeStages.filter((entry) => entry.winner);
@@ -4440,10 +4503,14 @@ function extractStageRaceSnapshot(rawText, stageArticleTexts = [], teamNames = n
     : null;
   // Ordering matters on ties: the {{cycling result}} blocks and the classification
   // tables carry full standings, while the leadership table only yields the leader.
+  const mainGcResults = [...gcResults, ...classificationTableGcResults, ...leadershipGcResults];
+  const mainLatestGc = [...mainGcResults].sort((left, right) => right.stageNumber - left.stageNumber)[0] || null;
   const latestGc =
-    [...gcResults, ...classificationTableGcResults, ...leadershipGcResults].sort(
-      (left, right) => right.stageNumber - left.stageNumber,
-    )[0] || null;
+    selectStageArticleGcFallback(mainLatestGc, stageArticleGcResults, {
+      leadershipGcResults,
+      earlierGcResults: [...mainGcResults, ...stageArticleGcResults],
+      stages,
+    }) || mainLatestGc;
   const totalStages = parseTotalStages(rawText);
   const prologueClassification =
     !latestGc && latestStage?.stageLabel === "Prologue" && latestStage.standings.length > 0

@@ -1150,3 +1150,12 @@ Traps met:
 - `ASO_SOURCES=off` is built and dormant. The agent's claim that Wikipedia lacked the
   Tour's stage 21 came from an older handoff note; the replay shows it there in 2026.
   Check claims copied from notes against the source before planning on them.
+- The replay's first version bisected the revisions and overstated the GC delay (it
+  put Tour stage 13 at 24 hours; the table was up 30 minutes after the finish).
+  Wikipedia tables disappear and come back between edits, so any "first time X was
+  true" search over a revision history has to scan in order. The maintainer was told
+  the wrong numbers first and the corrected ones after.
+- `selectStageArticleGcFallback` is built with tests; on the 13 finished stage races'
+  current pages it changes only the Giro d'Italia Women (the main article names only
+  the winner; the stage article fills the top five).
+

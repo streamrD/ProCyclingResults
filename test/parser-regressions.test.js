@@ -38,6 +38,7 @@ function loadParserExports() {
   vm.runInContext(
     `${executableSource}\n;globalThis.__PCR_TEST__ = {
       extractStageRaceSnapshot,
+      selectStageArticleGcFallback,
       applyKnownStageRaceCorrections,
       buildLaVueltaFemeninaOfficialSnapshot,
       extractLaVueltaFemeninaGeneralAjaxUrl,
@@ -8036,6 +8037,43 @@ test("parseSeasonRows reads the real 2026 WorldTour page, a sortable table and a
   assert.equal(sanremo.winner, "Tadej Pogačar");
   assert.equal(sanremo.third, "Mathieu van der Poel");
   assert.equal(new Date(sanremo.startDate).toISOString().slice(0, 10), "2026-03-21");
+});
+
+test("a companion article's GC block stands in only when it is newer, deeper and agrees with the main article", () => {
+  const { selectStageArticleGcFallback } = loadParserExports();
+  const rider = (place, name, extra = {}) => ({ place: String(place), rider: name, pageTitle: name, ...extra });
+  const gc = (stageNumber, leaderTime, leader = "Jonas Vingegaard") => ({
+    stageNumber,
+    standings: [rider(1, leader, { time: leaderTime }), rider(2, "Tadej Pogačar", { gap: "+0:12" }), rider(3, "João Almeida", { gap: "+0:40" })],
+  });
+  const leadership = (stageNumber, leader = "Jonas Vingegaard") => ({ stageNumber, standings: [rider(1, leader)] });
+  const stages = [{ number: 2, standings: [rider(1, "Mads Pedersen", { time: "4:47:43" })] }];
+  // The main article has only stage 1's classification and the stage 2 leader.
+  const mainLatest = { stageNumber: 2, standings: [rider(1, "Jonas Vingegaard")] };
+  const earlier = [gc(1, "10:57")];
+  const options = { leadershipGcResults: [leadership(1), leadership(2)], earlierGcResults: earlier, stages };
+
+  const fresh = gc(2, "4:58:40");
+  assert.equal(selectStageArticleGcFallback(mainLatest, [fresh], options), fresh, "newer, deeper and consistent: used");
+  // The stale copy the 2026 Vuelta carried: stage 2's block still holding stage 1's time.
+  assert.equal(selectStageArticleGcFallback(mainLatest, [gc(2, "10:57")], options), null, "a leader time that has not grown is a stale copy");
+  assert.equal(selectStageArticleGcFallback(mainLatest, [gc(2, "4:30:00")], options), null, "shorter than the stage winner's own time");
+  assert.equal(selectStageArticleGcFallback(mainLatest, [gc(2, "4:58:40", "Tadej Pogačar")], options), null, "a different leader from the leadership table");
+  assert.equal(
+    selectStageArticleGcFallback(mainLatest, [fresh], { ...options, leadershipGcResults: [leadership(1)] }),
+    null,
+    "no leader named for that stage yet: nothing to check it against",
+  );
+  const mainDeep = { stageNumber: 2, standings: gc(2, "4:58:40").standings };
+  assert.equal(selectStageArticleGcFallback(mainDeep, [fresh], options), null, "the main article is as deep: it wins");
+  assert.equal(selectStageArticleGcFallback({ stageNumber: 3, standings: [rider(1, "Jonas Vingegaard")] }, [fresh], options), null, "older than the main article");
+  // A surname the classification adds is the same rider.
+  const variant = gc(2, "4:58:40", "Enric Mas Nicolau");
+  variant.standings[0].pageTitle = "";
+  assert.equal(
+    selectStageArticleGcFallback(mainLatest, [variant], { ...options, leadershipGcResults: [leadership(2, "Enric Mas")] }),
+    variant,
+  );
 });
 
 test("ASO_SOURCES=off turns every ASO source off at once and leaves the others alone", () => {
