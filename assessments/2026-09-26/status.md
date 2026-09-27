@@ -41,7 +41,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | P2 | closed | 013cc62 |
 | P3 | closed | 013cc62: "An independent race desk", not-affiliated line |
 | P4 | closed | aee8018 |
-| P5 | open | Queue item 1 (Atom feed) |
+| P5 | closed | 2026-09-27: `/feed.xml`, one entry per finished race and raced stage, linked from the head and footer |
 | P6 | closed | duplicate of A2 |
 | X1 | closed | aee8018: render cache and token bucket |
 | X2 | closed | aee8018 caps and bucket; 2026-09-27 in-flight promise shared in `stageHistoryCache` |
@@ -69,7 +69,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | S10 | closed | 77674e9: notes corrected; framed probe in the smoke test since 295f14e |
 | A11 | partial | 013cc62: chips and unit toggles have 44px hit areas; rider links unchanged |
 | A12 | closed | 013cc62 |
-| A13 | open | Queue item 1 (F23 winter states) |
+| A13 | closed | 2026-09-27: a WorldTour section with no upcoming race says when the next season opens (`buildSeasonOpeningCard`) |
 | A14 | partial | 013cc62: `<footer>`. Open: skip link, heading depth, icon `aria-hidden` |
 | A15 | closed | 013cc62 |
 | C4 | closed | 013cc62 |
@@ -101,5 +101,5 @@ Every finding from the report's register (section 6), with what happened to it. 
 | L13 | keep | Nothing to do unless cards link to organiser pages |
 | CSP | open | Report-only CSP after M7 (nonce on inline scripts); see handoff |
 | F1, F5, F24 | closed | 295f14e, 013cc62 |
-| F2, F3, F23 | open | Queue item 1 |
+| F2, F3, F23 | closed | 2026-09-27: `/calendar.ics` (whole season or `?race=<anchor>`), "Add to calendar" on upcoming cards, the winter line |
 | F9 | open | Guide page |

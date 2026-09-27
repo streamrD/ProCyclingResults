@@ -1966,6 +1966,16 @@ The state of play after the 2026-09-26 assessment and its two remediation batche
 ### Closed on 2026-09-27, after the queue was written
 
 - Item 0 (R7): see "The backlog and the persisted file" under "Finish Video Links".
+- Item 1 (P5, F2/F3, A13/F23): `/calendar.ics` and `/feed.xml` are built per request from
+  the cached payload and never touch the response-body LRU; UIDs and Atom ids are the
+  card anchors (`createRaceAnchorId`), so renaming a race's page title changes its id in
+  subscribers' calendars: keep anchors stable. Feed entries are dated at midnight of the
+  race or stage day in the host zone (`formatDayInZoneRfc3339`); a stage with no
+  route-table date is placed by its number from the start date. iCalendar folding is
+  done by hand (`foldIcsLine`) because the VM harness has no `TextEncoder`/`Buffer`.
+  `buildCompetitionSection(group, data, now)` now takes the payload; the winter
+  "season opens" card appears only for the two WorldTour groups when `seasonCloseout`
+  exists, with the hero's month-only wording when `nextSeasonOpening` is null.
 - Item 2 (S8): the ETag on `/` and the payload endpoints is a hash of the cached bytes,
   not `fetchedAt`, because the response cache re-renders per UTC minute and
   `/api/race-stages` clears it; either can change the body under one `fetchedAt`, and
