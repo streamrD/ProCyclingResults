@@ -62,6 +62,16 @@ the live race. After a restart there is also a one-time sweep of stage-profile l
 eight per rebuild until every stage of the current races has been asked about once.
 Before that day's review a rebuild made 58 requests, every minute, around the clock.
 
+## What we publish
+
+Two of the site's addresses are for programs rather than people, and neither asks any
+source for anything: `/calendar.ics` is the season calendar as an iCalendar file (one
+all-day event per WorldTour race and per elite Worlds event; the whole season, or one
+race with `?race=`), and `/feed.xml` is an Atom feed of results, one entry per finished
+race and per raced stage. Both are written from the copy of the results the server
+already holds in memory, so a calendar or feed reader polling them costs the sources
+above nothing.
+
 ## What we do not do
 
 - We do not fetch anything a visitor cannot see on our page.
@@ -186,3 +196,8 @@ how the site fetches. The review log below is updated each time.
   dormant official source. This drops the handful of requests the provider made to a
   host that could only ever answer with a challenge page; every other request count in
   this document is unchanged.
+- **2026-09-27, evening.** Added two published formats, a calendar file
+  (`/calendar.ics`) and a results feed (`/feed.xml`), both built from the results the
+  server already holds; while the first build after a restart is still running they
+  answer 503 with a Retry-After header rather than an empty document. No request to any
+  source, and no change to request counts.

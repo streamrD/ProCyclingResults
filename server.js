@@ -11188,6 +11188,13 @@ function buildPreviousWinnerMarkup(race) {
   return `Last year: ${flag ? `<span class="country-flag" aria-hidden="true">${escapeHtml(flag)}</span> ` : ""}${buildRiderLinkMarkup(race.previousWinner)}`;
 }
 
+// The race as one iCalendar event (/calendar.ics?race=<anchor>), for a reader's own
+// calendar; the whole season is the same file without the query.
+function buildCalendarEventLink(race) {
+  const anchor = createRaceAnchorId(race);
+  return anchor ? `<a class="race-results-link" href="/calendar.ics?race=${escapeHtml(anchor)}">Add to calendar</a>` : "";
+}
+
 function buildUpcomingCard(race, now = new Date()) {
   const detail = [escapeHtml(buildUpcomingDetailLine(race, now)), buildPreviousWinnerMarkup(race)].filter(Boolean).join(" · ");
   const championshipAttribute = race.series === WORLD_CHAMPIONSHIPS.label ? ` data-championship="worlds"` : "";
@@ -11197,6 +11204,7 @@ function buildUpcomingCard(race, now = new Date()) {
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${detail ? `<p class="meta upcoming-detail">${detail}</p>` : ""}
+      ${buildRaceLinksMarkup([buildCalendarEventLink(race)])}
     </article>`;
 }
 
@@ -11729,13 +11737,46 @@ function buildRecentResultsBlock(group) {
     </div>`;
 }
 
-function buildCompetitionSection(group) {
+// Between the last race and the next season (F23, 2026-09-27): a WorldTour section
+// with nothing upcoming says when racing resumes instead of ending at its results.
+// Dated only when the next season's opening is known (the same nextSeasonOpening the
+// closing hero reads); otherwise the month, in the hero's own words. The Worlds
+// section is left alone: its next edition is a year off and on no page we read.
+function buildSeasonOpeningLine(closeout, now = new Date()) {
+  if (!closeout?.nextYear) {
+    return "";
+  }
+  const opening = closeout.nextSeasonOpening;
+  if (!opening?.date) {
+    return `The ${closeout.nextYear} season usually opens with the Tour Down Under in the second half of January; the exact day goes here once the ${closeout.nextYear} WorldTour calendar is published.`;
+  }
+  const days = seasonDayIndex(opening.date, toIsoDay(toUtcDateOnly(now)));
+  const when = days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  return `The ${closeout.nextYear} season opens with the ${opening.title} on ${formatCloseoutDay(opening.date, true)}, ${when}.`;
+}
+
+function buildSeasonOpeningCard(closeout, now = new Date()) {
+  const line = buildSeasonOpeningLine(closeout, now);
+  if (!line) {
+    return "";
+  }
+  return `
+    <article class="card upcoming-card season-opening-card">
+      <div class="card-kicker">Season closed</div>
+      <h3>The ${escapeHtml(String(closeout.nextYear))} season</h3>
+      <p class="meta upcoming-detail">${escapeHtml(line)}</p>
+    </article>`;
+}
+
+function buildCompetitionSection(group, data = {}, now = new Date()) {
   const liveMarkup = group.liveStageRaces.map(buildLiveStageRaceCard).join("");
   const upcomingMarkup = group.upcomingRaces.map((race) => buildUpcomingCard(race)).join("");
+  const winterMarkup =
+    !upcomingMarkup && group.id !== "world-championships" ? buildSeasonOpeningCard(data?.seasonCloseout, now) : "";
   const blocks = [
     buildCompetitionBlock("Live Multi-Stage", "Current stage races and overall standings.", liveMarkup),
     buildRecentResultsBlock(group),
-    buildCompetitionBlock("Upcoming", "Next races on the calendar.", upcomingMarkup),
+    buildCompetitionBlock("Upcoming", "Next races on the calendar.", upcomingMarkup || winterMarkup),
   ]
     .filter(Boolean)
     .join("");
@@ -12659,7 +12700,7 @@ function buildSeasonCalendarSection(calendar, data = {}, now = new Date()) {
         <div>
           <div class="section-tag">Season at a glance</div>
           <h2>Where we are in ${escapeHtml(String(calendar.year))}</h2>
-          <p class="meta season-summary">${escapeHtml(summary)}</p>
+          <p class="meta season-summary">${escapeHtml(summary)} · <a href="/calendar.ics">Subscribe (.ics)</a></p>
         </div>
         <div class="season-actions">
           <button type="button" class="season-toggle season-fullscreen-toggle" data-season-fullscreen aria-pressed="false">
@@ -12853,13 +12894,315 @@ function buildHeroMenuLabel(group) {
     : escapeHtml(group.label);
 }
 
+// ---- Published calendar and feed (2026-09-27; assessment P5, F2, F3) ----
+// /calendar.ics is the season as iCalendar: one all-day event per WorldTour race and
+// per elite Worlds event, from the rows the calendar section already draws
+// (seasonCalendar plus buildCalendarChampionships). /feed.xml is an Atom feed of
+// results: one entry per finished race the payload holds and one per raced stage.
+// Both are built from the cached payload on request; neither fetches anything, and
+// during warm-up both answer 503 with Retry-After rather than an empty document.
+const FEED_UID_DOMAIN = "procyclingresults.up.railway.app";
+const FEED_TAG_PREFIX = `tag:${FEED_UID_DOMAIN},2026:`;
+const FEED_WARMUP_RETRY_AFTER_SECONDS = 30;
+const CALENDAR_TIER_LABELS = {
+  "grand-tour": "Grand Tour",
+  monument: "Monument",
+  "stage-race": "Stage race",
+  "one-day": "One-day race",
+  championship: "World Championships",
+};
+
+function isPublishedFeedPath(pathname) {
+  return pathname === "/calendar.ics" || pathname === "/feed.xml";
+}
+
+// Counted by hand: the VM test harness has no TextEncoder or Buffer.
+function utf8ByteLength(text) {
+  let bytes = 0;
+  for (const char of String(text)) {
+    const code = char.codePointAt(0);
+    bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  return bytes;
+}
+
+// RFC 5545 §3.1: a content line longer than 75 octets folds on CRLF plus one space,
+// on a character boundary, since a rider's accent is two octets and a split inside
+// one would corrupt the name.
+function foldIcsLine(line) {
+  const parts = [];
+  let current = "";
+  let bytes = 0;
+  for (const char of String(line)) {
+    const width = utf8ByteLength(char);
+    if (bytes + width > (parts.length ? 74 : 75)) {
+      parts.push(current);
+      current = "";
+      bytes = 0;
+    }
+    current += char;
+    bytes += width;
+  }
+  parts.push(current);
+  return parts.map((part, index) => (index ? ` ${part}` : part)).join("\r\n");
+}
+
+function escapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
+}
+
+function formatIcsDay(isoDay) {
+  return String(isoDay || "").replace(/-/g, "");
+}
+
+function formatIcsStamp(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function nextIsoDay(isoDay) {
+  return toIsoDay(new Date(Date.parse(`${isoDay}T00:00:00Z`) + SEASON_DAY_MS));
+}
+
+function buildCalendarIcsRows(data) {
+  const calendar = data?.seasonCalendar;
+  return [...(calendar?.races || []), ...buildCalendarChampionships(data, calendar?.today || toIsoDay(new Date()))].filter(
+    (row) => row?.anchor && row.startDate && row.endDate,
+  );
+}
+
+// Empty when there is nothing to publish (no calendar yet, or an unknown ?race=), so
+// the route can answer 404 instead of a calendar with no events. DTEND is exclusive:
+// an all-day event ends on the day after its last day. UIDs are the card anchors, so
+// they are stable across rebuilds and unique across seasons (the slug has the year).
+function buildSeasonCalendarIcs(data, options = {}) {
+  const raceAnchor = String(options.raceAnchor || "");
+  const rows = buildCalendarIcsRows(data).filter((row) => !raceAnchor || row.anchor === raceAnchor);
+  if (!rows.length) {
+    return "";
+  }
+  const stamp = formatIcsStamp(data?.fetchedAt);
+  const year = data?.seasonCalendar?.year || SEASON_YEAR;
+  const events = rows.flatMap((row) => {
+    const url = `${SITE_ORIGIN}/#${row.anchor}`;
+    const description = [
+      [row.series, CALENDAR_TIER_LABELS[row.tier] || ""].filter(Boolean).join(" · "),
+      row.status === "cancelled" ? "Cancelled." : row.winner ? `Winner: ${row.winner}.` : "",
+      `Results: ${url}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return [
+      "BEGIN:VEVENT",
+      `UID:${row.anchor}@${FEED_UID_DOMAIN}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${formatIcsDay(row.startDate)}`,
+      `DTEND;VALUE=DATE:${formatIcsDay(nextIsoDay(row.endDate))}`,
+      `SUMMARY:${escapeIcsText(row.title)}`,
+      `DESCRIPTION:${escapeIcsText(description)}`,
+      row.location ? `LOCATION:${escapeIcsText(row.location)}` : "",
+      `URL:${url}`,
+      row.series ? `CATEGORIES:${escapeIcsText(row.series)}` : "",
+      `STATUS:${row.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
+      "END:VEVENT",
+    ].filter(Boolean);
+  });
+  const name = raceAnchor ? rows[0].title : `Pro Cycling Results ${year}`;
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    `PRODID:-//Pro Cycling Results//Season calendar ${year}//EN`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText(name)}`,
+    `X-WR-CALDESC:${escapeIcsText(`The ${year} men's and women's WorldTour and the elite World Championships events, from ${SITE_ORIGIN}/`)}`,
+    ...events,
+    "END:VCALENDAR",
+  ];
+  return `${lines.map(foldIcsLine).join("\r\n")}\r\n`;
+}
+
+function escapeXml(value) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Midnight of the race day in the host country's zone, with that zone's offset, as
+// RFC 3339 wants it: an entry is dated by the day the result was ridden, not by when
+// the server happened to read it.
+function formatDayInZoneRfc3339(isoDay, timeZone) {
+  const utcMidnight = Date.parse(`${isoDay}T00:00:00Z`);
+  if (!Number.isFinite(utcMidnight)) {
+    return "";
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(utcMidnight))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  const wall = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour) % 24, Number(parts.minute));
+  const offsetMinutes = Math.round((wall - utcMidnight) / 60000);
+  const pad = (number) => String(number).padStart(2, "0");
+  const magnitude = Math.abs(offsetMinutes);
+  return `${isoDay}T00:00:00${offsetMinutes < 0 ? "-" : "+"}${pad(Math.floor(magnitude / 60))}:${pad(magnitude % 60)}`;
+}
+
+function describeRaceEdition(race) {
+  const year = getRaceYear(race);
+  const title = String(race?.title || "").trim();
+  return year && title && !title.startsWith(String(year)) ? `${year} ${title}` : title || String(race?.pageTitle || "");
+}
+
+function describePodiumForFeed(standings) {
+  return selectStandings(standings)
+    .slice(0, 3)
+    .map((entry, index) => `${entry.place || index + 1}. ${entry.rider}${entry.countryCode ? ` (${entry.countryCode})` : ""}`)
+    .join(", ");
+}
+
+// A stage's day is the route table's; a stage without one is placed by its number
+// from the start, no later than the race's last day (a rest day can shift that by
+// one, which is close enough for a feed's ordering).
+function resolveFeedStageDay(race, stage) {
+  const routeDay = stage?.date ? parseRouteStageDate(stage.date, getRaceYear(race)) : null;
+  if (routeDay) {
+    return toIsoDay(routeDay);
+  }
+  const start = toUtcDateOnly(race?.startDate);
+  const end = toUtcDateOnly(race?.endDate) || start;
+  if (!start) {
+    return "";
+  }
+  const offset = Math.max(Number(stage?.number) - 1, 0);
+  const estimate = new Date(Math.min(start.getTime() + offset * SEASON_DAY_MS, end.getTime()));
+  return toIsoDay(estimate);
+}
+
+function buildResultsFeedEntries(data) {
+  const entries = [];
+  const seen = new Set();
+  const push = (entry) => {
+    if (entry.id && entry.day && !seen.has(entry.id)) {
+      seen.add(entry.id);
+      entries.push(entry);
+    }
+  };
+  const addRace = (race) => {
+    const anchor = createRaceAnchorId(race);
+    const standings = selectStandings(race?.resultStandings, [
+      { place: "1", rider: race?.winner, countryCode: race?.winnerCountryCode },
+      { place: "2", rider: race?.second, countryCode: race?.secondCountryCode },
+      { place: "3", rider: race?.third, countryCode: race?.thirdCountryCode },
+    ]);
+    const winner = standings[0]?.rider || String(race?.winner || "").trim();
+    const day = toIsoDay(race?.endDate);
+    if (!anchor || !winner || !day) {
+      return;
+    }
+    const title = isWorldChampionshipRace(race)
+      ? `${winner} wins the ${describeWorldChampionshipEventShort(race)} at the ${getRaceYear(race) || ""} World Championships`.replace(/\s+/g, " ")
+      : `${winner} wins the ${describeRaceEdition(race)}`;
+    push({
+      id: anchor,
+      anchor,
+      title,
+      day,
+      order: Number.MAX_SAFE_INTEGER,
+      timeZone: getRaceTimeZone(race),
+      summary: [
+        `${formatCloseoutDay(day, true)}${race?.location ? `, ${race.location}` : ""}`,
+        isMultiDayRace(race) ? "Final general classification" : "",
+        describePodiumForFeed(standings),
+      ]
+        .filter(Boolean)
+        .join(". "),
+    });
+  };
+  const addStages = (race) => {
+    const anchor = createRaceAnchorId(race);
+    if (!anchor) {
+      return;
+    }
+    (race?.stageRace?.stages || []).forEach((stage) => {
+      const standings = selectStandings(stage?.standings);
+      const winner = String(stage?.winner || standings[0]?.rider || "").trim();
+      const number = Number(stage?.number);
+      if (!winner || !Number.isFinite(number)) {
+        return;
+      }
+      const day = resolveFeedStageDay(race, stage);
+      const label = stage.label || (number === 0 ? "Prologue" : `Stage ${number}`);
+      push({
+        id: `${anchor}:stage-${number}`,
+        anchor,
+        title: `${label} of the ${describeRaceEdition(race)}: ${winner}`,
+        day,
+        order: number,
+        timeZone: getRaceTimeZone(race),
+        summary: [formatCloseoutDay(day, true), stage.course || "", describePodiumForFeed(standings) || `Winner: ${winner}`]
+          .filter(Boolean)
+          .join(". "),
+      });
+    });
+  };
+  [...(data?.recentResults || []), ...(data?.finalizedStageRaces || [])].forEach(addRace);
+  [...(data?.finalizedStageRaces || []), ...(data?.liveStageRaces || []), ...(data?.recentResults || [])].forEach(addStages);
+  return entries.sort((left, right) => right.day.localeCompare(left.day) || right.order - left.order || left.id.localeCompare(right.id));
+}
+
+function buildResultsAtomFeed(data) {
+  const entries = buildResultsFeedEntries(data);
+  const fetched = data?.fetchedAt && !Number.isNaN(Date.parse(data.fetchedAt)) ? new Date(data.fetchedAt) : new Date();
+  const entryMarkup = entries
+    .map(
+      (entry) => `
+  <entry>
+    <id>${escapeXml(FEED_TAG_PREFIX + entry.id)}</id>
+    <title>${escapeXml(entry.title)}</title>
+    <link rel="alternate" type="text/html" href="${escapeXml(`${SITE_ORIGIN}/#${entry.anchor}`)}"/>
+    <updated>${escapeXml(formatDayInZoneRfc3339(entry.day, entry.timeZone))}</updated>
+    <summary>${escapeXml(entry.summary)}</summary>
+  </entry>`,
+    )
+    .join("");
+  return `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Pro Cycling Results</title>
+  <subtitle>Results from the men's and women's WorldTour and the World Championships, race by race and stage by stage.</subtitle>
+  <link rel="alternate" type="text/html" href="${escapeXml(`${SITE_ORIGIN}/`)}"/>
+  <link rel="self" type="application/atom+xml" href="${escapeXml(`${SITE_ORIGIN}/feed.xml`)}"/>
+  <id>${escapeXml(`${SITE_ORIGIN}/`)}</id>
+  <updated>${escapeXml(fetched.toISOString())}</updated>
+  <author><name>Pro Cycling Results</name></author>${entryMarkup}
+</feed>
+`;
+}
+
 function buildHtmlPage(data, view) {
   const shareView = getShareView(view?.sharePath || "/") || SHARE_VIEWS["/"];
   const competitionGroups = getCompetitionGroups(data);
   const eagerCompetitionGroups = competitionGroups.filter((group) => !group.deferred);
   const deferredCompetitionGroups = competitionGroups.filter((group) => group.deferred);
   const competitionSections = eagerCompetitionGroups
-    .map((group) => buildCompetitionSection(group))
+    .map((group) => buildCompetitionSection(group, data))
     .filter(Boolean)
     .join("");
   const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
@@ -12933,6 +13276,7 @@ function buildHtmlPage(data, view) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     ${buildShareMetaTags(shareView)}
     <link rel="canonical" href="${escapeHtml(SITE_ORIGIN)}/" />
+    <link rel="alternate" type="application/atom+xml" title="Pro Cycling Results: latest results" href="/feed.xml" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
@@ -18094,7 +18438,11 @@ async function handleSiteContentUpdate(request, response) {
 }
 
 function buildSiteFooterLinks(currentPath) {
-  const links = [{ href: "/", label: "Results" }, ...Object.values(SITE_CONTENT_PAGES).map((page) => ({ href: page.path, label: page.title }))];
+  const links = [
+    { href: "/", label: "Results" },
+    ...Object.values(SITE_CONTENT_PAGES).map((page) => ({ href: page.path, label: page.title })),
+    { href: "/feed.xml", label: "Feed" },
+  ];
   return `<nav class="footer-links" aria-label="Site pages">${links
     .map((link) =>
       link.href === currentPath
@@ -18862,6 +19210,18 @@ const server = http.createServer(async (request, response) => {
         sendHtml(response, 200, buildWarmupPage(getShareView(url.pathname)));
         return;
       }
+
+      // A calendar or feed client would keep an empty answer; tell it to come back.
+      if (isPublishedFeedPath(url.pathname)) {
+        sendPreparedBody(
+          response,
+          503,
+          "text/plain; charset=utf-8",
+          prepareResponseBody("Race data is still loading; try again shortly.\n"),
+          { headers: { "retry-after": String(FEED_WARMUP_RETRY_AFTER_SECONDS) } },
+        );
+        return;
+      }
     }
 
     if (!getShareView(url.pathname)) {
@@ -18946,7 +19306,7 @@ const server = http.createServer(async (request, response) => {
 
         sendJson(response, 200, {
           groupId,
-          html: buildCompetitionSection(group),
+          html: buildCompetitionSection(group, data),
         });
         return;
       }
@@ -19003,6 +19363,24 @@ const server = http.createServer(async (request, response) => {
           raceId: getRaceId(race),
           html: buildStageSwitcherMarkup(race, { stageResultsRequested: true }),
         });
+        return;
+      }
+
+      if (url.pathname === "/calendar.ics") {
+        const data = await loadRaceData({ includeDeferred: false });
+        const raceAnchor = url.searchParams.get("race") || "";
+        const calendarText = buildSeasonCalendarIcs(data, { raceAnchor });
+        if (!calendarText) {
+          sendJson(response, 404, { error: raceAnchor ? "Unknown race." : "The season calendar is not available yet." });
+          return;
+        }
+        sendPreparedBody(response, 200, "text/calendar; charset=utf-8", prepareResponseBody(calendarText));
+        return;
+      }
+
+      if (url.pathname === "/feed.xml") {
+        const data = await loadRaceData({ includeDeferred: false });
+        sendPreparedBody(response, 200, "application/atom+xml; charset=utf-8", prepareResponseBody(buildResultsAtomFeed(data)));
         return;
       }
 

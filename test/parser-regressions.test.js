@@ -311,6 +311,11 @@ function loadParserExports() {
       getCachedResponseBody,
       sendPreparedBody,
       loadRequestedStageHistory,
+      buildSeasonCalendarIcs,
+      buildResultsAtomFeed,
+      foldIcsLine,
+      buildSeasonOpeningLine,
+      buildCompetitionSection,
     };`,
     sandbox,
   );
@@ -8334,4 +8339,210 @@ test("concurrent loadRequestedStageHistory calls for one race share a single fet
   const retried = await loadRequestedStageHistory(failing);
   assert.ok(Array.isArray(retried) && retried.length === 0);
   assert.equal(loaderCalls, 3, "the next call retried");
+});
+
+test("/calendar.ics lists one all-day event per race, folded at 75 octets, escaped, with an exclusive DTEND", () => {
+  const { buildSeasonCalendar, buildSeasonCalendarIcs, buildUpcomingCard, foldIcsLine } = loadParserExports();
+  const race = (title, series, start, end, extra = {}) => ({
+    id: `2026 ${title}`,
+    pageTitle: `2026 ${title}`,
+    title,
+    series,
+    startDate: new Date(`${start}T00:00:00Z`),
+    endDate: new Date(`${end}T00:00:00Z`),
+    date: start,
+    location: "Somewhere",
+    countryCode: "ITA",
+    ...extra,
+  });
+  const lombardia = race("Il Lombardia", "Men's WorldTour", "2026-10-10", "2026-10-10", {
+    location: "Como, Italy; Lake Como",
+    winner: "Tadej Pogačar",
+    winnerCountryCode: "SLO",
+  });
+  const calendar = buildSeasonCalendar(
+    [lombardia, race("Tour Down Under", "Men's WorldTour", "2026-01-20", "2026-01-25", { countryCode: "AUS", winner: "Jay Vine" })],
+    new Date("2026-10-12T00:00:00Z"),
+  );
+  const worlds = {
+    id: "2026 UCI Road World Championships – Men's road race",
+    pageTitle: "2026 UCI Road World Championships – Men's road race",
+    title: "Elite men's road race",
+    series: "UCI Road World Championships",
+    countryCode: "CAN",
+    startDate: new Date("2026-09-27T00:00:00Z"),
+    endDate: new Date("2026-09-27T00:00:00Z"),
+    location: "Montréal",
+    winner: "Tadej Pogačar",
+  };
+  const data = { fetchedAt: "2026-10-12T08:30:15.123Z", seasonCalendar: calendar, upcomingRaces: [], recentResults: [worlds] };
+  const text = buildSeasonCalendarIcs(data);
+  const lines = text.split("\r\n");
+  assert.equal(lines[0], "BEGIN:VCALENDAR");
+  assert.equal(lines[lines.length - 2], "END:VCALENDAR");
+  assert.equal(lines[lines.length - 1], "", "the body ends with CRLF");
+  assert.ok(text.includes("PRODID:-//Pro Cycling Results//"));
+  assert.ok(text.includes("DTSTAMP:20261012T083015Z"));
+  assert.ok(text.includes("UID:race-2026-il-lombardia@procyclingresults.up.railway.app"));
+  assert.ok(text.includes("DTSTART;VALUE=DATE:20261010\r\nDTEND;VALUE=DATE:20261011"), "a one-day race ends on the next day");
+  assert.ok(text.includes("DTSTART;VALUE=DATE:20260120\r\nDTEND;VALUE=DATE:20260126"), "a stage race ends the day after its last stage");
+  assert.ok(text.includes("LOCATION:Como\\, Italy\\; Lake Como"), "commas and semicolons are escaped");
+  assert.ok(text.includes("SUMMARY:Worlds: men's road race"));
+  assert.ok(text.includes("DTSTART;VALUE=DATE:20260927\r\nDTEND;VALUE=DATE:20260928"));
+  assert.equal((text.match(/BEGIN:VEVENT/g) || []).length, 3);
+  for (const line of lines) {
+    assert.ok(Buffer.byteLength(line, "utf8") <= 75, `folded: ${line}`);
+  }
+  const unfolded = text.replace(/\r\n /g, "");
+  // The Worlds UID is 92 octets, so it only reads whole once unfolded.
+  assert.ok(!text.includes("UID:race-2026-uci-road-world-championships-men-s-road-race@procyclingresults.up.railway.app"));
+  assert.ok(unfolded.includes("UID:race-2026-uci-road-world-championships-men-s-road-race@procyclingresults.up.railway.app"));
+  assert.ok(
+    unfolded.includes("DESCRIPTION:Men's WorldTour · Monument\\nWinner: Tadej Pogačar.\\nResults: https://procyclingresults.up.railway.app/#race-2026-il-lombardia"),
+    "the long description unfolds intact, accents included",
+  );
+  assert.ok(unfolded.includes("URL:https://procyclingresults.up.railway.app/#race-2026-il-lombardia"));
+  // A fold never lands inside a multi-byte character.
+  const accented = `SUMMARY:${"č".repeat(60)}`;
+  const folded = foldIcsLine(accented);
+  assert.equal(folded.replace(/\r\n /g, ""), accented);
+  folded.split("\r\n").forEach((part) => assert.ok(Buffer.byteLength(part, "utf8") <= 75));
+  // One race on its own, and nothing for an unknown anchor or an empty calendar.
+  const single = buildSeasonCalendarIcs(data, { raceAnchor: "race-2026-il-lombardia" });
+  assert.equal((single.match(/BEGIN:VEVENT/g) || []).length, 1);
+  assert.ok(single.includes("X-WR-CALNAME:Il Lombardia"));
+  assert.equal(buildSeasonCalendarIcs(data, { raceAnchor: "race-2026-nope" }), "");
+  assert.equal(buildSeasonCalendarIcs({ seasonCalendar: { races: [] } }), "");
+  // The upcoming card links to its own event.
+  assert.match(buildUpcomingCard(lombardia), /href="\/calendar\.ics\?race=race-2026-il-lombardia">Add to calendar</);
+});
+
+test("/feed.xml carries an entry per finished race and per raced stage, dated in the host zone and XML-escaped", () => {
+  const { buildResultsAtomFeed } = loadParserExports();
+  const lombardia = {
+    id: "2026 Il Lombardia",
+    pageTitle: "2026 Il Lombardia",
+    title: "Il Lombardia",
+    series: "Men's WorldTour",
+    countryCode: "ITA",
+    startDate: new Date("2026-10-10T00:00:00Z"),
+    endDate: new Date("2026-10-10T00:00:00Z"),
+    location: "Como & Bergamo",
+    winner: "Tadej Pogačar",
+    winnerCountryCode: "SLO",
+    resultStandings: [
+      { place: "1", rider: "Tadej Pogačar", countryCode: "SLO" },
+      { place: "2", rider: "Remco Evenepoel", countryCode: "BEL" },
+      { place: "3", rider: "Isaac del Toro", countryCode: "MEX" },
+    ],
+  };
+  const vuelta = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    countryCode: "ESP",
+    startDate: new Date("2026-08-22T00:00:00Z"),
+    endDate: new Date("2026-09-13T00:00:00Z"),
+    location: "Spain",
+    winner: "Jonas Vingegaard",
+    winnerCountryCode: "DEN",
+    resultStandings: [{ place: "1", rider: "Jonas Vingegaard", countryCode: "DEN" }],
+    stageRace: {
+      totalStages: 21,
+      completedStages: 21,
+      stages: [
+        {
+          number: 1,
+          label: "Stage 1",
+          date: "22 August",
+          course: "Turin to Novara",
+          standings: [
+            { place: "1", rider: "Jasper Philipsen", countryCode: "BEL" },
+            { place: "2", rider: "Ethan Vernon", countryCode: "GBR" },
+          ],
+          winner: "Jasper Philipsen",
+        },
+        { number: 2, label: "Stage 2", standings: [{ place: "1", rider: "Jonas Vingegaard", countryCode: "DEN" }], winner: "Jonas Vingegaard" },
+        { number: 3, label: "Stage 3", standings: [] },
+      ],
+    },
+  };
+  const guangxi = {
+    id: "2026 Tour of Guangxi",
+    pageTitle: "2026 Tour of Guangxi",
+    title: "Tour of Guangxi",
+    series: "Men's WorldTour",
+    countryCode: "CHN",
+    startDate: new Date("2026-10-14T00:00:00Z"),
+    endDate: new Date("2026-10-19T00:00:00Z"),
+    stageRace: { totalStages: 6, completedStages: 1, stages: [{ number: 1, label: "Stage 1", date: "14 October", standings: [{ place: "1", rider: "Paul Magnier", countryCode: "FRA" }] }] },
+  };
+  const feed = buildResultsAtomFeed({
+    fetchedAt: "2026-10-15T10:00:00.000Z",
+    recentResults: [lombardia, vuelta],
+    finalizedStageRaces: [vuelta],
+    liveStageRaces: [guangxi],
+  });
+  assert.ok(feed.startsWith('<?xml version="1.0" encoding="utf-8"?>\n<feed xmlns="http://www.w3.org/2005/Atom">'));
+  assert.ok(feed.includes("<updated>2026-10-15T10:00:00.000Z</updated>"));
+  assert.ok(feed.includes('<link rel="self" type="application/atom+xml" href="https://procyclingresults.up.railway.app/feed.xml"/>'));
+  const ids = [...feed.matchAll(/<id>([^<]+)<\/id>/g)].map((match) => match[1]);
+  assert.deepEqual(ids, [
+    "https://procyclingresults.up.railway.app/",
+    "tag:procyclingresults.up.railway.app,2026:race-2026-tour-of-guangxi:stage-1",
+    "tag:procyclingresults.up.railway.app,2026:race-2026-il-lombardia",
+    "tag:procyclingresults.up.railway.app,2026:race-2026-vuelta-a-espana",
+    "tag:procyclingresults.up.railway.app,2026:race-2026-vuelta-a-espana:stage-2",
+    "tag:procyclingresults.up.railway.app,2026:race-2026-vuelta-a-espana:stage-1",
+  ]);
+  const titles = [...feed.matchAll(/<title>([^<]+)<\/title>/g)].map((match) => match[1]);
+  assert.deepEqual(titles, [
+    "Pro Cycling Results",
+    "Stage 1 of the 2026 Tour of Guangxi: Paul Magnier",
+    "Tadej Pogačar wins the 2026 Il Lombardia",
+    "Jonas Vingegaard wins the 2026 Vuelta a España",
+    "Stage 2 of the 2026 Vuelta a España: Jonas Vingegaard",
+    "Stage 1 of the 2026 Vuelta a España: Jasper Philipsen",
+  ]);
+  assert.ok(feed.includes("<updated>2026-10-14T00:00:00+08:00</updated>"), "Guangxi's day in China");
+  assert.ok(feed.includes("<updated>2026-10-10T00:00:00+02:00</updated>"), "Lombardia's day in Italy");
+  assert.ok(feed.includes("<updated>2026-08-22T00:00:00+02:00</updated>"), "stage 1 on the route table's day");
+  assert.ok(feed.includes("<updated>2026-08-23T00:00:00+02:00</updated>"), "a stage without a date is placed by its number");
+  assert.ok(feed.includes("<summary>10 October 2026, Como &amp; Bergamo. 1. Tadej Pogačar (SLO), 2. Remco Evenepoel (BEL), 3. Isaac del Toro (MEX)</summary>"));
+  assert.ok(feed.includes("<summary>22 August 2026. Turin to Novara. 1. Jasper Philipsen (BEL), 2. Ethan Vernon (GBR)</summary>"));
+  assert.ok(feed.includes("<summary>13 September 2026, Spain. Final general classification. 1. Jonas Vingegaard (DEN)</summary>"));
+  assert.ok(feed.includes('href="https://procyclingresults.up.railway.app/#race-2026-vuelta-a-espana"'));
+  assert.doesNotMatch(feed, /&(?!amp;|lt;|gt;|quot;)/, "every ampersand is an entity");
+  assert.equal(buildResultsAtomFeed({}).match(/<entry>/g), null, "an empty payload is an empty feed, not an error");
+});
+
+test("a WorldTour section with nothing upcoming says when the next season opens", () => {
+  const { buildCompetitionSection, buildSeasonOpeningLine } = loadParserExports();
+  const now = new Date("2026-09-26T12:00:00Z");
+  const closeout = { year: 2026, nextYear: 2027, nextSeasonOpening: { year: 2027, date: "2027-01-20", title: "Tour Down Under" } };
+  assert.equal(buildSeasonOpeningLine(closeout, now), "The 2027 season opens with the Tour Down Under on 20 January 2027, in 116 days.");
+  assert.equal(buildSeasonOpeningLine(closeout, new Date("2027-01-19T12:00:00Z")), "The 2027 season opens with the Tour Down Under on 20 January 2027, tomorrow.");
+  assert.equal(
+    buildSeasonOpeningLine({ ...closeout, nextSeasonOpening: null }, now),
+    "The 2027 season usually opens with the Tour Down Under in the second half of January; the exact day goes here once the 2027 WorldTour calendar is published.",
+  );
+  assert.equal(buildSeasonOpeningLine(null, now), "");
+  const group = {
+    id: "mens-worldtour",
+    label: "Men's WorldTour",
+    tag: "Men's races",
+    description: "The season's top-level races for men.",
+    liveStageRaces: [],
+    recentResults: [],
+    upcomingRaces: [],
+  };
+  const section = buildCompetitionSection(group, { seasonCloseout: closeout }, now);
+  assert.match(section, /<h3>Upcoming<\/h3>/);
+  assert.match(section, /season-opening-card/);
+  assert.match(section, /<h3>The 2027 season<\/h3>/);
+  assert.match(section, /on 20 January 2027, in 116 days\./);
+  assert.equal(buildCompetitionSection(group, {}, now), "", "nothing to say while the season runs");
+  assert.equal(buildCompetitionSection(group), "", "the old one-argument call still works");
+  assert.equal(buildCompetitionSection({ ...group, id: "world-championships" }, { seasonCloseout: closeout }, now), "", "the Worlds section is left alone");
 });
