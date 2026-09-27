@@ -48,7 +48,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | X3 | closed | aee8018 |
 | X4 | open | GitHub token scope check (maintainer, five minutes) |
 | X5 | closed | aee8018 |
-| M6 | partial | The one clock-dependent test was fixed on 2026-09-19; no lint added |
+| M6 | closed | 2026-09-27: `peekRaceArticlePool`/`loadRaceArticlePool` take `now` and their test holds the clock still; a guard test (`CLOCK_ARGUMENT_POSITION`) fails any call in the test file that leaves a calendar-sensitive function (`getCompetitionGroups` and 14 more) on the real clock; three `getCompetitionGroups` calls were given one. The card builders are not in the list (their tests mostly assert on clock-independent markup) |
 | M7 | closed | 2026-09-27: `assets/site.css` and `assets/site.js`, inlined from disk at startup; the deferred groups are a JSON element |
 | M8 | closed | 51770de README pass; 2026-09-27 `handoff.md` split into the map (1,100 lines) and `handoff-journal.md` (980 lines, dated, oldest first) |
 | M9 | open | When an ASO provider next needs a change |
@@ -60,7 +60,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R9 | closed | 8c564a5 |
 | R10 | closed | 8c564a5 |
 | R11 | closed | 8c564a5 |
-| R12 | partial | 8c564a5: backoff and `lastIndexError`. No test |
+| R12 | closed | 8c564a5: backoff and `lastIndexError`; 2026-09-27: test (a maxlag answer costs one query and no page reads for the index window, then is retried; shown to fail without the backoff) |
 | R13 | closed | 8c564a5 |
 | S6 | closed | aee8018 |
 | S7 | open | Parse the rider index only on hover devices |
@@ -87,12 +87,12 @@ Every finding from the report's register (section 6), with what happened to it. 
 | X9 | closed | aee8018 |
 | X10 | closed | 51770de |
 | X11 | closed | 013cc62: privacy note; analytics tag still on error pages |
-| X12 | open | Cap upstream body size before parsing |
+| X12 | closed | 2026-09-27: `readResponseText` caps every upstream body (8 MB, Wikipedia 4 MB; the largest real one, YouTube's search page, is ~1.5 MB), streamed and cancelled at the cap, logged once and never retried. Nested-quantifier audit of `server.js`: two exponential wiki cell-attribute strippers (`splitSeasonTableRow`, `stripWikiCellAttributes`; 81 characters took ~40 s) now match the bare value atomically; the other nested quantifiers are disjoint or bounded. Not audited: `assets/site.js` and single-quantifier quadratic scans |
 | M11 | open | Maintainer decision 11 (editor saves redeploy) |
 | M12 | closed | 8c564a5 |
 | M13 | closed | 51770de |
 | M14 | closed | 51770de |
-| L7 | open | Wikitext through the API instead of `action=raw` |
+| L7 | closed | 2026-09-27: `fetchWikiPageContent` reads `api.php?action=query&prop=revisions&rvprop=ids\|content` (redirects not followed, as `action=raw` did not); the revision comes with the text, so a restart no longer reads every page twice. Wikipedia requests one at a time, 250 ms apart (was three at once, 32/s measured), team-name expansion included. Counted in the harness: cold build 138 → 115 requests, rebuild after the index window 46 → 11 (Wikipedia 38 → 3). Cost: cold build ~9 s longer (`WIKI_MIN_REQUEST_INTERVAL_MS` is the knob) |
 | L8 | closed | 2026-09-27: provider and helpers archived to `archive/tour-of-greece-provider.js`, fixture and tests removed |
 | L9 | closed | 013cc62 |
 | L10 | closed | fc66a6b |

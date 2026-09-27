@@ -1176,3 +1176,39 @@ Traps met:
 - The browser smoke test "a picture on a site page fills the window…" failed once
   under load and passed three times alone: timing, not a regression.
 
+
+## Process Lessons From The 2026-09-27 Hygiene Pass (X12, L7, R12, M6)
+
+- **Wikitext comes from the Action API now** (`fetchWikiPageContent`), never
+  `action=raw` (robots-disallowed). It does not follow redirects, on purpose: next
+  season's pages are redirects to "UCI World Tour" until written, and following one
+  would parse the generic article as the season. For the same reason the revision
+  index dropped `redirects=1`; the two must compare the same page's revision, or every
+  redirect title is refetched on every rebuild.
+- **The revision now arrives with the text.** Before, a page read on a cold start was
+  stored with no revision and read again when the index first reported, so every
+  restart read every page twice (the harness showed 89 reads for 64 pages). A page
+  read since the last index check is also served from the cache until the next one.
+- **Wikipedia pacing is a cold-start cost.** One request at a time, 250 ms apart
+  (`WIKI_MIN_REQUEST_INTERVAL_MS`), measured at ~9 s on a cold build; nothing on a
+  rebuild. If the warm-up page after a deploy starts to matter, that constant is the
+  knob (0 gives back ~8 s and keeps one-at-a-time). One hung Wikipedia request now
+  holds the whole queue for up to its timeout and retries (~31 s worst case).
+- **The team-name lookup is ~22 calls on a cold build, not one**: each race resolves
+  its own codes before the cache fills. Harmless now that it is paced, but a single
+  batched call per build would be the fix if it ever matters.
+- **Counting harness**: `count-requests.js` in that session's scratchpad (not
+  committed) loads `server.js` in a VM with a counting `fetch`, runs
+  `buildRaceMetadata` + `buildRaceData` cold, waits 47 s (past the revision index
+  window), runs them again, and prints requests per host, peak concurrency and the
+  busiest second. Rebuild it from this description when DATA-SOURCES.md needs numbers.
+- **Upstream bodies are capped** (`readResponseText`: 8 MB, Wikipedia 4 MB) and an
+  oversized one is logged as `upstream-body-too-large` and not retried. The VM harness
+  now carries `TextDecoder` so the streamed path runs in tests.
+- **Two wiki cell-attribute regexes were exponential** (`a=a=a…`, 81 characters, ~40 s
+  each). The bare attribute value is now matched atomically with `(?=(…))\1`. When a
+  regex repeats a group whose parts can split the same text two ways, time it on a
+  few thousand characters of adversarial input before shipping it.
+- **Clock guard**: `CLOCK_ARGUMENT_POSITION` in the tests lists calendar-sensitive
+  functions and fails any call that omits the clock. Add a function there when it
+  gains a `now` parameter. The card builders are deliberately not listed.
