@@ -71,6 +71,7 @@ const FINISH_VIDEO_BACKLOG_BUDGET_MS = 4000;
 const FINISH_VIDEO_BACKLOG_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FINISH_VIDEO_DAILY_LOOKUP_CAP = 90;
 const FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP = 60;
+const FINISH_VIDEO_BACKLOG_PAUSE_MS = 60 * 60 * 1000;
 // A plausible highlights runtime: long enough to be real coverage rather than a
 // clip/Short, short enough to exclude full-stage replays and livestream VODs.
 const FINISH_VIDEO_MIN_LENGTH_SECONDS = 2 * 60;
@@ -9714,6 +9715,12 @@ function isFinishVideoLookupDue(cached, now, backlog = false) {
   if (cached.url && (cached.persistent || backlog)) {
     return false;
   }
+  // A lookup that failed (the API refusing, a network error) is not a miss: it says
+  // nothing about the video, so it is asked again after the short interval in either
+  // mode rather than waiting out a backlog week.
+  if (cached.error) {
+    return now - cached.updatedAt >= FINISH_VIDEO_MISS_CACHE_TTL_MS;
+  }
   const firstSearchedAt = cached.firstSearchedAt || cached.updatedAt || now;
   const missRetriesQuickly = !cached.url && now - firstSearchedAt < FINISH_VIDEO_CACHE_TTL_MS;
   const ttl = backlog
@@ -9723,6 +9730,11 @@ function isFinishVideoLookupDue(cached, now, backlog = false) {
       : FINISH_VIDEO_CACHE_TTL_MS;
   return now - cached.updatedAt >= ttl;
 }
+
+// After a failed lookup the backlog waits an hour before asking again: the likeliest
+// cause is the API's daily quota, and a rebuild every minute would only repeat the
+// refusal. The live and recent passes keep their own short retry.
+let finishVideoBacklogPausedUntil = 0;
 
 async function resolveRaceFinishVideoUrl(
   race,
@@ -9745,11 +9757,15 @@ async function resolveRaceFinishVideoUrl(
     const url = await lookup(race);
     finishVideoCache.set(key, { updatedAt: now, url, firstSearchedAt, persistent: backlog && Boolean(url) });
     return url;
-  } catch {
-    if (cached) {
+  } catch (error) {
+    if (backlog) {
+      finishVideoBacklogPausedUntil = now + FINISH_VIDEO_BACKLOG_PAUSE_MS;
+      logEvent("warn", "finish-video-lookup-failed", { race: key, error: error?.message || String(error) });
+    }
+    if (cached?.url) {
       return cached.url;
     }
-    finishVideoCache.set(key, { updatedAt: now, url: "", firstSearchedAt });
+    finishVideoCache.set(key, { updatedAt: now, url: "", firstSearchedAt, error: true });
     return "";
   }
 }
@@ -10382,7 +10398,7 @@ async function enrichFinishVideoBacklog(
 
   // known: videos applied from the cache this time; pending: stages due a search.
   const summary = { known, pending: searchable.length, searched: 0, found: 0 };
-  if (!String(apiKey || "").trim() || searchable.length === 0) {
+  if (!String(apiKey || "").trim() || searchable.length === 0 || nowMs < finishVideoBacklogPausedUntil) {
     return summary;
   }
 

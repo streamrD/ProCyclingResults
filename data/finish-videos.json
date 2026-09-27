@@ -1,3 +1,20 @@
 {
-  "videos": {}
+  "videos": {
+    "2026 Grand Prix Cycliste de Montréal|0": {
+      "url": "https://www.youtube.com/watch?v=lcLv7yKcJ9w",
+      "foundAt": "2026-09-27T00:36:58.830Z"
+    },
+    "2026 Vuelta a España|10": {
+      "url": "https://www.youtube.com/watch?v=vd5EfjdCX4w",
+      "foundAt": "2026-09-27T00:39:10.734Z"
+    },
+    "2026 Vuelta a España|20": {
+      "url": "https://www.youtube.com/watch?v=8WDZQq4wUoM",
+      "foundAt": "2026-09-27T00:36:58.830Z"
+    },
+    "2026 Vuelta a España|21": {
+      "url": "https://www.youtube.com/watch?v=P7VUXRqB484",
+      "foundAt": "2026-09-27T00:36:58.830Z"
+    }
+  }
 }

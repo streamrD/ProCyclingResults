@@ -5028,6 +5028,40 @@ test("resolveRaceFinishVideoUrl stops searching at the daily cap and keeps what 
   assert.equal(finishVideoLookupLog.length, 1, "the log forgets lookups older than a day");
 });
 
+test("a failed lookup is retried after 20 minutes in the backlog too, and pauses the backlog for an hour", async () => {
+  const { resolveRaceFinishVideoUrl, enrichFinishVideoBacklog, isFinishVideoLookupDue, finishVideoCache, finishVideoLookupLog } =
+    loadParserExports();
+  finishVideoCache.clear();
+  finishVideoLookupLog.length = 0;
+  const now = Date.parse("2026-09-27T12:00:00Z");
+  const minute = 60 * 1000;
+  let calls = 0;
+  const failing = async () => {
+    calls += 1;
+    throw new Error("403");
+  };
+  assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now, lookup: failing, backlog: true }), "");
+  const cached = finishVideoCache.get("2026 Tour de France|21");
+  assert.equal(cached.error, true);
+  assert.equal(isFinishVideoLookupDue(cached, now + 10 * minute, true), false);
+  assert.equal(isFinishVideoLookupDue(cached, now + 20 * minute, true), true, "an error is not a week-long miss");
+  assert.equal(isFinishVideoLookupDue(cached, now + 20 * minute, false), true);
+
+  // The backlog pass waits an hour after a failure before asking about anything.
+  const race = {
+    pageTitle: "2026 Tour de Pologne",
+    title: "Tour de Pologne",
+    startDate: new Date("2026-08-24T00:00:00Z"),
+    endDate: new Date("2026-08-30T00:00:00Z"),
+    stageRace: { totalStages: 2, completedStages: 2, latestStage: { number: 2 }, stages: [1, 2].map((n) => ({ number: n, label: `Stage ${n}`, standings: [{ place: "1", rider: "R" }] })) },
+  };
+  let summary = await enrichFinishVideoBacklog([race], new Date(now + 21 * minute), { apiKey: "test", lookup: failing });
+  assert.deepEqual(JSON.parse(JSON.stringify(summary)), { known: 0, pending: 2, searched: 0, found: 0 });
+  summary = await enrichFinishVideoBacklog([race], new Date(now + 61 * minute), { apiKey: "test", lookup: failing });
+  assert.equal(summary.searched, 2);
+  assert.equal(calls, 3);
+});
+
 test("loadPersistedFinishVideos seeds the cache with entries that never expire", async () => {
   const { loadPersistedFinishVideos, listFoundFinishVideos, isFinishVideoLookupDue, resolveRaceFinishVideoUrl, finishVideoCache } =
     loadParserExports();
