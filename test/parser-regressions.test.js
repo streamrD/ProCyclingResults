@@ -214,6 +214,7 @@ function loadParserExports() {
       attachCachedStageProfiles,
       stageProfileCache,
       loadPersistedStageProfiles,
+      getStageProfileSource,
       buildNextStageRowMarkup,
       buildPodiumMarkup,
       getStageStandingMetrics,
@@ -8035,6 +8036,45 @@ test("parseSeasonRows reads the real 2026 WorldTour page, a sortable table and a
   assert.equal(sanremo.winner, "Tadej Pogačar");
   assert.equal(sanremo.third, "Mathieu van der Poel");
   assert.equal(new Date(sanremo.startDate).toISOString().slice(0, 10), "2026-03-21");
+});
+
+test("ASO_SOURCES=off turns every ASO source off at once and leaves the others alone", () => {
+  const {
+    OFFICIAL_STAGE_RACE_PROVIDERS,
+    OFFICIAL_ONE_DAY_RESULT_PROVIDERS,
+    findOfficialRaceProvider,
+    getStageProfileSource,
+    loadPersistedStageProfiles,
+    stageProfileCache,
+  } = loadParserExports();
+  const race = (title, start, end) => ({ pageTitle: `2026 ${title}`, startDate: new Date(`${start}T00:00:00Z`), endDate: new Date(`${end}T00:00:00Z`) });
+  const tour = race("Tour de France", "2026-07-04", "2026-07-26");
+  const vuelta = race("Vuelta a España", "2026-08-22", "2026-09-13");
+  const giro = race("Giro d'Italia", "2026-05-08", "2026-05-31");
+  const eschborn = race("Eschborn–Frankfurt", "2026-05-01", "2026-05-01");
+  const aso = ["la-vuelta-femenina-rankings", "tour-auvergne-rhone-alpes-rankings", "tour-de-france-rankings", "tour-de-france-femmes-rankings", "vuelta-a-espana-rankings"];
+  assert.deepEqual(JSON.parse(JSON.stringify(OFFICIAL_STAGE_RACE_PROVIDERS.filter((provider) => provider.aso).map((provider) => provider.id).sort())), [...aso].sort());
+  const filePath = path.join(__dirname, "..", "data", "stage-profiles.json");
+  const previous = process.env.ASO_SOURCES;
+  try {
+    delete process.env.ASO_SOURCES;
+    assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour)?.id, "tour-de-france-rankings", "on unless switched off");
+    assert.ok(getStageProfileSource(vuelta, new Date("2026-09-01T00:00:00Z")));
+
+    process.env.ASO_SOURCES = "off";
+    assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, tour), null);
+    assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, vuelta), null);
+    assert.equal(findOfficialRaceProvider(OFFICIAL_ONE_DAY_RESULT_PROVIDERS, eschborn), null);
+    assert.equal(findOfficialRaceProvider(OFFICIAL_STAGE_RACE_PROVIDERS, giro)?.id, "giro-ditalia-stage-one", "RCS is not ASO");
+    assert.equal(getStageProfileSource(vuelta, new Date("2026-09-01T00:00:00Z")), null);
+    // The committed traces are all from lavuelta.es, so none is seeded.
+    stageProfileCache.clear();
+    assert.equal(loadPersistedStageProfiles(filePath), 0);
+    assert.equal(stageProfileCache.size, 0);
+  } finally {
+    if (previous === undefined) delete process.env.ASO_SOURCES;
+    else process.env.ASO_SOURCES = previous;
+  }
 });
 
 test("official providers match the season's edition of a race, not a literal 2026 title", () => {

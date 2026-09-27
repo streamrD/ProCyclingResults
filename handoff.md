@@ -972,6 +972,49 @@ overwrites something better that Wikipedia already supplied.
 - When you push, another commit may already be on `origin/main` from the site editor. Always `git pull --rebase origin main` before `git push`; a hand edit to `data/release-notes.md` can conflict with an edit the maintainer made on the site.
 - CI runs `npm test` on every push and pull request (`.github/workflows/test.yml`), including the headless-Chrome smoke test in `test/browser-smoke.test.js`, which drives the real client script (stage chips, km/mi toggle, expand control, late-markup observer, the refresh button against a stubbed fetch) and skips only when no Chrome is found. `package.json` pins `engines.node >= 20`. There is still no lint script, formatter config, or lockfile — the app has no dependencies, so a lockfile would be empty.
 
+## If ASO Says No (2026-09-27)
+
+ASO's conditions of use ask for written consent before their sites are read by a
+robot, and `robots.txt` on letour.fr and lavuelta.es disallows `/*/ajax`, where the
+ranking partials we read live (assessment L2, L6). The maintainer is writing to ask.
+**Until ASO answers, the sources stay on**: that is the maintainer's decision.
+
+- **The switch.** `ASO_SOURCES=off` in Railway's variables turns off, in one restart,
+  the six ASO providers (`asoProvider(...)` in `OFFICIAL_STAGE_RACE_PROVIDERS` and
+  `OFFICIAL_ONE_DAY_RESULT_PROVIDERS`), the four ASO stage-profile sources
+  (`aso: true` in `STAGE_PROFILE_SOURCES`) and the seeding of the traces committed
+  from them. `areAsoSourcesEnabled()` is read on every call. On a refusal also delete
+  `data/stage-profiles.json` (it republishes komoot traces) and rewrite the ASO and
+  komoot rows of `DATA-SOURCES.md`.
+- **What Wikipedia alone gives, measured.** `assessments/tools/area9/wiki-replay.js`
+  runs the server's own `extractStageRaceSnapshot` on every revision of the main
+  article and the companion stage articles it linked at the time, for each stage of
+  the 2026 Tour, Vuelta, Tour Femmes and Vuelta Femenina (about 720 requests to
+  Wikipedia, sequential, cached). Minutes after the first Wikipedia revision naming
+  the stage winner, which lands within minutes of the finish (17:10–17:50 local):
+
+  | Race | Stage top five | GC leader | GC top five, main article only | GC top five, with companion articles |
+  |---|---|---|---|---|
+  | Tour de France | 34m median | 1m | 36m median, 5 of 20 stages over 3h | 21m, none over 3h |
+  | Vuelta a España | 51m | 36m | 14.5h, 13 of 20 over 3h | 52m, 2 over 3h |
+  | Tour de France Femmes | 69m | 2m | 24.2h, 5 of 9 over 3h | 38m, 1 over 3h |
+  | La Vuelta Femenina | 4.6h | 3m | 6.3h, 5 of 7 over 3h | 52m, 2 over 3h |
+
+  The Tour's stage 21 *is* on Wikipedia (it arrived with its top five at 20:09 local);
+  the older note that only letour.fr had it does not hold for 2026. Stage 1 of the
+  Tour was a team time trial, so it has no rider winner in either source.
+- **What to build for the fallback, in order.** (1) A GC fallback from the companion
+  articles' "General classification after Stage N" blocks, used only while the main
+  article has no top five for that stage, and only when its leader matches the
+  leadership table's leader for the stage (the guard against the drift that made
+  `extractStageRaceSnapshot` ignore those blocks: the 2026 Vuelta's stage 2 block
+  carried the stage 1 leader). It helps every race, ASO or not. (2) Read ASO only
+  through the public pages `robots.txt` allows: `/en/rankings` carries the general
+  classification inline and `/en/rankings/stage-N` the stage result (checked on
+  lavuelta.es on 2026-09-27), two requests where today's path makes four, two of them
+  to disallowed partials. (3) A credit and a link to the organiser's rankings page on
+  every ASO race card.
+
 ## The Journal
 
 The dated sections that used to follow here ("Open Threads" with its "Added <date>"

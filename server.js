@@ -6737,17 +6737,32 @@ function seasonEditionProvider(id, title, load) {
   return { id, title, matches: (race, seasonYear) => matchesSeasonEdition(race, title, seasonYear), load };
 }
 
+// ASO's sites (and the komoot traces they embed) are read without ASO's written
+// consent, which their conditions of use ask for; the maintainer wrote to ask for it
+// (assessment L2/L6). Until they answer, the sources stay on. ASO_SOURCES=off in the
+// environment turns every one of them off at once, so a refusal is a config change and
+// a restart, not a code change: the cards fall back to Wikipedia (shallower and slower
+// on a live Grand Tour; see "If ASO says no" in handoff.md). Read on every call so the
+// tests can flip it.
+function areAsoSourcesEnabled() {
+  return String(process.env.ASO_SOURCES || "").trim().toLowerCase() !== "off";
+}
+
+function asoProvider(id, title, load) {
+  return { ...seasonEditionProvider(id, title, load), aso: true };
+}
+
 const OFFICIAL_STAGE_RACE_PROVIDERS = [
   seasonEditionProvider("tour-de-romandie-prologue", "Tour de Romandie", fetchTourDeRomandieOfficialSnapshot),
-  seasonEditionProvider("la-vuelta-femenina-rankings", "La Vuelta Femenina", fetchLaVueltaFemeninaOfficialSnapshot),
+  asoProvider("la-vuelta-femenina-rankings", "La Vuelta Femenina", fetchLaVueltaFemeninaOfficialSnapshot),
   seasonEditionProvider("grande-premio-anicolor-live", "Grande Prémio Anicolor", fetchGrandePremioAnicolorLiveSnapshot),
   seasonEditionProvider("vuelta-asturias", "Vuelta Asturias", fetchVueltaAsturiasOfficialSnapshot),
-  seasonEditionProvider("tour-auvergne-rhone-alpes-rankings", "Tour Auvergne-Rhône-Alpes", fetchTourAuvergneRhoneAlpesOfficialSnapshot),
+  asoProvider("tour-auvergne-rhone-alpes-rankings", "Tour Auvergne-Rhône-Alpes", fetchTourAuvergneRhoneAlpesOfficialSnapshot),
   seasonEditionProvider("giro-ditalia-stage-one", "Giro d'Italia", fetchGiroDItaliaOfficialSnapshot),
-  seasonEditionProvider("tour-de-france-rankings", "Tour de France", fetchTourDeFranceOfficialSnapshot),
-  seasonEditionProvider("tour-de-france-femmes-rankings", "Tour de France Femmes", fetchTourDeFranceFemmesOfficialSnapshot),
+  asoProvider("tour-de-france-rankings", "Tour de France", fetchTourDeFranceOfficialSnapshot),
+  asoProvider("tour-de-france-femmes-rankings", "Tour de France Femmes", fetchTourDeFranceFemmesOfficialSnapshot),
   seasonEditionProvider("giro-ditalia-women-rankings", "Giro d'Italia Women", fetchGiroDItaliaWomenOfficialSnapshot),
-  seasonEditionProvider("vuelta-a-espana-rankings", "Vuelta a España", fetchVueltaAEspanaOfficialSnapshot),
+  asoProvider("vuelta-a-espana-rankings", "Vuelta a España", fetchVueltaAEspanaOfficialSnapshot),
   {
     id: "vuelta-a-burgos-feminas-liveblog",
     title: "Vuelta a Burgos Feminas",
@@ -6757,11 +6772,12 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
 ];
 
 const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
-  seasonEditionProvider("eschborn-frankfurt", "Eschborn–Frankfurt", fetchEschbornFrankfurtOfficialStandings),
+  asoProvider("eschborn-frankfurt", "Eschborn–Frankfurt", fetchEschbornFrankfurtOfficialStandings),
 ];
 
 function findOfficialRaceProvider(providers, race) {
-  return providers.find((provider) => provider.matches(race)) || null;
+  const asoEnabled = areAsoSourcesEnabled();
+  return providers.find((provider) => (asoEnabled || !provider.aso) && provider.matches(race)) || null;
 }
 
 // True when the race ended at least `days` days before today (UTC): its official
@@ -9947,18 +9963,22 @@ function buildStageFinishVideoSubject(race, stage) {
 // sites always show this year's race, whatever year the Wikipedia page describes.
 const STAGE_PROFILE_SOURCES = [
   {
+    aso: true,
     matches: (race) => /^\d{4} Vuelta a España$/.test(race?.pageTitle || ""),
     stageUrl: (stageNumber) => `https://www.lavuelta.es/en/stage-${stageNumber}`,
   },
   {
+    aso: true,
     matches: (race) => /^\d{4} Tour de France$/.test(race?.pageTitle || ""),
     stageUrl: (stageNumber) => `https://www.letour.fr/en/stage-${stageNumber}`,
   },
   {
+    aso: true,
     matches: (race) => /^\d{4} Tour de France Femmes$/.test(race?.pageTitle || ""),
     stageUrl: (stageNumber) => `https://www.letourfemmes.fr/en/stage-${stageNumber}`,
   },
   {
+    aso: true,
     matches: (race) => /^\d{4} La Vuelta Femenina$/.test(race?.pageTitle || ""),
     stageUrl: (stageNumber) => `https://www.lavueltafemenina.es/en/stage-${stageNumber}`,
   },
@@ -9987,7 +10007,12 @@ function loadPersistedStageProfiles(filePath = PERSISTED_STAGE_PROFILE_PATH) {
   }
 
   let seeded = 0;
+  const asoEnabled = areAsoSourcesEnabled();
   Object.entries(entries?.profiles || {}).forEach(([key, entry]) => {
+    const fromAso = STAGE_PROFILE_SOURCES.some((source) => source.aso && source.matches({ pageTitle: key.split("#")[0] }));
+    if (!asoEnabled && fromAso) {
+      return;
+    }
     if (entry?.profile && Array.isArray(entry.profile.points) && entry.profile.points.length > 1) {
       stageProfileCache.set(key, { fetchedAt: Date.now(), profile: entry.profile, persistent: true });
       seeded += 1;
@@ -10080,7 +10105,8 @@ function getStageProfileSource(race, now = new Date()) {
   if (getRaceYear(race) !== now.getUTCFullYear()) {
     return null;
   }
-  return STAGE_PROFILE_SOURCES.find((source) => source.matches(race)) || null;
+  const asoEnabled = areAsoSourcesEnabled();
+  return STAGE_PROFILE_SOURCES.find((source) => (asoEnabled || !source.aso) && source.matches(race)) || null;
 }
 
 function getStageProfileCacheKey(race, stage) {

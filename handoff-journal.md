@@ -1132,3 +1132,21 @@ Traps met:
 - **CI:** the failed run the maintainer was emailed was `9e71a18`, pushed before its
   test was updated; `6f44500` fixed it a minute later. Run `npm test` before every
   push, even a one-line checker change.
+
+## The ASO Question (2026-09-27, 10:00 UTC)
+
+- The maintainer asked what happens if ASO refuses. An Explore agent mapped every ASO
+  and komoot dependency (the map is now "If ASO Says No" in `handoff.md`). The
+  maintainer's decisions: plan for a refusal, build what can be built, **do not turn
+  the sources off until ASO answers**, and plan the letter and the positioning with care.
+- The replay (`assessments/tools/area9/wiki-replay.js`) answered "would it be crappy"
+  with numbers instead of a guess: winner and GC leader within minutes on Wikipedia,
+  stage top five within the hour, GC top five slow from the main article (a day late
+  on many stages) but within the hour from the companion stage articles. Worth
+  reusing for any "what if this source goes away" question: Wikipedia's revision
+  history is a free, exact record of what our parser would have seen and when.
+- The replay's first run parsed "3 May" without a year; route dates need the race's
+  year from the page title.
+- `ASO_SOURCES=off` is built and dormant. The agent's claim that Wikipedia lacked the
+  Tour's stage 21 came from an older handoff note; the replay shows it there in 2026.
+  Check claims copied from notes against the source before planning on them.
