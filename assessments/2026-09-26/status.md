@@ -44,7 +44,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | P5 | open | Queue item 1 (Atom feed) |
 | P6 | closed | duplicate of A2 |
 | X1 | closed | aee8018: render cache and token bucket |
-| X2 | partial | aee8018: caps and bucket. Open: in-flight dedupe on `/api/race-stages` (queue item 3) |
+| X2 | closed | aee8018 caps and bucket; 2026-09-27 in-flight promise shared in `stageHistoryCache` |
 | X3 | closed | aee8018 |
 | X4 | open | GitHub token scope check (maintainer, five minutes) |
 | X5 | closed | aee8018 |
@@ -64,7 +64,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R13 | closed | 8c564a5 |
 | S6 | closed | aee8018 |
 | S7 | open | Parse the rider index only on hover devices |
-| S8 | open | Queue item 2 |
+| S8 | closed | 2026-09-27: strong ETag (content hash, `-br`/`-gzip` per representation) with `cache-control: no-cache`, 304 on `if-none-match` |
 | S9 | open | With S4 |
 | S10 | closed | 77674e9: notes corrected; framed probe in the smoke test since 295f14e |
 | A11 | partial | 013cc62: chips and unit toggles have 44px hit areas; rider links unchanged |
@@ -93,7 +93,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | M13 | closed | 51770de |
 | M14 | closed | 51770de |
 | L7 | open | Wikitext through the API instead of `action=raw` |
-| L8 | open | Queue item 7 |
+| L8 | closed | 2026-09-27: provider and helpers archived to `archive/tour-of-greece-provider.js`, fixture and tests removed |
 | L9 | closed | 013cc62 |
 | L10 | closed | fc66a6b |
 | L11 | deferred | With P1 |

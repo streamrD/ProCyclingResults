@@ -2,6 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 27 September 2026
 
+- **Faster repeat visits.** The page and its data now carry a version tag, so a browser that already has the latest copy is told there is nothing new instead of downloading the whole page again. A rebuilt page still arrives the moment it changes.
 - **Every finished race gets its finish video back.** The site now looks for the finish highlights of every race and stage run this season, not only the last week's, a few at a time, and remembers what it finds across updates instead of starting over.
 
 ## 26 September 2026

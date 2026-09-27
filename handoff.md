@@ -1963,6 +1963,26 @@ The state of play after the 2026-09-26 assessment and its two remediation batche
 
 **How the last session worked, for the next one:** seven parallel agents in isolated worktrees, each owning line ranges of `server.js`, merged onto `main` by hand; four were cut off by the account's monthly spend limit, so do not spawn many agents at once until that resets. Every branch appends tests to the end of `test/parser-regressions.test.js` and extends the harness export block, so every merge conflicts there; keep both sides and check the closing `});` and `},` lines with `node -c`. Phone widths are verified only through the framed probe (`runFramedProbe` in the smoke test, `assessments/tools/area2/frame.sh`); a bare `--window-size=390` is a 500px layout. After pushing, `npm run verify:deploy`.
 
+### Closed on 2026-09-27, after the queue was written
+
+- Item 0 (R7): see "The backlog and the persisted file" under "Finish Video Links".
+- Item 2 (S8): the ETag on `/` and the payload endpoints is a hash of the cached bytes,
+  not `fetchedAt`, because the response cache re-renders per UTC minute and
+  `/api/race-stages` clears it; either can change the body under one `fetchedAt`, and
+  a 304 for a changed page is the one bug an ETag must never have. Compressed bodies
+  get a `-br`/`-gzip` suffix (strong tags are per representation). `sendPreparedBody`
+  reads `response.req.headers["if-none-match"]`; only bodies from
+  `getCachedResponseBody` carry a tag, so 404/500, `/api/race-news`, `?debug=1` and
+  the static assets are unchanged.
+- Item 3 (X2): `loadRequestedStageHistory` keeps the in-flight promise in
+  `stageHistoryCache` (`{ fetchedAt, stages, promise }`) the way `articleCache` does;
+  a failure deletes the entry so the next call retries.
+- Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
+  `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
+- Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside
+  the VM harness fail because the sandbox's prototypes are another realm's; compare
+  `JSON.parse(JSON.stringify(...))` copies.
+
 ## Suggested First Checks For A New Agent
 
 Run these before making changes (and read `DATA-SOURCES.md` before changing anything
