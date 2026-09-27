@@ -13278,15 +13278,21 @@ function buildHtmlPage(data, view) {
     <link rel="canonical" href="${escapeHtml(SITE_ORIGIN)}/" />
     <link rel="alternate" type="application/atom+xml" title="Pro Cycling Results: latest results" href="/feed.xml" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="preload" href="/assets/fonts/barlow-semi-condensed-800.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/fonts/manrope-500.woff2" as="font" type="font/woff2" crossorigin />
     <title>Pro Cycling Results</title>
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
+      /* Self-hosted woff2, 192 KB for the six faces against 550 KB of TTF (2026-09-26).
+         font-display stays "swap" rather than "optional": each file is about 30 KB, the
+         two hero faces are preloaded, and the metric-matched fallbacks below keep the
+         swap from moving anything, so the brand faces always arrive without a reflow. */
       @font-face {
         font-family: "Manrope";
         font-style: normal;
         font-weight: 500;
         font-display: swap;
-        src: url("/assets/fonts/manrope-500.ttf") format("truetype");
+        src: url("/assets/fonts/manrope-500.woff2") format("woff2");
       }
 
       @font-face {
@@ -13294,7 +13300,7 @@ function buildHtmlPage(data, view) {
         font-style: normal;
         font-weight: 700;
         font-display: swap;
-        src: url("/assets/fonts/manrope-700.ttf") format("truetype");
+        src: url("/assets/fonts/manrope-700.woff2") format("woff2");
       }
 
       @font-face {
@@ -13302,7 +13308,7 @@ function buildHtmlPage(data, view) {
         font-style: normal;
         font-weight: 800;
         font-display: swap;
-        src: url("/assets/fonts/manrope-800.ttf") format("truetype");
+        src: url("/assets/fonts/manrope-800.woff2") format("woff2");
       }
 
       @font-face {
@@ -13310,7 +13316,7 @@ function buildHtmlPage(data, view) {
         font-style: normal;
         font-weight: 600;
         font-display: swap;
-        src: url("/assets/fonts/barlow-semi-condensed-600.ttf") format("truetype");
+        src: url("/assets/fonts/barlow-semi-condensed-600.woff2") format("woff2");
       }
 
       @font-face {
@@ -13318,7 +13324,7 @@ function buildHtmlPage(data, view) {
         font-style: normal;
         font-weight: 700;
         font-display: swap;
-        src: url("/assets/fonts/barlow-semi-condensed-700.ttf") format("truetype");
+        src: url("/assets/fonts/barlow-semi-condensed-700.woff2") format("woff2");
       }
 
       @font-face {
@@ -13326,7 +13332,90 @@ function buildHtmlPage(data, view) {
         font-style: normal;
         font-weight: 800;
         font-display: swap;
-        src: url("/assets/fonts/barlow-semi-condensed-800.ttf") format("truetype");
+        src: url("/assets/fonts/barlow-semi-condensed-800.woff2") format("woff2");
+      }
+
+      /* Local fallbacks sized to the webfonts so text set in them takes the same lines
+         and baseline until the woff2 lands. size-adjust is the webfont's width over the
+         fallback's, measured in headless Chrome on the strings the site sets in each
+         face (2026-09-26; a value derived from the font tables' average glyph width ran
+         5-10% wide because Arial's capitals are so much wider than Barlow's). The
+         vertical overrides are the webfont's ascent, descent and line gap over its em,
+         divided by size-adjust; the probe showed line boxes and baselines matching to
+         the pixel. Re-measure if a face is replaced. The weight ranges mirror what each
+         request resolves to in the real family (Manrope 400 -> 500, Barlow 400 -> 600).
+         Arial Narrow ships with macOS and Office; the plain-Arial pair covers machines
+         without it. */
+      @font-face {
+        /* Manrope 500 over Arial */
+        font-family: "Manrope Fallback";
+        font-style: normal;
+        font-weight: 100 500;
+        src: local("Arial"), local("ArialMT");
+        size-adjust: 102.53%;
+        ascent-override: 103.97%;
+        descent-override: 29.26%;
+        line-gap-override: 0%;
+      }
+
+      @font-face {
+        /* Manrope 700 over Arial Bold */
+        font-family: "Manrope Fallback";
+        font-style: normal;
+        font-weight: 501 900;
+        src: local("Arial Bold"), local("Arial-BoldMT");
+        size-adjust: 99.64%;
+        ascent-override: 106.99%;
+        descent-override: 30.11%;
+        line-gap-override: 0%;
+      }
+
+      @font-face {
+        /* Barlow Semi Condensed 600 over Arial Narrow */
+        font-family: "Barlow Semi Condensed Fallback";
+        font-style: normal;
+        font-weight: 100 600;
+        src: local("Arial Narrow"), local("ArialNarrow");
+        size-adjust: 99.35%;
+        ascent-override: 100.65%;
+        descent-override: 20.13%;
+        line-gap-override: 0%;
+      }
+
+      @font-face {
+        /* Barlow Semi Condensed 800 over Arial Narrow Bold */
+        font-family: "Barlow Semi Condensed Fallback";
+        font-style: normal;
+        font-weight: 601 900;
+        src: local("Arial Narrow Bold"), local("ArialNarrow-Bold");
+        size-adjust: 98.2%;
+        ascent-override: 101.83%;
+        descent-override: 20.37%;
+        line-gap-override: 0%;
+      }
+
+      @font-face {
+        /* Barlow Semi Condensed 600 over Arial */
+        font-family: "Barlow Semi Condensed Fallback Arial";
+        font-style: normal;
+        font-weight: 100 600;
+        src: local("Arial"), local("ArialMT");
+        size-adjust: 81.49%;
+        ascent-override: 122.71%;
+        descent-override: 24.54%;
+        line-gap-override: 0%;
+      }
+
+      @font-face {
+        /* Barlow Semi Condensed 800 over Arial Bold */
+        font-family: "Barlow Semi Condensed Fallback Arial";
+        font-style: normal;
+        font-weight: 601 900;
+        src: local("Arial Bold"), local("Arial-BoldMT");
+        size-adjust: 80.53%;
+        ascent-override: 124.18%;
+        descent-override: 24.84%;
+        line-gap-override: 0%;
       }
 
       :root {
@@ -13376,7 +13465,7 @@ function buildHtmlPage(data, view) {
           radial-gradient(circle at top left, rgba(0, 120, 199, 0.24), transparent 24%),
           radial-gradient(circle at 85% 12%, rgba(255, 204, 0, 0.22), transparent 18%),
           linear-gradient(180deg, #f7faff 0%, var(--bg) 52%, #e6eefb 100%);
-        font-family: "Manrope", "Segoe UI", sans-serif;
+        font-family: "Manrope", "Manrope Fallback", "Segoe UI", sans-serif;
       }
 
       .page {
@@ -13390,7 +13479,7 @@ function buildHtmlPage(data, view) {
       h3 {
         margin: 0;
         line-height: 0.96;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-weight: 800;
         letter-spacing: -0.02em;
       }
@@ -13450,7 +13539,7 @@ function buildHtmlPage(data, view) {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
@@ -13483,7 +13572,7 @@ function buildHtmlPage(data, view) {
         margin: 1rem 0 0;
         max-width: 42rem;
         color: rgba(255, 255, 255, 0.82);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -13517,7 +13606,7 @@ function buildHtmlPage(data, view) {
         border-radius: 999px;
         background: var(--uci-yellow);
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.7rem;
         font-weight: 800;
         letter-spacing: 0.1em;
@@ -13553,7 +13642,7 @@ function buildHtmlPage(data, view) {
         border: 1px solid rgba(255, 255, 255, 0.22);
         background: rgba(255, 255, 255, 0.12);
         color: white;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.82rem;
         font-weight: 700;
         letter-spacing: 0.12em;
@@ -13614,7 +13703,7 @@ function buildHtmlPage(data, view) {
         border: 1px solid rgba(255, 255, 255, 0.14);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
         backdrop-filter: blur(14px);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         color: white;
         font-size: 0.95rem;
         font-weight: 700;
@@ -13691,7 +13780,7 @@ function buildHtmlPage(data, view) {
         border-radius: 999px;
         background: var(--uci-yellow);
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.25rem;
         font-weight: 800;
         letter-spacing: 0.02em;
@@ -13754,7 +13843,7 @@ function buildHtmlPage(data, view) {
       }
 
       .closeout-roster .who {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.02rem;
         font-weight: 800;
         line-height: 1.15;
@@ -13985,7 +14074,7 @@ function buildHtmlPage(data, view) {
         background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.04));
         color: var(--uci-blue-deep);
         cursor: pointer;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.95rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -14026,7 +14115,7 @@ function buildHtmlPage(data, view) {
       .national-event-meta span,
       .national-event-empty span {
         color: var(--muted);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -14139,7 +14228,7 @@ function buildHtmlPage(data, view) {
       .national-group-count {
         display: block;
         color: var(--muted);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -14151,7 +14240,7 @@ function buildHtmlPage(data, view) {
         display: block;
         margin-top: 0.2rem;
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-weight: 800;
         line-height: 1;
       }
@@ -14265,7 +14354,7 @@ function buildHtmlPage(data, view) {
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.75);
         color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.92rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -14345,7 +14434,7 @@ function buildHtmlPage(data, view) {
       }
 
       .national-group-name {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.25rem;
         font-weight: 800;
         letter-spacing: -0.01em;
@@ -14390,7 +14479,7 @@ function buildHtmlPage(data, view) {
         padding-bottom: 0.45rem;
         border-top: 0;
         color: var(--muted);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -14409,7 +14498,7 @@ function buildHtmlPage(data, view) {
         display: inline-flex;
         align-items: center;
         gap: 0.55rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.05rem;
         font-weight: 800;
         text-transform: uppercase;
@@ -14539,7 +14628,7 @@ function buildHtmlPage(data, view) {
       }
 
       .national-map-label text {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 11.5px;
         font-weight: 800;
       }
@@ -14883,7 +14972,7 @@ function buildHtmlPage(data, view) {
 
       .season-tooltip strong {
         display: block;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.98rem;
         font-weight: 800;
         text-transform: uppercase;
@@ -14987,7 +15076,7 @@ function buildHtmlPage(data, view) {
       }
 
       .season-months-past-title {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.15rem;
         font-weight: 700;
         color: var(--ink);
@@ -14997,7 +15086,7 @@ function buildHtmlPage(data, view) {
         padding: 0.3rem 0.75rem;
         border: 1px solid var(--line-strong);
         border-radius: 999px;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.75rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -15075,7 +15164,7 @@ function buildHtmlPage(data, view) {
         margin-left: 0.45rem;
         padding: 0.1rem 0.5rem;
         border-radius: 999px;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.68rem;
         font-weight: 800;
         letter-spacing: 0.08em;
@@ -15139,7 +15228,7 @@ function buildHtmlPage(data, view) {
         height: 2.2rem;
         border-radius: 16px;
         color: white;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1rem;
         font-weight: 800;
         border: 1px solid rgba(255, 255, 255, 0.18);
@@ -15378,7 +15467,7 @@ function buildHtmlPage(data, view) {
 
       .jersey-classification {
         color: var(--muted);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.8rem;
         font-weight: 700;
         letter-spacing: 0.06em;
@@ -15445,7 +15534,7 @@ function buildHtmlPage(data, view) {
         border: 1px solid rgba(0, 120, 199, 0.2);
         background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.18));
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.92rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -15482,7 +15571,7 @@ function buildHtmlPage(data, view) {
         border: 1px solid rgba(0, 120, 199, 0.28);
         background: rgba(255, 255, 255, 0.6);
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.92rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -15513,7 +15602,7 @@ function buildHtmlPage(data, view) {
 
       .stage-winner {
         margin-top: 0.45rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.18rem;
         font-weight: 800;
         text-transform: uppercase;
@@ -15532,7 +15621,7 @@ function buildHtmlPage(data, view) {
         border-radius: 999px;
         background: rgba(255, 204, 0, 0.14);
         color: #9b6500;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.72rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -15570,7 +15659,7 @@ function buildHtmlPage(data, view) {
         border-radius: 9px;
         background: rgba(255, 255, 255, 0.75);
         color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.92rem;
         font-weight: 700;
         line-height: 1;
@@ -15864,7 +15953,7 @@ function buildHtmlPage(data, view) {
         border-radius: 10px;
         background: rgba(255, 204, 0, 0.14);
         color: var(--uci-blue-deep);
-        font: 500 0.88rem "Manrope", "Segoe UI", sans-serif;
+        font: 500 0.88rem "Manrope", "Manrope Fallback", "Segoe UI", sans-serif;
         text-align: left;
         cursor: pointer;
       }
@@ -15880,7 +15969,7 @@ function buildHtmlPage(data, view) {
       }
 
       .stage-next-row-label {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-weight: 800;
         font-size: 0.72rem;
         letter-spacing: 0.1em;
@@ -15924,7 +16013,7 @@ function buildHtmlPage(data, view) {
         border-radius: 10px;
         background: rgba(0, 120, 199, 0.07);
         color: var(--ink);
-        font-family: "Manrope", "Segoe UI", sans-serif;
+        font-family: "Manrope", "Manrope Fallback", "Segoe UI", sans-serif;
         font-size: 0.95rem;
         line-height: 1.35;
         text-align: left;
@@ -15945,7 +16034,7 @@ function buildHtmlPage(data, view) {
       .race-news-ticker-label {
         flex: none;
         padding-top: 0.2rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.1em;
@@ -16017,7 +16106,7 @@ function buildHtmlPage(data, view) {
 
       .race-news-source {
         color: var(--uci-blue-bright);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.72rem;
         font-weight: 700;
         letter-spacing: 0.06em;
@@ -16025,7 +16114,7 @@ function buildHtmlPage(data, view) {
       }
 
       .race-news-title {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 1.02rem;
         font-weight: 700;
         line-height: 1.2;
@@ -16199,7 +16288,7 @@ function buildHtmlPage(data, view) {
       }
 
       .stage-profile-end strong {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.04em;
@@ -16225,7 +16314,7 @@ function buildHtmlPage(data, view) {
         padding: 0.2rem 0.6rem;
         background: rgba(255, 255, 255, 0.75);
         color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.06em;
@@ -16285,7 +16374,7 @@ function buildHtmlPage(data, view) {
         background: rgba(255, 255, 255, 0.9);
         border: 1px solid var(--line-strong);
         color: var(--uci-blue-deep);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.7rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -16301,7 +16390,7 @@ function buildHtmlPage(data, view) {
         border-radius: 999px;
         background: var(--uci-blue);
         color: white;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.1em;
@@ -16380,7 +16469,7 @@ function buildHtmlPage(data, view) {
       }
 
       .stage-profile-type {
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.95rem;
         font-weight: 800;
         letter-spacing: 0.06em;
@@ -16408,7 +16497,7 @@ function buildHtmlPage(data, view) {
         padding: 0.2rem 0.55rem;
         background: transparent;
         color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.74rem;
         font-weight: 700;
         letter-spacing: 0.06em;
@@ -16442,7 +16531,7 @@ function buildHtmlPage(data, view) {
         background: linear-gradient(180deg, rgba(0, 120, 199, 0.1), rgba(0, 51, 160, 0.04));
         color: var(--uci-blue-deep);
         cursor: pointer;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.95rem;
         font-weight: 700;
         letter-spacing: 0.04em;
@@ -16511,7 +16600,7 @@ function buildHtmlPage(data, view) {
         align-items: center;
         gap: 0.6rem;
         margin-top: 0.5rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
         font-size: 0.85rem;
         font-weight: 700;
         letter-spacing: 0.08em;
@@ -18673,16 +18762,26 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="preload" href="/assets/fonts/barlow-semi-condensed-800.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/fonts/manrope-500.woff2" as="font" type="font/woff2" crossorigin />
     <title>${escapeHtml(page.title)} · Pro Cycling Results</title>
     ${buildShareMetaTags({ path: page.path, title: `${page.title} · Pro Cycling Results`, description: page.description, image: SHARE_VIEWS["/"].image, alt: SHARE_VIEWS["/"].alt })}
     <link rel="canonical" href="${escapeHtml(SITE_ORIGIN + page.path)}" />
     ${UMAMI_ANALYTICS_SCRIPT}
     <style>
-      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/fonts/manrope-500.ttf") format("truetype"); }
-      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/manrope-700.ttf") format("truetype"); }
-      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/manrope-800.ttf") format("truetype"); }
-      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-700.ttf") format("truetype"); }
-      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-800.ttf") format("truetype"); }
+      /* The same faces and metric-matched fallbacks as the results page; keep the two in step. */
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 500; font-display: swap; src: url("/assets/fonts/manrope-500.woff2") format("woff2"); }
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/manrope-700.woff2") format("woff2"); }
+      @font-face { font-family: "Manrope"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/manrope-800.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-600.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-700.woff2") format("woff2"); }
+      @font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 800; font-display: swap; src: url("/assets/fonts/barlow-semi-condensed-800.woff2") format("woff2"); }
+      @font-face { font-family: "Manrope Fallback"; font-style: normal; font-weight: 100 500; src: local("Arial"), local("ArialMT"); size-adjust: 102.53%; ascent-override: 103.97%; descent-override: 29.26%; line-gap-override: 0%; }
+      @font-face { font-family: "Manrope Fallback"; font-style: normal; font-weight: 501 900; src: local("Arial Bold"), local("Arial-BoldMT"); size-adjust: 99.64%; ascent-override: 106.99%; descent-override: 30.11%; line-gap-override: 0%; }
+      @font-face { font-family: "Barlow Semi Condensed Fallback"; font-style: normal; font-weight: 100 600; src: local("Arial Narrow"), local("ArialNarrow"); size-adjust: 99.35%; ascent-override: 100.65%; descent-override: 20.13%; line-gap-override: 0%; }
+      @font-face { font-family: "Barlow Semi Condensed Fallback"; font-style: normal; font-weight: 601 900; src: local("Arial Narrow Bold"), local("ArialNarrow-Bold"); size-adjust: 98.2%; ascent-override: 101.83%; descent-override: 20.37%; line-gap-override: 0%; }
+      @font-face { font-family: "Barlow Semi Condensed Fallback Arial"; font-style: normal; font-weight: 100 600; src: local("Arial"), local("ArialMT"); size-adjust: 81.49%; ascent-override: 122.71%; descent-override: 24.54%; line-gap-override: 0%; }
+      @font-face { font-family: "Barlow Semi Condensed Fallback Arial"; font-style: normal; font-weight: 601 900; src: local("Arial Bold"), local("Arial-BoldMT"); size-adjust: 80.53%; ascent-override: 124.18%; descent-override: 24.84%; line-gap-override: 0%; }
       :root {
         --uci-blue: #0033a0;
         --uci-blue-bright: #0078c7;
@@ -18708,11 +18807,11 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
           radial-gradient(circle at top left, rgba(0, 120, 199, 0.24), transparent 24%),
           radial-gradient(circle at 85% 12%, rgba(255, 204, 0, 0.22), transparent 18%),
           linear-gradient(180deg, #f7faff 0%, var(--bg) 52%, #e6eefb 100%);
-        font-family: "Manrope", "Segoe UI", sans-serif;
+        font-family: "Manrope", "Manrope Fallback", "Segoe UI", sans-serif;
         line-height: 1.55;
       }
       .page { width: min(880px, calc(100% - 2rem)); margin: 0 auto; padding: 1.25rem 0 3rem; }
-      h1, h2, h3, h4 { margin: 0; line-height: 0.96; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-weight: 800; letter-spacing: -0.02em; }
+      h1, h2, h3, h4 { margin: 0; line-height: 0.96; font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-weight: 800; letter-spacing: -0.02em; }
       .hero {
         position: relative;
         overflow: hidden;
@@ -18726,13 +18825,13 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .hero-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
       .eyebrow, .section-tag, .hero-back {
         display: inline-flex; align-items: center; gap: 0.5rem;
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
       }
       .eyebrow { padding: 0.45rem 0.8rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18); color: white; font-size: 0.78rem; }
       .hero-back { color: white; font-size: 0.8rem; text-decoration: none; opacity: 0.85; }
       .hero-back:hover { opacity: 1; }
       .hero h1 { margin-top: 1rem; font-size: clamp(2.6rem, 7vw, 4.4rem); text-transform: uppercase; }
-      .hero p { margin: 0.8rem 0 0; max-width: 40rem; color: rgba(255, 255, 255, 0.82); font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 1rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .hero p { margin: 0.8rem 0 0; max-width: 40rem; color: rgba(255, 255, 255, 0.82); font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-size: 1rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
       .section {
         position: relative; margin-top: 1.25rem; padding: 1.6rem 1.8rem; overflow: hidden;
         border: 1px solid var(--line); border-radius: 28px;
@@ -18745,7 +18844,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .site-prose h3 { margin-top: 1.6rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--uci-blue); font-size: 1.35rem; text-transform: uppercase; }
       .site-prose h4 { margin-top: 1.2rem; font-size: 1.1rem; }
       .site-prose p { margin: 0.8rem 0 0; }
-      .site-prose .site-lead { margin: 0; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; color: var(--uci-blue-deep); text-wrap: balance; }
+      .site-prose .site-lead { margin: 0; font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; color: var(--uci-blue-deep); text-wrap: balance; }
       .site-prose .site-lead + p { margin-top: 1.2rem; }
       .site-prose ul { margin: 0.6rem 0 0; padding-left: 1.2rem; }
       .site-prose li { margin-top: 0.45rem; }
@@ -18779,14 +18878,14 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .site-edit-button {
         appearance: none; display: inline-flex; align-items: center; justify-content: center; height: 2.4rem; padding: 0 1rem;
         border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(255, 255, 255, 0.75); color: var(--uci-blue);
-        font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+        font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
       }
       .site-edit-button:hover { background: rgba(0, 51, 160, 0.08); }
       .site-edit-button.is-primary { background: var(--uci-blue); border-color: var(--uci-blue); color: white; }
       .site-edit-button:disabled { opacity: 0.6; cursor: wait; }
       .site-editor { margin-top: 1rem; }
       .site-editor[hidden] { display: none; }
-      .site-editor-label { display: block; margin-bottom: 0.4rem; color: var(--muted); font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .site-editor-label { display: block; margin-bottom: 0.4rem; color: var(--muted); font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
       .site-editor-text {
         width: 100%; min-height: 26rem; padding: 0.9rem 1rem; border: 1px solid var(--line-strong); border-radius: 18px; background: white; color: var(--ink);
         font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.5; resize: vertical;
@@ -18794,7 +18893,7 @@ function buildSiteContentPage(pageId, markdown, options = {}) {
       .site-editor-text:focus { outline: none; border-color: var(--uci-blue-bright); box-shadow: 0 0 0 3px rgba(0, 120, 199, 0.16); }
       .site-editor-actions { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
       .footer-note { margin-top: 1.2rem; padding: 0.95rem 1rem 0; color: rgba(9, 33, 76, 0.66); font-size: 0.9rem; text-align: center; }
-      .footer-links { display: flex; justify-content: center; align-items: center; gap: 0.6rem; margin-top: 0.6rem; font-family: "Barlow Semi Condensed", "Arial Narrow", sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .footer-links { display: flex; justify-content: center; align-items: center; gap: 0.6rem; margin-top: 0.6rem; font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
       .footer-links a { color: var(--uci-blue); text-decoration: none; }
       .footer-links a:hover { text-decoration: underline; }
       .footer-links span[aria-current] { color: var(--muted); }

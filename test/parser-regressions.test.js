@@ -316,6 +316,7 @@ function loadParserExports() {
       foldIcsLine,
       buildSeasonOpeningLine,
       buildCompetitionSection,
+      buildHtmlPage,
     };`,
     sandbox,
   );
@@ -7598,8 +7599,8 @@ test("the static file guard needs the assets directory plus a separator, and onl
   assert.equal(svg.out.headers["x-content-type-options"], "nosniff");
 
   const font = makeFakeResponse({ "accept-encoding": "br" });
-  assert.equal(await sendStaticFile(font, "/assets/fonts/manrope-500.ttf"), true);
-  assert.equal(font.out.headers["content-type"], "font/ttf");
+  assert.equal(await sendStaticFile(font, "/assets/fonts/manrope-500.woff2"), true);
+  assert.equal(font.out.headers["content-type"], "font/woff2");
   assert.equal(font.out.headers["content-encoding"], undefined);
   assert.equal(font.out.headers["content-length"], font.out.body.length);
   assert.equal(font.out.headers["x-frame-options"], "DENY");
@@ -8545,4 +8546,30 @@ test("a WorldTour section with nothing upcoming says when the next season opens"
   assert.equal(buildCompetitionSection(group, {}, now), "", "nothing to say while the season runs");
   assert.equal(buildCompetitionSection(group), "", "the old one-argument call still works");
   assert.equal(buildCompetitionSection({ ...group, id: "world-championships" }, { seasonCloseout: closeout }, now), "", "the Worlds section is left alone");
+});
+
+// ---------------------------------------------------------------------------------
+// The webfonts (2026-09-26): both document heads ship the six faces as woff2, preload
+// the two hero faces (the h1's Barlow Semi Condensed 800 and the body's Manrope 500)
+// and carry metric-matched local fallbacks so the swap does not move the layout.
+// buildHtmlPage needs a whole payload, so its head is checked in the function source.
+// ---------------------------------------------------------------------------------
+test("both heads preload the hero faces and load every face as woff2 with sized fallbacks", () => {
+  const { buildHtmlPage, buildSiteContentPage } = loadParserExports();
+  const rendered = buildSiteContentPage("about", "# About", { editable: false });
+  const head = rendered.slice(0, rendered.indexOf("</head>"));
+  for (const html of [head, String(buildHtmlPage)]) {
+    assert.match(html, /<link rel="preload" href="\/assets\/fonts\/barlow-semi-condensed-800\.woff2" as="font" type="font\/woff2" crossorigin \/>/);
+    assert.match(html, /<link rel="preload" href="\/assets\/fonts\/manrope-500\.woff2" as="font" type="font\/woff2" crossorigin \/>/);
+    const faces = html.match(/@font-face\s*\{[^}]*\}/g) || [];
+    const hosted = faces.filter((rule) => rule.includes("url("));
+    assert.equal(hosted.length, 6, "six self-hosted faces");
+    assert.ok(hosted.every((rule) => /url\("\/assets\/fonts\/[a-z0-9-]+\.woff2"\) format\("woff2"\)/.test(rule)), "every hosted face is woff2");
+    assert.doesNotMatch(html, /\.ttf/);
+    const local = faces.filter((rule) => rule.includes("local("));
+    assert.equal(local.length, 6, "two Manrope fallbacks, four Barlow fallbacks");
+    assert.ok(local.every((rule) => /size-adjust:/.test(rule) && /ascent-override:/.test(rule) && /descent-override:/.test(rule)), "every fallback is metric-matched");
+    assert.match(html, /"Manrope", "Manrope Fallback", "Segoe UI", sans-serif/);
+    assert.match(html, /"Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif/);
+  }
 });
