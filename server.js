@@ -7133,8 +7133,9 @@ const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
 
 // Where an ASO site supplies a card's results, the card credits it and links to its
 // own rankings page: readers who want the full classification go to the organiser, and
-// the letter asking ASO for consent offers exactly this (2026-09-27). Linking needs no
-// consent, so the link stays when ASO_SOURCES is off.
+// the letter asking ASO for consent offers exactly this (2026-09-27). The link stays
+// when ASO_SOURCES is off, but letour.fr's terms also ask for written authorisation to
+// link, so the letter asks about links too; drop it if ASO says no to links.
 function getOrganiserRankingsUrl(race) {
   const urls = {
     "la-vuelta-femenina-rankings": LA_VUELTA_FEMENINA_RANKINGS_URL,
