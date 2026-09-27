@@ -6911,6 +6911,43 @@ const OFFICIAL_ONE_DAY_RESULT_PROVIDERS = [
   asoProvider("eschborn-frankfurt", "Eschborn–Frankfurt", fetchEschbornFrankfurtOfficialStandings),
 ];
 
+// Where an ASO site supplies a card's results, the card credits it and links to its
+// own rankings page: readers who want the full classification go to the organiser, and
+// the letter asking ASO for consent offers exactly this (2026-09-27). Linking needs no
+// consent, so the link stays when ASO_SOURCES is off.
+function getOrganiserRankingsUrl(race) {
+  const urls = {
+    "la-vuelta-femenina-rankings": LA_VUELTA_FEMENINA_RANKINGS_URL,
+    "tour-auvergne-rhone-alpes-rankings": TOUR_AUVERGNE_RHONE_ALPES_RANKINGS_URL,
+    "tour-de-france-rankings": TOUR_DE_FRANCE_RANKINGS_URL,
+    "tour-de-france-femmes-rankings": TOUR_DE_FRANCE_FEMMES_RANKINGS_URL,
+    "vuelta-a-espana-rankings": VUELTA_A_ESPANA_RANKINGS_URL,
+    "eschborn-frankfurt": "https://www.eschborn-frankfurt.de/de/klassements",
+  };
+  const provider = [...OFFICIAL_STAGE_RACE_PROVIDERS, ...OFFICIAL_ONE_DAY_RESULT_PROVIDERS].find(
+    (entry) => entry.aso && entry.matches(race),
+  );
+  return (provider && urls[provider.id]) || "";
+}
+
+function describeOrganiserHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch (error) {
+    return "";
+  }
+}
+
+// Worded the way the ProCyclingStats buttons are: "full" says what the organiser has
+// that the card does not (every rider, not five), without suggesting the card is wrong;
+// the maintainer turned down "Official rankings" for exactly that (2026-09-27).
+function buildOrganiserResultsButton(race, label = "Full classification") {
+  const url = getOrganiserRankingsUrl(race);
+  return url
+    ? `<a class="race-results-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)} on ${escapeHtml(describeOrganiserHost(url))} ↗</a>`
+    : "";
+}
+
 function findOfficialRaceProvider(providers, race) {
   const asoEnabled = areAsoSourcesEnabled();
   return providers.find((provider) => (asoEnabled || !provider.aso) && provider.matches(race)) || null;
@@ -7253,7 +7290,11 @@ async function enrichStageRaceSnapshots(races, loadWikiRaw = fetchWikiRaw) {
         if ((snapshot?.totalStages || 0) > 1 || (snapshot?.completedStages || 0) > 0) {
           race.stageRace = snapshot;
         }
-      } catch {
+      } catch (error) {
+        // Until 2026-09-27 this fell back silently. A Wikipedia read that fails during a
+        // build leaves a finished stage race with the official snapshot alone (no stage
+        // history, no jerseys) until the next build; seen in two concurrent local builds.
+        logEvent("warn", "stage-race-wikipedia-failed", { race: race.pageTitle, error: error?.message || String(error) });
         try {
           const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
           if (officialSnapshot?.completedStages > 0) {
@@ -7388,7 +7429,11 @@ async function enrichRecentResultStandings(races, loadWikiRaw = fetchWikiRaw, op
         if (resultStandings.length > 0) {
           race.resultStandings = resultStandings;
         }
-      } catch {
+      } catch (error) {
+        // Until 2026-09-27 this fell back silently. A Wikipedia read that fails during a
+        // build leaves a finished stage race with the official snapshot alone (no stage
+        // history, no jerseys) until the next build; seen in two concurrent local builds.
+        logEvent("warn", "stage-race-wikipedia-failed", { race: race.pageTitle, error: error?.message || String(error) });
         try {
           const officialSnapshot = await loadOfficialStageRaceSnapshot(race);
           if (isStageRace && officialSnapshot?.completedStages > 0) {
@@ -11308,8 +11353,8 @@ function buildStageRaceCard(race, options = {}) {
         ${isFinalized ? buildDetailToggle(classificationLabel, gcPanelId, true) : `<div class="detail-label">${escapeHtml(classificationLabel)}</div>`}
         ${withJerseys(
           isFinalized
-            ? buildDetailPanel(gcPanelId, true, buildPodiumMarkup(gcStandings, { metricContext: "gc" }))
-            : buildPodiumMarkup(gcStandings, { metricContext: "gc" }),
+            ? buildDetailPanel(gcPanelId, true, `${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}${buildRaceLinksMarkup([buildOrganiserResultsButton(race)])}`)
+            : `${buildPodiumMarkup(gcStandings, { metricContext: "gc" })}${buildRaceLinksMarkup([buildOrganiserResultsButton(race)])}`,
         )}
       </div>`
     : `
@@ -11379,7 +11424,11 @@ function buildRaceCard(race, now = new Date()) {
       <h3>${escapeHtml(race.title)}</h3>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
-      ${buildRaceLinksMarkup([buildRaceFinishLink(race), buildResultsLink(getRaceResultsUrl(race, "result"), "Full results")])}
+      ${buildRaceLinksMarkup([
+        buildRaceFinishLink(race),
+        buildResultsLink(getRaceResultsUrl(race, "result"), "Full results"),
+        buildOrganiserResultsButton(race, "Full results"),
+      ])}
       ${buildRaceNewsMarkup(race)}
     </article>`;
 }

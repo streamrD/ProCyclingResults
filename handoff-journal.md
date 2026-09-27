@@ -1163,4 +1163,16 @@ Traps met:
   not the stage. Run a changed provider against the real site (the races are over, so
   it costs two requests each) before trusting captured fixtures. The before/after
   `/api/races` diff was clean apart from one rider spelling now taken from Wikipedia.
+- The organiser link (`buildOrganiserResultsButton`): comped as a button under the
+  classification (A) and a credit line at the card's foot (B); the maintainer chose A
+  and rejected "Official rankings on …" because "official" suggests our numbers might
+  be wrong and "rankings" is not how fans say placings. It reads "Full classification
+  on lavuelta.es ↗" ("Full results on …" on a one-day card). B's "Results from
+  lavuelta.es" was also inaccurate: most of a card now comes from Wikipedia.
+- A transient Wikipedia failure during a build silently drops a finished stage race to
+  the official snapshot (no stage history, no jerseys) until the next build. It showed
+  up only with two local servers building at once; the fallback now logs
+  `stage-race-wikipedia-failed`. If Railway ever shows it, look there first.
+- The browser smoke test "a picture on a site page fills the window…" failed once
+  under load and passed three times alone: timing, not a regression.
 

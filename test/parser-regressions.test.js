@@ -8176,6 +8176,47 @@ test("a companion article's GC block stands in only when it is newer, deeper and
   );
 });
 
+test("a card whose results come from an ASO site links to the organiser's full results", () => {
+  const { buildStageRaceCard, buildRaceCard } = loadParserExports();
+  const standings = [1, 2, 3].map((place) => ({ place: String(place), rider: `Rider ${place}`, time: "73:52:55" }));
+  const stageRace = (title, start, end) => ({
+    id: `2026 ${title}`,
+    pageTitle: `2026 ${title}`,
+    title,
+    series: "Men's WorldTour",
+    date: "",
+    location: "",
+    startDate: new Date(`${start}T00:00:00Z`),
+    endDate: new Date(`${end}T00:00:00Z`),
+    stageRace: {
+      totalStages: 21,
+      completedStages: 21,
+      stages: [],
+      generalClassification: { stageNumber: 21, standings },
+      overallResult: [],
+    },
+  });
+  const vuelta = buildStageRaceCard(stageRace("Vuelta a España", "2026-08-22", "2026-09-13"));
+  assert.match(vuelta, /<a class="race-results-link" href="https:\/\/www\.lavuelta\.es\/en\/rankings" target="_blank" rel="noreferrer">Full classification on lavuelta\.es ↗<\/a>/);
+  // Nothing suggests the card's own numbers are in doubt.
+  assert.doesNotMatch(vuelta, /Official/);
+  assert.doesNotMatch(buildStageRaceCard(stageRace("Giro d'Italia", "2026-05-08", "2026-05-31")), /Full classification on/);
+
+  const eschborn = buildRaceCard({
+    id: "2026 Eschborn–Frankfurt",
+    pageTitle: "2026 Eschborn–Frankfurt",
+    title: "Eschborn–Frankfurt",
+    series: "Men's WorldTour",
+    date: "1 May 2026",
+    location: "Germany",
+    startDate: new Date("2026-05-01T00:00:00Z"),
+    endDate: new Date("2026-05-01T00:00:00Z"),
+    winner: "Rider 1",
+    resultStandings: standings,
+  });
+  assert.match(eschborn, /Full results on eschborn-frankfurt\.de ↗/);
+});
+
 test("ASO_SOURCES=off turns every ASO source off at once and leaves the others alone", () => {
   const {
     OFFICIAL_STAGE_RACE_PROVIDERS,
