@@ -2003,6 +2003,24 @@ The state of play after the 2026-09-26 assessment and its two remediation batche
   two files instead of slicing `server.js`. The about page's stylesheet and the warm-up
   page's script are still inline template literals. The CSP nonce (next item) can now
   wrap the two inline blocks in `buildHtmlPage` without touching the files.
+- Item 6 (S3): the page carries only the first row of each section's recent results
+  (`buildRecentResultsBlock`, with `data-recent-anchors`, the anchors of every race in
+  order) and stubs for the almanac and the calendar (`buildNationalChampionshipsStub`,
+  `buildSeasonCalendarStub`, both keeping the section id and naming
+  `data-fragment-src`). `/api/recent-races?group=&after=<anchor>&until=<anchor>`
+  (`buildRecentRacesFragment`) answers the next row or every row through a linked
+  card; `/api/national-championships` and `/api/season-calendar` answer `{ html }`
+  through the response LRU. On the client `loadRecentRaces` appends rows (skipping a
+  card already present), `revealRaceCard` fetches a card's row for calendar bars, feed
+  links and `#race-…` hashes (`bindRaceHashJump`), `bindFragmentSections` swaps the
+  almanac in as it scrolls near (900 px) and `bindSeasonCalendar` fetches the calendar
+  when opened and binds it (`bindSeasonCalendarSection`) then. Measured locally with
+  `assessments/tools/area2/compose.js`: 1,432 KB / 58 cards / 14,113 elements before,
+  555 KB / 22 / 3,846 after (62 KB brotli); the almanac is 208 KB and the calendar
+  121 KB on demand. The 400 KB target needs A10 next. `history.replaceState` throws on
+  a file:// page, so the client goes through `replaceAddress`; the smoke test now opens
+  the calendar. The deferred-group machinery (`/api/competition-section`) is still
+  unused (`DEFERRED_COMPETITION_GROUP_IDS` is empty).
 - Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
   `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
 - Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside

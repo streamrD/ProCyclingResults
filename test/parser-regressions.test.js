@@ -95,6 +95,9 @@ function loadParserExports() {
       WORLDTOUR_RECENT_RESULTS,
       buildRaceCard,
       buildRecentResultsBlock,
+      buildRecentRacesFragment,
+      buildNationalChampionshipsStub,
+      buildSeasonCalendarStub,
       getRaceArticleVariants,
       buildFinishVideoQuery,
       isLikelyFinishVideo,
@@ -3688,8 +3691,8 @@ test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out 
   assert.equal(groups[2].recentResults.length, 0);
 });
 
-test("buildRecentResultsBlock reveals the first three races and hides the rest behind a button", () => {
-  const { buildRecentResultsBlock } = loadParserExports();
+test("buildRecentResultsBlock ships the first row and lists the anchors of the rest for /api/recent-races", () => {
+  const { buildRecentResultsBlock, buildRecentRacesFragment } = loadParserExports();
   const makeRace = (n) => ({
     id: `race-${n}`,
     series: "Men's WorldTour",
@@ -3698,23 +3701,45 @@ test("buildRecentResultsBlock reveals the first three races and hides the rest b
     location: "Somewhere",
     winner: `Winner ${n}`,
   });
-  const markup = buildRecentResultsBlock({
+  const group = {
     id: "mens-worldtour",
-    recentResults: [1, 2, 3, 4, 5].map(makeRace),
+    recentResults: [1, 2, 3, 4, 5, 6, 7].map(makeRace),
     recentGridClass: "competition-grid-three",
-  });
+  };
+  const markup = buildRecentResultsBlock(group);
 
+  // Only the first row is in the page (S3, 2026-09-27); nothing is carried hidden.
   const slots = [...markup.matchAll(/<div\s+class="recent-race-slot"[\s\S]*?data-recent-race-id="([^"]+)"([\s\S]*?)>/g)];
-  assert.equal(slots.length, 5);
-  // First three visible, last two hidden.
-  assert.equal(slots.filter((slot) => /\bhidden\b/.test(slot[2])).length, 2);
-  assert.match(slots[0][2], /^(?!.*\bhidden\b)/);
-  assert.match(slots[2][2], /^(?!.*\bhidden\b)/);
-  assert.match(slots[3][2], /\bhidden\b/);
-  // Reveal button present, carrying the race metadata for the dropdown sync.
+  assert.deepEqual(slots.map((slot) => slot[1]), ["race-1", "race-2", "race-3"]);
+  assert.ok(slots.every((slot) => !/\bhidden\b/.test(slot[2])), "no slot is carried hidden");
+  assert.match(markup, /data-recent-anchor="race-race-1"/);
+  assert.match(markup, /data-recent-total="7"/);
+  assert.match(markup, /data-recent-anchors="\[&quot;race-race-1&quot;,&quot;race-race-2&quot;,&quot;race-race-3&quot;,&quot;race-race-4&quot;,&quot;race-race-5&quot;,&quot;race-race-6&quot;,&quot;race-race-7&quot;\]"/);
   assert.match(markup, /data-load-more-races="mens-worldtour"/);
-  assert.match(markup, /data-recent-race-title="Race 4"/);
-  assert.match(markup, /data-recent-race-date="June 4, 2026"/);
+  assert.doesNotMatch(markup, /data-recent-race-title="Race 4"/);
+
+  // The next row after the last card the page holds.
+  const next = buildRecentRacesFragment(group, { after: "race-race-3" });
+  assert.deepEqual([next.from, next.to, next.total, next.done], [3, 6, 7, false]);
+  assert.deepEqual([...next.html.matchAll(/data-recent-anchor="([^"]+)"/g)].map((m) => m[1]), ["race-race-4", "race-race-5", "race-race-6"]);
+  const last = buildRecentRacesFragment(group, { after: "race-race-6" });
+  assert.deepEqual([last.from, last.to, last.done], [6, 7, true]);
+  // Every row through the one holding a linked card.
+  const until = buildRecentRacesFragment(group, { after: "race-race-3", until: "race-race-7" });
+  assert.deepEqual([until.from, until.to, until.done], [3, 7, true]);
+  // An anchor the payload no longer has starts from the top; the client skips duplicates.
+  const stale = buildRecentRacesFragment(group, { after: "race-gone" });
+  assert.deepEqual([stale.from, stale.to], [0, 3]);
+});
+
+test("the almanac and the calendar travel as stubs that keep their ids and name their fragment", () => {
+  const { buildNationalChampionshipsStub, buildSeasonCalendarStub } = loadParserExports();
+  const almanac = buildNationalChampionshipsStub();
+  assert.match(almanac, /<section class="section national-section" id="national-championships" data-fragment-src="\/api\/national-championships">/);
+  assert.match(almanac, /<h2>National Championships<\/h2>/);
+  assert.doesNotMatch(almanac, /data-national-almanac/, "the binders wait for the real section");
+  const calendar = buildSeasonCalendarStub();
+  assert.match(calendar, /id="season-calendar" data-season-calendar data-fragment-src="\/api\/season-calendar" hidden>/);
 });
 
 test("buildRecentResultsBlock omits the load-more button when there is only one row", () => {

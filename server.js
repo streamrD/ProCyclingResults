@@ -11700,6 +11700,23 @@ function buildCompetitionBlock(title, description, markup, options = {}) {
     </div>`;
 }
 
+function buildRecentRaceSlot(race) {
+  return `
+        <div
+          class="recent-race-slot"
+          data-recent-slot
+          data-recent-race-id="${escapeHtml(race.id)}"
+          data-recent-anchor="${escapeHtml(createRaceAnchorId(race))}"
+          data-recent-race-title="${escapeHtml(race.title)}"
+          data-recent-race-date="${escapeHtml(race.date)}"
+        >${buildRaceCard(race)}</div>`;
+}
+
+// Only the first row of a section's recent results travels with the page (S3,
+// 2026-09-27); the rows behind "Load more races" were 570 KB of hidden markup on a
+// phone that shows six cards. The block carries the anchor of every race in order,
+// so the client can ask /api/recent-races for the next row, or for every row up to
+// the card a calendar or feed link points at, and append what comes back.
 function buildRecentResultsBlock(group) {
   const races = group.recentResults || [];
   if (races.length === 0) {
@@ -11708,26 +11725,15 @@ function buildRecentResultsBlock(group) {
 
   const step = group.recentStep || WORLDTOUR_RECENT_RESULTS_STEP;
   const gridClass = group.recentGridClass ? `grid competition-grid ${group.recentGridClass}` : "grid competition-grid";
-  const slots = races
-    .map(
-      (race, index) => `
-        <div
-          class="recent-race-slot"
-          data-recent-slot
-          data-recent-race-id="${escapeHtml(race.id)}"
-          data-recent-race-title="${escapeHtml(race.title)}"
-          data-recent-race-date="${escapeHtml(race.date)}"
-          ${index >= step ? "hidden" : ""}
-        >${buildRaceCard(race)}</div>`,
-    )
-    .join("");
+  const slots = races.slice(0, step).map(buildRecentRaceSlot).join("");
+  const anchors = races.map((race) => createRaceAnchorId(race));
   const loadMoreButton =
     races.length > step
       ? `<button type="button" class="load-more-races" data-load-more-races="${escapeHtml(group.id)}">Load more races</button>`
       : "";
 
   return `
-    <div class="competition-block" data-recent-block="${escapeHtml(group.id)}" data-recent-step="${step}">
+    <div class="competition-block" data-recent-block="${escapeHtml(group.id)}" data-recent-step="${step}" data-recent-total="${races.length}" data-recent-anchors="${escapeHtml(JSON.stringify(anchors))}">
       <div class="competition-block-head">
         <h3>${escapeHtml(group.recentBlockTitle || "Recent Results")}</h3>
         <p>${escapeHtml(group.recentBlockDescription || "Most recent finalized races and classifications.")}</p>
@@ -11735,6 +11741,26 @@ function buildRecentResultsBlock(group) {
       <div class="${gridClass}">${slots}</div>
       ${loadMoreButton}
     </div>`;
+}
+
+// The slots after the one the client holds last (`after`, an anchor): one more row,
+// or, with `until`, every row through the one holding that card. An `after` the
+// payload no longer has (the page is older than the payload) starts from the top;
+// the client skips the cards it already shows.
+function buildRecentRacesFragment(group, { after = "", until = "" } = {}) {
+  const races = group?.recentResults || [];
+  const step = group?.recentStep || WORLDTOUR_RECENT_RESULTS_STEP;
+  const anchors = races.map((race) => createRaceAnchorId(race));
+  const start = after && anchors.includes(after) ? anchors.indexOf(after) + 1 : 0;
+  const untilIndex = until ? anchors.indexOf(until) : -1;
+  const end = Math.min(races.length, untilIndex >= 0 ? Math.max(start, Math.ceil((untilIndex + 1) / step) * step) : start + step);
+  return {
+    html: races.slice(start, end).map(buildRecentRaceSlot).join(""),
+    from: start,
+    to: end,
+    total: races.length,
+    done: end >= races.length,
+  };
 }
 
 // Between the last race and the next season (F23, 2026-09-27): a WorldTour section
@@ -12157,6 +12183,36 @@ function buildNationalChampionshipMapMarkup(groups, mapData = CONTINENT_MAP_DATA
       </div>
       <p class="meta national-map-note">Hover a continent for its count; click it to open its champions below. Shapes from Natural Earth, public domain. Ten federations are smaller than a pixel at this scale and appear as dots.</p>
     </div>`;
+}
+
+// The almanac (200 KB) and the calendar (110 KB) are fetched when a reader heads for
+// them (S3, 2026-09-27): the page carries these stubs, each with the section's id so
+// every link and share path still lands, and the client swaps in the section from
+// `data-fragment-src` (the almanac as it scrolls near, the calendar when opened).
+function buildNationalChampionshipsStub() {
+  return `
+    <section class="section national-section" id="national-championships" data-fragment-src="/api/national-championships">
+      <div class="section-head">
+        <div>
+          <div class="section-tag">National Titles</div>
+          <h2>National Championships</h2>
+          <p>Elite men and women road race and individual time trial champions by country.</p>
+        </div>
+      </div>
+      <p class="fragment-status" data-fragment-status>Loading the championships…</p>
+    </section>`;
+}
+
+function buildSeasonCalendarStub() {
+  return `
+    <section class="section season-section is-expanded" id="season-calendar" data-season-calendar data-fragment-src="/api/season-calendar" hidden>
+      <div class="season-head">
+        <div>
+          <div class="section-tag">Season Calendar</div>
+          <h2>Loading the calendar…</h2>
+        </div>
+      </div>
+    </section>`;
 }
 
 function buildNationalChampionshipsSection(nationalChampionships) {
@@ -13221,8 +13277,8 @@ function buildHtmlPage(data, view) {
     .map((group) => buildCompetitionSection(group, data))
     .filter(Boolean)
     .join("");
-  const nationalChampionshipsSection = buildNationalChampionshipsSection(data.nationalChampionships);
-  const seasonCalendarSection = buildSeasonCalendarSection(data.seasonCalendar, data);
+  const nationalChampionshipsSection = buildNationalChampionshipsStub();
+  const seasonCalendarSection = buildSeasonCalendarStub();
   // One plain sentence in the release-notes register, kept only for a payload with no
   // calendar; otherwise the hero says where the season stands (comp B, 2026-09-26).
   const heroSubheader =
@@ -14848,6 +14904,43 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === "/feed.xml") {
         const data = await loadRaceData({ includeDeferred: false });
         sendPreparedBody(response, 200, "application/atom+xml; charset=utf-8", prepareResponseBody(buildResultsAtomFeed(data)));
+        return;
+      }
+
+      // The page's on-demand fragments (S3): the next row of a section's recent results,
+      // the national championships almanac and the season calendar.
+      if (url.pathname === "/api/recent-races") {
+        const groupId = url.searchParams.get("group") || "";
+        const data = await loadRaceData({ includeDeferred: false });
+        const group = getCompetitionGroups(data).find((entry) => entry.id === groupId);
+        if (!group) {
+          sendJson(response, 404, { error: "Unknown competition group." });
+          return;
+        }
+        sendJson(response, 200, {
+          groupId,
+          ...buildRecentRacesFragment(group, {
+            after: url.searchParams.get("after") || "",
+            until: url.searchParams.get("until") || "",
+          }),
+        });
+        return;
+      }
+
+      if (url.pathname === "/api/national-championships" || url.pathname === "/api/season-calendar") {
+        const data = await loadRaceData({ includeDeferred: false });
+        const calendar = url.pathname === "/api/season-calendar";
+        sendPreparedJson(
+          response,
+          200,
+          getCachedResponseBody(buildResponseCacheKey(data, calendar ? "season-calendar" : "national-championships"), () =>
+            serializeJson({
+              html: calendar
+                ? buildSeasonCalendarSection(data.seasonCalendar, data)
+                : buildNationalChampionshipsSection(data.nationalChampionships),
+            }),
+          ),
+        );
         return;
       }
 

@@ -374,21 +374,95 @@ function bindShareJump() {
 // so the day's results stay first. It closes from its own header, bars carry their
 // own tooltip, and a click on a race whose card is hidden behind "Load more races"
 // reveals it before the browser jumps.
+// history.replaceState refuses a file:// document (the smoke test's) and some
+// embedded viewers; the address is a nicety, never worth an exception.
+function replaceAddress(url) {
+  try {
+    window.history.replaceState(null, "", url);
+  } catch (error) {
+    // Leave the address as it is.
+  }
+}
+
 function bindSeasonCalendar() {
-  const section = document.querySelector("[data-season-calendar]");
+  let section = document.querySelector("[data-season-calendar]");
   if (!section) {
     return;
   }
-  const tooltip = section.querySelector("[data-season-tooltip]");
+
+  // The page carries a stub; the calendar itself arrives from data-fragment-src the
+  // first time it is opened and is bound then (S3, 2026-09-27).
+  let loaded = section.dataset.fragmentSrc ? null : Promise.resolve(section);
+  const ensureCalendar = () => {
+    if (!loaded) {
+      loaded = fetch(section.dataset.fragmentSrc, { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Unable to load the calendar");
+          }
+          return response.json();
+        })
+        .then((payload) => {
+          const holder = document.createElement("div");
+          holder.innerHTML = payload.html || "";
+          const fresh = holder.firstElementChild;
+          if (!fresh || !fresh.matches("[data-season-calendar]")) {
+            throw new Error("Unexpected calendar markup");
+          }
+          section.replaceWith(fresh);
+          section = fresh;
+          bindSeasonCalendarSection(section);
+          return section;
+        })
+        .catch((error) => {
+          loaded = null;
+          const heading = section.querySelector("h2");
+          if (heading) {
+            heading.textContent = "The calendar is unavailable right now";
+          }
+          throw error;
+        });
+    }
+    return loaded;
+  };
 
   const openCalendar = () => {
     section.hidden = false;
-    section.classList.add("is-expanded");
-    if (window.location.hash !== "#season-calendar" || window.location.pathname !== "/") {
-      window.history.replaceState(null, "", "/#season-calendar");
-    }
     section.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (window.location.hash !== "#season-calendar" || window.location.pathname !== "/") {
+      replaceAddress("/#season-calendar");
+    }
+    ensureCalendar()
+      .then((fresh) => {
+        fresh.hidden = false;
+        fresh.classList.add("is-expanded");
+      })
+      .catch(() => {});
   };
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-season-open]"), (link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      openCalendar();
+    });
+  });
+  window.addEventListener("hashchange", () => {
+    if (window.location.hash === "#season-calendar") {
+      openCalendar();
+    }
+  });
+  if (!section.dataset.fragmentSrc) {
+    bindSeasonCalendarSection(section);
+  }
+  if (window.location.hash === "#season-calendar" || document.body.dataset.jumpTo === "season-calendar") {
+    openCalendar();
+  }
+}
+
+// Everything inside the calendar section: full screen, close, the series chips, the
+// bar tooltips and the jump to a race card. Bound once per section element.
+function bindSeasonCalendarSection(section) {
+  const tooltip = section.querySelector("[data-season-tooltip]");
   const fullscreenButton = section.querySelector("[data-season-fullscreen]");
   const fullscreenLabel = section.querySelector("[data-season-fullscreen-label]");
   const setFullscreen = (on) => {
@@ -431,27 +505,13 @@ function bindSeasonCalendar() {
     }
     section.hidden = true;
     if (window.location.hash === "#season-calendar" || window.location.pathname !== "/") {
-      window.history.replaceState(null, "", "/");
+      replaceAddress("/");
     }
   };
 
-  Array.prototype.forEach.call(document.querySelectorAll("[data-season-open]"), (link) => {
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      openCalendar();
-    });
-  });
   Array.prototype.forEach.call(section.querySelectorAll("[data-season-close]"), (button) => {
     button.addEventListener("click", closeCalendar);
   });
-  window.addEventListener("hashchange", () => {
-    if (window.location.hash === "#season-calendar") {
-      openCalendar();
-    }
-  });
-  if (window.location.hash === "#season-calendar" || document.body.dataset.jumpTo === "season-calendar") {
-    openCalendar();
-  }
 
   Array.prototype.forEach.call(section.querySelectorAll("[data-season-series]"), (chip) => {
     chip.addEventListener("click", () => {
@@ -515,27 +575,19 @@ function bindSeasonCalendar() {
     if (href.charAt(0) !== "#") {
       return;
     }
-    const target = document.getElementById(href.slice(1));
-    if (!target) {
-      return;
-    }
-    // The card sits behind the full-screen layer, so step out before the jump.
-    if (section.classList.contains("is-fullscreen")) {
-      setFullscreen(false);
-    }
-    const hiddenSlot = target.closest("[data-recent-slot][hidden]");
-    if (hiddenSlot) {
-      const block = hiddenSlot.closest("[data-recent-block]");
-      let guard = 0;
-      while (hiddenSlot.hidden && block && guard < 12) {
-        revealMoreRecentRaces(block.dataset.recentBlock);
-        guard += 1;
+    event.preventDefault();
+    revealRaceCard(href.slice(1)).then((target) => {
+      if (!target) {
+        return;
       }
-    }
-    target.classList.add("is-calendar-target");
-    window.setTimeout(() => {
-      target.classList.remove("is-calendar-target");
-    }, 2400);
+      // The card sits behind the full-screen layer, so step out before the jump.
+      if (section.classList.contains("is-fullscreen")) {
+        setFullscreen(false);
+      }
+      replaceAddress("/" + href);
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      flashRaceCard(target);
+    });
   });
 }
 
@@ -548,24 +600,194 @@ function getRecentSlots(groupId) {
   return block ? Array.prototype.slice.call(block.querySelectorAll("[data-recent-slot]")) : [];
 }
 
+// The page carries only the first row of each section's recent results (S3,
+// 2026-09-27). The next row, or every row through a given card, is fetched from
+// /api/recent-races and appended; a card already on the page is never added twice.
+const recentRaceLoads = new Map();
+
+function loadRecentRaces(groupId, options = {}) {
+  const block = getRecentBlock(groupId);
+  const grid = block ? block.querySelector(".competition-grid") : null;
+  if (!block || !grid) {
+    return Promise.resolve(false);
+  }
+  const key = groupId + "|" + (options.until || "");
+  if (recentRaceLoads.has(key)) {
+    return recentRaceLoads.get(key);
+  }
+  const slots = getRecentSlots(groupId);
+  const last = slots[slots.length - 1];
+  const params = new URLSearchParams({ group: groupId });
+  if (last && last.dataset.recentAnchor) {
+    params.set("after", last.dataset.recentAnchor);
+  }
+  if (options.until) {
+    params.set("until", options.until);
+  }
+  const button = block.querySelector("[data-load-more-races]");
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+  }
+  const load = fetch("/api/recent-races?" + params.toString(), { cache: "no-store" })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Unable to load more races");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      const holder = document.createElement("div");
+      holder.innerHTML = payload.html || "";
+      Array.prototype.slice.call(holder.children).forEach((slot) => {
+        const anchor = slot.dataset ? slot.dataset.recentAnchor : "";
+        if (anchor && block.querySelector('[data-recent-anchor="' + anchor + '"]')) {
+          return;
+        }
+        grid.appendChild(slot);
+      });
+      if (button && payload.done) {
+        button.hidden = true;
+      }
+      return true;
+    })
+    .catch(() => {
+      if (button) {
+        button.textContent = "More races are unavailable right now. Tap to try again.";
+      }
+      return false;
+    })
+    .then((loaded) => {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+      }
+      recentRaceLoads.delete(key);
+      return loaded;
+    });
+  recentRaceLoads.set(key, load);
+  return load;
+}
+
 function revealMoreRecentRaces(groupId) {
   const block = getRecentBlock(groupId);
   if (!block) {
-    return;
+    return Promise.resolve(false);
   }
+  // A row the page carried hidden (an older page) is shown before anything is fetched.
   const step = Number.parseInt(block.dataset.recentStep || "3", 10) || 3;
   const slots = getRecentSlots(groupId);
-  const shown = slots.filter((slot) => !slot.hidden).length;
-  const nextShown = Math.min(slots.length, shown + step);
-  for (let index = shown; index < nextShown; index += 1) {
-    slots[index].hidden = false;
+  const hidden = slots.filter((slot) => slot.hidden);
+  if (hidden.length) {
+    hidden.slice(0, step).forEach((slot) => {
+      slot.hidden = false;
+    });
+    return Promise.resolve(true);
   }
+  return loadRecentRaces(groupId);
+}
 
-  const button = block.querySelector("[data-load-more-races]");
-  if (button && nextShown >= slots.length) {
-    button.hidden = true;
+// The card a calendar bar, a feed entry or a share link points at, fetched first if
+// its row is not on the page yet. Resolves with the element, or null.
+function revealRaceCard(anchor) {
+  const existing = document.getElementById(anchor);
+  if (existing) {
+    const hiddenSlot = existing.closest("[data-recent-slot][hidden]");
+    if (hiddenSlot) {
+      hiddenSlot.hidden = false;
+    }
+    return Promise.resolve(existing);
   }
+  const block = Array.prototype.slice.call(document.querySelectorAll("[data-recent-block]")).find((candidate) => {
+    try {
+      return JSON.parse(candidate.dataset.recentAnchors || "[]").indexOf(anchor) >= 0;
+    } catch (error) {
+      return false;
+    }
+  });
+  if (!block) {
+    return Promise.resolve(null);
+  }
+  return loadRecentRaces(block.dataset.recentBlock, { until: anchor }).then(() => document.getElementById(anchor));
+}
 
+function flashRaceCard(target) {
+  target.classList.add("is-calendar-target");
+  window.setTimeout(() => {
+    target.classList.remove("is-calendar-target");
+  }, 2400);
+}
+
+// A link straight to a card (#race-…, as the feed and the calendar write them) that
+// is not on the page yet: fetch its row, then go there.
+function bindRaceHashJump() {
+  const hash = window.location.hash || "";
+  if (hash.indexOf("#race-") !== 0 || document.getElementById(hash.slice(1))) {
+    return;
+  }
+  revealRaceCard(hash.slice(1)).then((target) => {
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      flashRaceCard(target);
+    }
+  });
+}
+
+// The almanac travels as a stub and is fetched as the reader scrolls toward it (or
+// at once where the browser cannot watch the scroll); the section keeps its id, so
+// the menu link and /championships land on it either way.
+function bindFragmentSections() {
+  const stubs = Array.prototype.slice.call(document.querySelectorAll("[data-fragment-src]:not([data-season-calendar])"));
+  if (!stubs.length) {
+    return;
+  }
+  const load = (stub) => {
+    if (stub.dataset.fragmentState === "loading") {
+      return;
+    }
+    stub.dataset.fragmentState = "loading";
+    fetch(stub.dataset.fragmentSrc, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Unable to load section");
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        const holder = document.createElement("div");
+        holder.innerHTML = payload.html || "";
+        const fresh = holder.firstElementChild;
+        if (!fresh) {
+          throw new Error("Empty section");
+        }
+        stub.replaceWith(fresh);
+        bindNationalChampionshipFilters();
+        bindNationalChampionshipMap();
+      })
+      .catch(() => {
+        stub.dataset.fragmentState = "error";
+        const status = stub.querySelector("[data-fragment-status]");
+        if (status) {
+          status.textContent = "This section is unavailable right now. Reload the page to try again.";
+        }
+      });
+  };
+  if (!("IntersectionObserver" in window)) {
+    stubs.forEach(load);
+    return;
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          observer.unobserve(entry.target);
+          load(entry.target);
+        }
+      });
+    },
+    { rootMargin: "900px 0px" },
+  );
+  stubs.forEach((stub) => observer.observe(stub));
 }
 
 // The news line on each race card. A pill rendered pending (no cached stories)
@@ -1179,6 +1401,8 @@ bindJerseyContenderCards();
 bindNationalChampionshipFilters();
 bindNationalChampionshipMap();
 bindSeasonCalendar();
+bindFragmentSections();
 bindShareJump();
+bindRaceHashJump();
 localizeUpdatedTimestamp();
 bindRefreshButton();

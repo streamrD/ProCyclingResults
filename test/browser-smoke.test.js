@@ -583,6 +583,84 @@ test("a picture on a site page fills the window on a click and goes back on the 
 // clip would cut it mid-word (assessment A2, 2026-09-26; the cause was the
 // competition stack's implicit grid track). The results table scrolls sideways inside
 // its own wrapper by design and is left out of the count.
+test("the rows behind Load more, a linked card and the almanac are fetched on demand", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  const slot = (n) =>
+    '<div class="recent-race-slot" data-recent-slot data-recent-race-id="2026 Race ' + n + '" data-recent-anchor="race-2026-race-' + n + '" data-recent-race-title="Race ' + n + '" data-recent-race-date="June ' + n + '"><article class="card" id="race-2026-race-' + n + '">Race ' + n + '</article></div>';
+  const anchors = JSON.stringify([1, 2, 3, 4, 5, 6, 7].map((n) => "race-2026-race-" + n)).replace(/"/g, "&quot;");
+  const markup = `
+    <section class="section season-section is-expanded" id="season-calendar" data-season-calendar data-fragment-src="/api/season-calendar" hidden><div class="season-head"><h2>Loading the calendar…</h2></div></section>
+    <div class="competition-block" data-recent-block="mens-worldtour" data-recent-step="3" data-recent-total="7" data-recent-anchors="${anchors}">
+      <div class="grid competition-grid">${slot(1)}${slot(2)}${slot(3)}</div>
+      <button type="button" class="load-more-races" data-load-more-races="mens-worldtour">Load more races</button>
+    </div>
+    <section class="section national-section" id="national-championships" data-fragment-src="/api/national-championships"><h2>National Championships</h2><p data-fragment-status>Loading…</p></section>`;
+  const setup = `
+    window.__fetches = [];
+    window.fetch = (url) => {
+      window.__fetches.push(url);
+      const params = new URL(url, "http://x").searchParams;
+      let body = {};
+      if (url.indexOf("/api/recent-races") === 0) {
+        const after = Number((params.get("after") || "race-2026-race-0").slice(-1));
+        const until = params.get("until") ? Number(params.get("until").slice(-1)) : 0;
+        const end = until ? Math.ceil(until / 3) * 3 : after + 3;
+        let html = "";
+        for (let n = after + 1; n <= Math.min(7, end); n += 1) {
+          html += '<div class="recent-race-slot" data-recent-slot data-recent-anchor="race-2026-race-' + n + '"><article class="card" id="race-2026-race-' + n + '">Race ' + n + '</article></div>';
+        }
+        body = { html, done: end >= 7 };
+      } else if (url.indexOf("/api/national-championships") === 0) {
+        body = { html: '<section class="section national-section" id="national-championships" data-national-almanac><h2>National Championships</h2><div data-national-map></div></section>' };
+      } else if (url.indexOf("/api/season-calendar") === 0) {
+        body = { html: '<section class="section season-section is-expanded" id="season-calendar" data-season-calendar hidden><div class="season-head"><h2>Where we are in 2026</h2></div><a data-season-race-link href="#race-2026-race-7">Race 7</a><div class="season-tooltip" data-season-tooltip hidden></div></section>' };
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    };
+  `;
+  const probe = `
+    const out = { errors: window.__errors };
+    const button = document.querySelector('[data-load-more-races]');
+    button.click();
+    setTimeout(() => {
+      out.afterFirstLoad = [...document.querySelectorAll('[data-recent-slot]')].map((s) => s.dataset.recentAnchor);
+      out.buttonShown = !button.hidden;
+      // Opening the calendar fetches it; its race link fetches the rows through race 7.
+      window.location.hash = '#season-calendar';
+      setTimeout(() => {
+        const calendar = document.querySelector('[data-season-calendar]');
+        out.calendarOpen = Boolean(calendar) && !calendar.hidden && calendar.textContent.indexOf('Where we are') >= 0;
+        calendar.querySelector('[data-season-race-link]').click();
+        setTimeout(() => {
+          out.afterJump = [...document.querySelectorAll('[data-recent-slot]')].map((s) => s.dataset.recentAnchor);
+          out.buttonHiddenAtEnd = button.hidden;
+          out.flashed = document.getElementById('race-2026-race-7').classList.contains('is-calendar-target');
+          out.almanacLoaded = Boolean(document.querySelector('#national-championships[data-national-almanac]'));
+          out.fetches = window.__fetches;
+          document.getElementById('smoke').textContent = JSON.stringify(out);
+        }, 100);
+      }, 100);
+    }, 100);
+  `;
+  const out = runProbe(chrome, buildPage({ probe, setup, markup }));
+
+  assert.deepEqual(out.errors, []);
+  assert.deepEqual(out.afterFirstLoad, [1, 2, 3, 4, 5, 6].map((n) => "race-2026-race-" + n));
+  assert.equal(out.buttonShown, true);
+  assert.equal(out.almanacLoaded, true, "the almanac stub is replaced as it is in view");
+  assert.equal(out.calendarOpen, true);
+  assert.deepEqual(out.afterJump, [1, 2, 3, 4, 5, 6, 7].map((n) => "race-2026-race-" + n));
+  assert.equal(out.buttonHiddenAtEnd, true);
+  assert.equal(out.flashed, true);
+  assert.ok(out.fetches.includes("/api/recent-races?group=mens-worldtour&after=race-2026-race-3"), out.fetches.join(" "));
+  assert.ok(out.fetches.includes("/api/recent-races?group=mens-worldtour&after=race-2026-race-6&until=race-2026-race-7"), out.fetches.join(" "));
+});
+
 test("the National Championships section fits a true 390px phone width", (t) => {
   const chrome = findChrome();
   if (!chrome) {

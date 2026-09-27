@@ -10,7 +10,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R3 | partial | 51770de: logging and `/api/data-status` counts. Open: an external uptime monitor (maintainer account) |
 | R4 | closed | 8c564a5: header-mapped season parser, real fixture, empty build refused |
 | S1 | closed | aee8018: brotli/gzip on every response |
-| S2 | partial | 295f14e: first rider name 1,180px → 1,076px on a phone. Still below the fold; S3 is the next lever |
+| S2 | partial | 295f14e: first rider name 1,180px → 1,076px on a phone. Still below the fold; S3 shipped 2026-09-27 (bytes, not position); A10 is the next lever |
 | A1 | closed | 295f14e: status line and Today headline in the hero, chips on phones |
 | A2 | closed | 295f14e: the competition stack's grid track (the real cause) and the long chip; smoke test guards a true 390px |
 | A3 | closed | 295f14e: tier chip, weekday and countdown, duration, last year's winner |
@@ -26,7 +26,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R6 | closed | b644062 |
 | R7 | closed | 2026-09-27: backlog search of every finished race and stage under per-rebuild and daily caps, `data/finish-videos.json` seeded at boot, `npm run refresh:finish-videos`, `/api/finish-videos` |
 | R8 | closed | 8c564a5 |
-| S3 | open | Queue item 6 |
+| S3 | partial | 2026-09-27: rows behind "Load more", the almanac and the calendar are fragments (`/api/recent-races`, `/api/national-championships`, `/api/season-calendar`); the page is 555 KB / 22 cards / 3,846 elements, was 1,432 KB / 58 / 14,113. Open: the 400 KB target needs A10 (finished stage-race cards) |
 | S4 | closed | 2026-09-27: six faces as woff2 (192 KB, was 550 KB), the two hero faces preloaded |
 | S5 | closed | 51770de: build at boot |
 | A4 | closed | 013cc62: Finished today / Yesterday pills on one-day cards |
@@ -77,7 +77,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | C6 | closed | 8c564a5: result stories lead a finished race's news |
 | C7 | closed | 77674e9 |
 | C8 | open | Per-panel unit toggles |
-| C9 | open | With S3 |
+| C9 | open | S3 shipped 2026-09-27; re-measure |
 | P7 | open | Maintainer decision 4 (Worlds ordering) |
 | P8 | closed | 013cc62 |
 | P9 | deferred | With P1 |
