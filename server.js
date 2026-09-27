@@ -8192,10 +8192,10 @@ function getArticleCacheTtlMs(race, now = new Date()) {
 // refresh (the on-demand news endpoint does, because the card it fills has already
 // shown a placeholder and a stale pool there is exactly what the reader came to
 // replace). A failed refresh falls back to the stale pool for a waiting caller.
-async function loadRaceArticlePool(race, { waitForRefresh = false } = {}) {
+// `now` is a parameter so a test can hold the clock still (M6).
+async function loadRaceArticlePool(race, { waitForRefresh = false, now = Date.now() } = {}) {
   const raceId = getRaceId(race);
   const cached = articleCache.get(raceId);
-  const now = Date.now();
 
   const startRefresh = () =>
     fetchRaceArticles(race)
@@ -8213,7 +8213,7 @@ async function loadRaceArticlePool(race, { waitForRefresh = false } = {}) {
       });
 
   if (cached?.data) {
-    if (now - cached.updatedAt < getArticleCacheTtlMs(race)) {
+    if (now - cached.updatedAt < getArticleCacheTtlMs(race, new Date(now))) {
       return cached.data;
     }
 
@@ -11935,12 +11935,12 @@ function formatTimestamp(timestamp) {
 // cache window counts as cold here — rendering it "ready" would leave the client with
 // nothing to ask for, and nothing else refreshes a warm pool (the Vuelta's news line
 // stopped at stage 18 for two days that way, 2026-09-10 to 2026-09-12).
-function peekRaceArticlePool(race) {
+function peekRaceArticlePool(race, now = Date.now()) {
   const cached = articleCache.get(getRaceId(race));
   if (!Array.isArray(cached?.data)) {
     return null;
   }
-  return Date.now() - cached.updatedAt < getArticleCacheTtlMs(race) ? cached.data : null;
+  return now - cached.updatedAt < getArticleCacheTtlMs(race, new Date(now)) ? cached.data : null;
 }
 
 // Start filling the cache in the background so the next render carries the

@@ -1834,7 +1834,7 @@ test("getCompetitionGroups gives the Worlds their own section, men's events firs
   assert.deepEqual(JSON.parse(JSON.stringify(groups[0].upcomingRaces.map((race) => race.title))), ["Il Lombardia"]);
   assert.equal(groups[1].upcomingRaces.length, 0);
   // With the events raced, the group is empty and its section is not rendered.
-  const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] })[2];
+  const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] }, new Date("2026-10-05T12:00:00Z"))[2];
   assert.equal(after.upcomingRaces.length, 0);
   assert.equal(after.tag, "");
 });
@@ -2306,7 +2306,9 @@ test("Worlds results render in their section, men first, all four cards visible"
     make("Men's time trial", "mens", "20", "Remco Evenepoel", "BEL"),
     make("Women's time trial", "womens", "20", "Marlen Reusser", "SUI"),
   ];
-  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] }).find((group) => group.id === "world-championships");
+  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] }, new Date("2026-09-28T12:00:00Z")).find(
+    (group) => group.id === "world-championships",
+  );
 
   assert.deepEqual(
     JSON.parse(JSON.stringify(worlds.recentResults.map((race) => race.title))),
@@ -3783,16 +3785,19 @@ test("National Championships country headers carry a flag, but podium riders do 
 
 test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out of the active UI", () => {
   const { getCompetitionGroups } = loadParserExports();
-  const groups = getCompetitionGroups({
-    recentResults: [
-      { series: "Men's WorldTour" },
-      { series: "Women's WorldTour" },
-      { series: "Men's ProSeries" },
-      { series: "Men's Europe Tour" },
-    ],
-    liveStageRaces: [],
-    upcomingRaces: [],
-  });
+  const groups = getCompetitionGroups(
+    {
+      recentResults: [
+        { series: "Men's WorldTour" },
+        { series: "Women's WorldTour" },
+        { series: "Men's ProSeries" },
+        { series: "Men's Europe Tour" },
+      ],
+      liveStageRaces: [],
+      upcomingRaces: [],
+    },
+    new Date("2026-06-15T12:00:00Z"),
+  );
 
   assert.deepEqual(JSON.parse(JSON.stringify(groups.map((group) => group.id))), [
     "mens-worldtour",
@@ -7340,30 +7345,115 @@ test("a stale article pool renders as a placeholder and the news endpoint waits 
   };
   const stale = [{ title: "Küng wins stage 18", publisher: "Reuters", url: "https://example.com/18" }];
   const fresh = [{ title: "Landa wins stage 20", publisher: "Cycling Weekly", url: "https://example.com/20" }];
-  // The code reads the window against the real clock, so the test must too: a fixed
-  // date inside the race stopped matching once the Vuelta was two days finished.
-  const ttl = getArticleCacheTtlMs(race);
+  // One clock for the test and the code under test (M6): until 2026-09-27 the pool
+  // functions read the real clock, so a fixed date inside the race stopped matching
+  // once the Vuelta was two days finished and the test had to follow the real clock.
+  const now = Date.parse("2026-09-10T12:00:00Z");
+  const ttl = getArticleCacheTtlMs(race, new Date(now));
+  assert.equal(ttl, 15 * 60 * 1000, "a live race's pool is kept for 15 minutes");
 
   // Warm and inside its window: the card renders ready from it.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - 1000, data: stale, promise: null });
-  assert.equal(peekRaceArticlePool(race), stale);
+  articleCache.set(race.pageTitle, { updatedAt: now - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, now), stale);
 
   // Older than its window: the card renders a placeholder so the client asks for it.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: null });
-  assert.equal(peekRaceArticlePool(race), null);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, now), null);
+  // The same pool two days after the finish sits inside the settled six-hour window.
+  const settled = Date.parse("2026-09-16T12:00:00Z");
+  articleCache.set(race.pageTitle, { updatedAt: settled - ttl - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, settled), stale);
 
   // A refresh already in flight: the endpoint waits for it rather than serving the
   // old stories, and a caller that did not ask to wait still gets the old pool now.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: Promise.resolve(fresh) });
-  assert.equal(await loadRaceArticlePool(race), stale);
-  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), fresh);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: Promise.resolve(fresh) });
+  assert.equal(await loadRaceArticlePool(race, { now }), stale);
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true, now }), fresh);
 
   // A refresh that fails leaves the waiting caller with the old pool, not an error.
   const failing = Promise.reject(new Error("bing down"));
   failing.catch(() => {});
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: failing });
-  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), stale);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: failing });
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true, now }), stale);
   articleCache.delete(race.pageTitle);
+});
+
+// How many arguments a call passes, read from the character after its `(`: commas at
+// the top level, skipping strings and nested brackets. Enough for this file's calls.
+function countCallArguments(source, start) {
+  let depth = 0;
+  let commas = 0;
+  let last = "";
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '"' || char === "'" || char === "`") {
+      for (index += 1; index < source.length && source[index] !== char; index += source[index] === "\\" ? 2 : 1);
+      last = char;
+      continue;
+    }
+    if (char === ")" && depth === 0) {
+      return last === "" ? 0 : commas + (last === "," ? 0 : 1);
+    }
+    if ("([{".includes(char)) {
+      depth += 1;
+    } else if (")]}".includes(char)) {
+      depth -= 1;
+    } else if (char === "," && depth === 0) {
+      commas += 1;
+    }
+    if (!/\s/.test(char)) {
+      last = char;
+    }
+  }
+  return Infinity;
+}
+
+// M6 (2026-09-26 assessment): a test that lets one of these read the real clock passes
+// the day it is written and fails on its own when the calendar moves on. It happened
+// on 2026-09-15 (red for four days). Each entry is where the function takes `now`; a
+// call in this file must pass a clock there. Add a function here when it gains a `now`
+// parameter and its answer changes with the date.
+const CLOCK_ARGUMENT_POSITION = {
+  getCompetitionGroups: 2,
+  isWorldChampionshipWeek: 2,
+  getArticleCacheTtlMs: 2,
+  peekRaceArticlePool: 2,
+  hasRaceEndedDaysAgo: 3,
+  partitionRaceBuckets: 2,
+  describeNextRace: 2,
+  buildSeasonStatusLine: 2,
+  buildHeroHeadline: 2,
+  buildHeroStatus: 2,
+  describeUpcomingWhen: 2,
+  describeOneDayRecency: 2,
+  describeLiveRaceDay: 2,
+  isRaceWithinRacingHours: 2,
+  getLiveRaceRefreshDelayMs: 2,
+};
+
+test("tests hand a clock to every function whose answer moves with the calendar (M6)", () => {
+  const source = fs.readFileSync(__filename, "utf8");
+  const offenders = [];
+  Object.entries(CLOCK_ARGUMENT_POSITION).forEach(([name, position]) => {
+    for (const match of source.matchAll(new RegExp(`\\b${name}\\(`, "g"))) {
+      if (countCallArguments(source, match.index + match[0].length) < position) {
+        offenders.push(`${name} without a clock, line ${source.slice(0, match.index).split("\n").length}`);
+      }
+    }
+  });
+  // loadRaceArticlePool takes its clock in the options object.
+  for (const match of source.matchAll(/\bloadRaceArticlePool\(([^)]*)\)/g)) {
+    if (!/\bnow\b/.test(match[1])) {
+      offenders.push(`loadRaceArticlePool without { now }, line ${source.slice(0, match.index).split("\n").length}`);
+    }
+  }
+  assert.deepEqual(offenders, [], "pass a fixed clock (`new Date(\"2026-…\")`) as the code under test's `now`");
+
+  // The counter itself: a missing clock is caught, a trailing comma is not an argument.
+  assert.equal(countCallArguments("data)", 0), 1);
+  assert.equal(countCallArguments("{ a: [1, 2] }, new Date(\"x, y\"))", 0), 2);
+  assert.equal(countCallArguments("data,\n)", 0), 1);
+  assert.equal(countCallArguments(")", 0), 0);
 });
 
 test("every card links out to the full placings on ProCyclingStats", () => {
