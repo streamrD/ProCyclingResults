@@ -1994,6 +1994,15 @@ The state of play after the 2026-09-26 assessment and its two remediation batche
   (Arial's capitals against Barlow's): re-measure in a browser, not from tables, if a
   face changes. The about page's `@font-face` block is a one-line copy of the results
   page's; keep the two in step (they had drifted).
+- Item 5 (M7): the stylesheet and homepage client script are `assets/site.css` and
+  `assets/site.js`, read by `readSiteAsset` (from `process.cwd()`, the harness has no
+  `__dirname`) into `HOMEPAGE_STYLESHEET` / `HOMEPAGE_CLIENT_SCRIPT` once per process
+  and inlined unchanged, so the page's bytes did not change. The script's one
+  interpolation, the deferred-group list, is now `buildDeferredGroupsScript` (a JSON
+  element, id `deferred-groups`) read on load. `test/browser-smoke.test.js` reads the
+  two files instead of slicing `server.js`. The about page's stylesheet and the warm-up
+  page's script are still inline template literals. The CSP nonce (next item) can now
+  wrap the two inline blocks in `buildHtmlPage` without touching the files.
 - Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
   `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
 - Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside

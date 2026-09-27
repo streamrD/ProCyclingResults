@@ -8552,13 +8552,15 @@ test("a WorldTour section with nothing upcoming says when the next season opens"
 // The webfonts (2026-09-26): both document heads ship the six faces as woff2, preload
 // the two hero faces (the h1's Barlow Semi Condensed 800 and the body's Manrope 500)
 // and carry metric-matched local fallbacks so the swap does not move the layout.
-// buildHtmlPage needs a whole payload, so its head is checked in the function source.
+// buildHtmlPage needs a whole payload, so its head is checked in the function source
+// and its stylesheet in the file the server inlines (assets/site.css).
 // ---------------------------------------------------------------------------------
 test("both heads preload the hero faces and load every face as woff2 with sized fallbacks", () => {
   const { buildHtmlPage, buildSiteContentPage } = loadParserExports();
   const rendered = buildSiteContentPage("about", "# About", { editable: false });
   const head = rendered.slice(0, rendered.indexOf("</head>"));
-  for (const html of [head, String(buildHtmlPage)]) {
+  const stylesheet = fs.readFileSync(path.join(__dirname, "..", "assets", "site.css"), "utf8");
+  for (const html of [head, String(buildHtmlPage) + stylesheet]) {
     assert.match(html, /<link rel="preload" href="\/assets\/fonts\/barlow-semi-condensed-800\.woff2" as="font" type="font\/woff2" crossorigin \/>/);
     assert.match(html, /<link rel="preload" href="\/assets\/fonts\/manrope-500\.woff2" as="font" type="font\/woff2" crossorigin \/>/);
     const faces = html.match(/@font-face\s*\{[^}]*\}/g) || [];

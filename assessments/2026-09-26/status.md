@@ -49,7 +49,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | X4 | open | GitHub token scope check (maintainer, five minutes) |
 | X5 | closed | aee8018 |
 | M6 | partial | The one clock-dependent test was fixed on 2026-09-19; no lint added |
-| M7 | open | Queue item 5 (stylesheet has 0 interpolations, client script 1) |
+| M7 | closed | 2026-09-27: `assets/site.css` and `assets/site.js`, inlined from disk at startup; the deferred groups are a JSON element |
 | M8 | partial | 51770de: README pass. Open: split `handoff.md` into map and journal (queue item 8) |
 | M9 | open | When an ASO provider next needs a change |
 | M10 | closed | 8c564a5: season page and RSS fixtures |

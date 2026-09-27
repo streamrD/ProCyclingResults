@@ -43,17 +43,11 @@ function loadServer() {
     buildStageRaceCard: sandbox.__SMOKE__.buildStageRaceCard,
     buildNationalChampionshipsSection: sandbox.__SMOKE__.buildNationalChampionshipsSection,
     parseNationalChampionshipsIndex: sandbox.__SMOKE__.parseNationalChampionshipsIndex,
-    style: serverSource.match(/<style>([\s\S]*?)<\/style>/)[1].replace(/@font-face\s*\{[^}]*\}/g, ""),
-    // The homepage script is the block that defines the unit preference; the warm-up
-    // page carries a later, unrelated block. Its one server-side expression is the
-    // deferred-group payload, which this page has none of.
-    script: (() => {
-      const start = serverSource.lastIndexOf("<script>", serverSource.indexOf("const UNIT_PREFERENCE_KEY")) + 8;
-      const script = serverSource.slice(start, serverSource.indexOf("</script>", start));
-      const remaining = script.replace("${deferredGroupClientPayload}", "[]").match(/\$\{[^}]*\}/g);
-      assert.equal(remaining, null, "the client script gained a template expression the smoke test does not substitute");
-      return script.replace("${deferredGroupClientPayload}", "[]");
-    })(),
+    // The stylesheet and the homepage client script are the files the server inlines
+    // (assets/site.css and assets/site.js since 2026-09-27); the deferred-group list
+    // the script reads is a JSON element this page does not carry, so it sees none.
+    style: fs.readFileSync(path.join(__dirname, "..", "assets", "site.css"), "utf8").replace(/@font-face\s*\{[^}]*\}/g, ""),
+    script: fs.readFileSync(path.join(__dirname, "..", "assets", "site.js"), "utf8"),
   };
 }
 
