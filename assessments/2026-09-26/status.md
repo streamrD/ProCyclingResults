@@ -50,7 +50,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | X5 | closed | aee8018 |
 | M6 | partial | The one clock-dependent test was fixed on 2026-09-19; no lint added |
 | M7 | closed | 2026-09-27: `assets/site.css` and `assets/site.js`, inlined from disk at startup; the deferred groups are a JSON element |
-| M8 | partial | 51770de: README pass. Open: split `handoff.md` into map and journal (queue item 8) |
+| M8 | closed | 51770de README pass; 2026-09-27 `handoff.md` split into the map (1,100 lines) and `handoff-journal.md` (980 lines, dated, oldest first) |
 | M9 | open | When an ASO provider next needs a change |
 | M10 | closed | 8c564a5: season page and RSS fixtures |
 | L3 | open | Nationals from Wikipedia (maintainer decision 7) |

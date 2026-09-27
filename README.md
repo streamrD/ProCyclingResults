@@ -14,7 +14,7 @@ This README is written as a technical handoff for a future engineer or LLM agent
 
 ## Companion Handoff File
 
-Use `handoff.md` alongside this README when transferring the project to another AI or engineer. This README is the durable architecture and runbook reference; `handoff.md` is the current cross-reference map with local audit notes, code landmarks, known sharp edges, and suggested first checks for a new agent.
+Use `handoff.md` alongside this README when transferring the project to another AI or engineer. This README is the durable architecture and runbook reference; `handoff.md` is the current cross-reference map (its dated session record is `handoff-journal.md`) with local audit notes, code landmarks, known sharp edges, and suggested first checks for a new agent.
 
 ## Product Purpose
 
@@ -103,6 +103,7 @@ Last verified 2026-09-27.
 │   ├── marks/            (cyclist.svg ships; five earlier candidates kept)
 │   └── README.md
 ├── handoff.md
+├── handoff-journal.md
 ├── package.json
 ├── README.md
 ├── scripts/
