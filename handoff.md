@@ -1006,14 +1006,13 @@ this check yet.
    with their 21 stage panels are what remains between it and the 400 KB target, and
    the first rider name is still below the fold on a phone (S2). Comp it with real
    data before shipping; the maintainer decides.
-3. **The CSP, report-only.** Now that the client script is `assets/site.js`, hash it
-   (`'sha256-…'` of `HOMEPAGE_CLIENT_SCRIPT`, computed once at startup) rather than
-   nonce it: the page bodies are cached and shared between requests, so a per-request
-   nonce would have to be stored beside each cached body. Allow the umami host for
-   `script-src`; `style-src` needs `'unsafe-inline'` for the style attributes in the
-   markup; the JSON elements need nothing. Send
-   `Content-Security-Policy-Report-Only` on `/` only, then read the console on the
-   live page before making it enforcing.
+3. **The CSP, from report-only to enforcing.** The results page sends
+   `Content-Security-Policy-Report-Only` (`buildContentSecurityPolicy`: the client
+   script by hash, the analytics host, `'unsafe-inline'` styles, `report-uri
+   /api/csp-report`) since 2026-09-27 at 01:00 UTC. Read Railway's logs for
+   `csp-report` lines over a few days of real browsers; if none, switch the header
+   name to `content-security-policy`, then give the about and warm-up pages the same
+   treatment (their scripts are still inline template literals).
 4. Smaller items from the register: S7 (parse the rider index only on hover
    devices), C8 (per-panel unit toggles), A14's remainder (skip link, heading depth,
    `aria-hidden` on icons), X12 (cap upstream body size before parsing), L7

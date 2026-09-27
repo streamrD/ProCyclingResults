@@ -99,7 +99,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | L11 | deferred | With P1 |
 | L12 | closed | fc66a6b |
 | L13 | keep | Nothing to do unless cards link to organiser pages |
-| CSP | open | Report-only CSP after M7 (nonce on inline scripts); see handoff |
+| CSP | partial | 2026-09-27: report-only policy on the results page, the client script allowed by hash, reports logged from `/api/csp-report`. Open: read the reports, then make it enforcing; the other pages |
 | F1, F5, F24 | closed | 295f14e, 013cc62 |
 | F2, F3, F23 | closed | 2026-09-27: `/calendar.ics` (whole season or `?race=<anchor>`), "Add to calendar" on upcoming cards, the winter line |
 | F9 | open | Guide page |

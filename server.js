@@ -13280,6 +13280,32 @@ function readSiteAsset(name) {
 const HOMEPAGE_STYLESHEET = readSiteAsset("site.css");
 const HOMEPAGE_CLIENT_SCRIPT = readSiteAsset("site.js");
 
+// The results page's Content Security Policy, report-only for now (2026-09-27). The
+// inline client script is allowed by its hash: the page bodies are cached and shared
+// between requests, so a per-request nonce would have to be stored beside each cached
+// body, while the hash is fixed per process and covers the script element's exact
+// text (the file, nothing around it). The analytics script is allowed by its host,
+// the JSON elements need nothing (they are never executed), and styles keep
+// 'unsafe-inline' for the style attributes in the markup. Violations are posted to
+// /api/csp-report and logged; nothing is blocked until the header is made enforcing.
+const HOMEPAGE_CLIENT_SCRIPT_HASH = `sha256-${crypto.createHash("sha256").update(HOMEPAGE_CLIENT_SCRIPT, "utf8").digest("base64")}`;
+const ANALYTICS_ORIGIN = (UMAMI_ANALYTICS_SCRIPT.match(/src="(https:\/\/[^/"]+)/) || [])[1] || "";
+
+function buildContentSecurityPolicy() {
+  return [
+    "default-src 'self'",
+    `script-src 'self' '${HOMEPAGE_CLIENT_SCRIPT_HASH}'${ANALYTICS_ORIGIN ? ` ${ANALYTICS_ORIGIN}` : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    `connect-src 'self'${ANALYTICS_ORIGIN ? ` ${ANALYTICS_ORIGIN}` : ""}`,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "report-uri /api/csp-report",
+  ].join("; ");
+}
+
 function buildDeferredGroupsScript(json) {
   return `<script type="application/json" id="deferred-groups">${String(json || "[]").replace(/</g, "\\u003c")}</script>`;
 }
@@ -13391,9 +13417,7 @@ ${heroMarkup}
     </main>
     ${buildRiderSeasonsScript(data.riderSeasons)}
     ${buildDeferredGroupsScript(deferredGroupClientPayload)}
-    <script>
-${HOMEPAGE_CLIENT_SCRIPT}
-    </script>
+    <script>${HOMEPAGE_CLIENT_SCRIPT}</script>
   </body>
 </html>`;
 }
@@ -14392,8 +14416,8 @@ const BROTLI_QUALITY = 5;
 const GZIP_LEVEL = 6;
 
 // Railway answers http:// with a 301 to https:// (checked 2026-09-26), so HSTS is safe
-// to send. No Content-Security-Policy yet: the page's scripts are inline and need a
-// per-request nonce on each <script> tag first (see handoff.md).
+// to send. The Content-Security-Policy is sent report-only on the results page
+// (buildContentSecurityPolicy, 2026-09-27); the other pages have none yet.
 function securityHeaders() {
   return {
     "strict-transport-security": "max-age=31536000; includeSubDomains",
@@ -14793,6 +14817,28 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
+      // Browsers post here what the report-only policy would have blocked; one log
+      // line each, so Railway's logs show what an enforcing policy would break.
+      if (url.pathname === "/api/csp-report" && request.method === "POST") {
+        let report = null;
+        try {
+          report = JSON.parse(await readRequestBody(request, 16 * 1024));
+        } catch (error) {
+          report = null;
+        }
+        const body = report?.["csp-report"] || report || {};
+        logEvent("warn", "csp-report", {
+          documentUri: body["document-uri"] || body.documentURL || "",
+          violated: body["violated-directive"] || body.effectiveDirective || "",
+          blocked: body["blocked-uri"] || body.blockedURL || "",
+          source: body["source-file"] || body.sourceFile || "",
+          line: body["line-number"] || body.lineNumber || "",
+        });
+        response.writeHead(204, securityHeaders());
+        response.end();
+        return;
+      }
+
       if (url.pathname === "/api/site-content" && request.method === "POST") {
         await handleSiteContentUpdate(request, response);
         return;
@@ -14995,6 +15041,7 @@ const server = http.createServer(async (request, response) => {
           sharePath: url.pathname,
         }),
       ),
+      { headers: { "content-security-policy-report-only": buildContentSecurityPolicy() } },
     );
   } catch (error) {
     logEvent("error", "request-failed", {

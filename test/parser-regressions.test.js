@@ -95,6 +95,8 @@ function loadParserExports() {
       WORLDTOUR_RECENT_RESULTS,
       buildRaceCard,
       buildRecentResultsBlock,
+      buildContentSecurityPolicy,
+      HOMEPAGE_CLIENT_SCRIPT,
       buildRecentRacesFragment,
       buildNationalChampionshipsStub,
       buildSeasonCalendarStub,
@@ -3730,6 +3732,20 @@ test("buildRecentResultsBlock ships the first row and lists the anchors of the r
   // An anchor the payload no longer has starts from the top; the client skips duplicates.
   const stale = buildRecentRacesFragment(group, { after: "race-gone" });
   assert.deepEqual([stale.from, stale.to], [0, 3]);
+});
+
+test("the report-only CSP allows the inlined client script by the hash of exactly what the page inlines", () => {
+  const { buildContentSecurityPolicy, buildHtmlPage, HOMEPAGE_CLIENT_SCRIPT } = loadParserExports();
+  const policy = buildContentSecurityPolicy();
+  const file = fs.readFileSync(path.join(__dirname, "..", "assets", "site.js"), "utf8");
+  assert.equal(HOMEPAGE_CLIENT_SCRIPT, file);
+  const hash = require("crypto").createHash("sha256").update(file, "utf8").digest("base64");
+  assert.match(policy, new RegExp("script-src 'self' 'sha256-" + hash.replace(/[+/=]/g, (c) => "\\" + c) + "' https://todd-umami\\.up\\.railway\\.app(;|$)"));
+  // The element holds the file and nothing else, or the hash would not match.
+  assert.match(String(buildHtmlPage), /<script>\$\{HOMEPAGE_CLIENT_SCRIPT\}<\/script>/);
+  assert.match(policy, /report-uri \/api\/csp-report/);
+  assert.match(policy, /style-src 'self' 'unsafe-inline'/);
+  assert.match(policy, /connect-src 'self' https:\/\/todd-umami\.up\.railway\.app/);
 });
 
 test("the almanac and the calendar travel as stubs that keep their ids and name their fragment", () => {

@@ -1008,6 +1008,11 @@ What shipped, with the numbers measured:
   555 KB / 22 / 3,846 (62 KB brotli on production); the almanac (208 KB) and the
   calendar (121 KB) are fragments, the rows behind "Load more races" too.
 - **Tour of Greece archived (L8); handoff split (M8).**
+- **CSP, report-only (01:00 UTC).** `buildContentSecurityPolicy` on the results page:
+  the client script by its sha256 (the script element holds exactly the file), the
+  analytics host, `'unsafe-inline'` styles, reports posted to `/api/csp-report` and
+  logged as `csp-report`. A nonce was ruled out because the page bodies are cached
+  and shared between requests.
 
 Traps met:
 
@@ -1023,3 +1028,67 @@ Traps met:
   (`race-race-1`): fixtures should use realistic ids.
 - The Railway CLI is installed and logged in but the project is not linked, so
   production logs were not readable from the session; `railway link` is interactive.
+
+### What each item left behind (2026-09-27)
+
+- Item 0 (R7): see "The backlog and the persisted file" under "Finish Video Links".
+- Item 1 (P5, F2/F3, A13/F23): `/calendar.ics` and `/feed.xml` are built per request from
+  the cached payload and never touch the response-body LRU; UIDs and Atom ids are the
+  card anchors (`createRaceAnchorId`), so renaming a race's page title changes its id in
+  subscribers' calendars: keep anchors stable. Feed entries are dated at midnight of the
+  race or stage day in the host zone (`formatDayInZoneRfc3339`); a stage with no
+  route-table date is placed by its number from the start date. iCalendar folding is
+  done by hand (`foldIcsLine`) because the VM harness has no `TextEncoder`/`Buffer`.
+  `buildCompetitionSection(group, data, now)` now takes the payload; the winter
+  "season opens" card appears only for the two WorldTour groups when `seasonCloseout`
+  exists, with the hero's month-only wording when `nextSeasonOpening` is null.
+- Item 2 (S8): the ETag on `/` and the payload endpoints is a hash of the cached bytes,
+  not `fetchedAt`, because the response cache re-renders per UTC minute and
+  `/api/race-stages` clears it; either can change the body under one `fetchedAt`, and
+  a 304 for a changed page is the one bug an ETag must never have. Compressed bodies
+  get a `-br`/`-gzip` suffix (strong tags are per representation). `sendPreparedBody`
+  reads `response.req.headers["if-none-match"]`; only bodies from
+  `getCachedResponseBody` carry a tag, so 404/500, `/api/race-news`, `?debug=1` and
+  the static assets are unchanged.
+- Item 3 (X2): `loadRequestedStageHistory` keeps the in-flight promise in
+  `stageHistoryCache` (`{ fetchedAt, stages, promise }`) the way `articleCache` does;
+  a failure deletes the entry so the next call retries.
+- Item 4 (S4, S9): fonts ship as woff2 (192 KB for six faces, was 550 KB of TTF);
+  both heads preload Barlow Semi Condensed 800 and Manrope 500; local Arial and Arial
+  Narrow fallback faces are metric-matched. `size-adjust` was calibrated in headless
+  Chrome on the site's own strings because the font-table average ran 5 to 10% wide
+  (Arial's capitals against Barlow's): re-measure in a browser, not from tables, if a
+  face changes. The about page's `@font-face` block is a one-line copy of the results
+  page's; keep the two in step (they had drifted).
+- Item 5 (M7): the stylesheet and homepage client script are `assets/site.css` and
+  `assets/site.js`, read by `readSiteAsset` (from `process.cwd()`, the harness has no
+  `__dirname`) into `HOMEPAGE_STYLESHEET` / `HOMEPAGE_CLIENT_SCRIPT` once per process
+  and inlined unchanged, so the page's bytes did not change. The script's one
+  interpolation, the deferred-group list, is now `buildDeferredGroupsScript` (a JSON
+  element, id `deferred-groups`) read on load. `test/browser-smoke.test.js` reads the
+  two files instead of slicing `server.js`. The about page's stylesheet and the warm-up
+  page's script are still inline template literals. The CSP nonce (next item) can now
+  wrap the two inline blocks in `buildHtmlPage` without touching the files.
+- Item 6 (S3): the page carries only the first row of each section's recent results
+  (`buildRecentResultsBlock`, with `data-recent-anchors`, the anchors of every race in
+  order) and stubs for the almanac and the calendar (`buildNationalChampionshipsStub`,
+  `buildSeasonCalendarStub`, both keeping the section id and naming
+  `data-fragment-src`). `/api/recent-races?group=&after=<anchor>&until=<anchor>`
+  (`buildRecentRacesFragment`) answers the next row or every row through a linked
+  card; `/api/national-championships` and `/api/season-calendar` answer `{ html }`
+  through the response LRU. On the client `loadRecentRaces` appends rows (skipping a
+  card already present), `revealRaceCard` fetches a card's row for calendar bars, feed
+  links and `#race-…` hashes (`bindRaceHashJump`), `bindFragmentSections` swaps the
+  almanac in as it scrolls near (900 px) and `bindSeasonCalendar` fetches the calendar
+  when opened and binds it (`bindSeasonCalendarSection`) then. Measured locally with
+  `assessments/tools/area2/compose.js`: 1,432 KB / 58 cards / 14,113 elements before,
+  555 KB / 22 / 3,846 after (62 KB brotli); the almanac is 208 KB and the calendar
+  121 KB on demand. The 400 KB target needs A10 next. `history.replaceState` throws on
+  a file:// page, so the client goes through `replaceAddress`; the smoke test now opens
+  the calendar. The deferred-group machinery (`/api/competition-section`) is still
+  unused (`DEFERRED_COMPETITION_GROUP_IDS` is empty).
+- Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
+  `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
+- Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside
+  the VM harness fail because the sandbox's prototypes are another realm's; compare
+  `JSON.parse(JSON.stringify(...))` copies.
