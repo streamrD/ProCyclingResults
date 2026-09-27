@@ -7449,7 +7449,9 @@ test("verify-deploy parses its arguments, defaults to production and summarises 
 
   // The markers it greps the page for are what buildHtmlPage writes: the card anchors
   // the season calendar links to, and the section headings.
-  assert.equal(RACE_CARD_MARKER, 'id="race-');
+  // Cards only: a finished card's folded panels and every news drawer carry race- ids too.
+  const sample = '<article class="card" id="race-a"><div id="race-a-news"></div><div class="detail-panel" id="race-a-gc"></div></article><article class="card" id="race-b"></article>';
+  assert.equal((sample.match(RACE_CARD_MARKER) || []).length, 2);
   assert.ok(SECTION_HEADING_MARKERS.includes("WorldTour</h2>"));
   assert.ok(SECTION_HEADING_MARKERS.includes("National Championships</h2>"));
 
