@@ -18,6 +18,8 @@ function loadParserExports() {
   // It also lacks `__dirname` and `Buffer`, on purpose: resolve data paths inside
   // functions (from `process.cwd()`) and avoid `Buffer` in code the tests reach, or
   // the whole suite fails at load with a ReferenceError from inside the VM.
+  // `TextDecoder` is here so fetchText's capped stream reader (X12) runs as it does in
+  // production; server code must still work without it (it falls back to `text()`).
   const sandbox = {
     require,
     console,
@@ -32,6 +34,7 @@ function loadParserExports() {
     setImmediate,
     AbortController,
     AbortSignal,
+    TextDecoder,
   };
 
   vm.createContext(sandbox);
@@ -163,6 +166,12 @@ function loadParserExports() {
       getRaceResultsUrl,
       RACE_RESULT_SLUGS,
       indexWikiRevisions,
+      fetchWikiRaw,
+      readResponseText,
+      FETCH_MAX_BODY_BYTES,
+      WIKI_MAX_BODY_BYTES,
+      splitSeasonTableRow,
+      stripWikiCellAttributes,
       FETCH_USER_AGENT,
       YOUTUBE_FETCH_USER_AGENT,
       parseNationalChampionshipsIndex,
@@ -8139,6 +8148,24 @@ test("parseSeasonRows reads the real 2026 WorldTour page, a sortable table and a
   assert.equal(new Date(sanremo.startDate).toISOString().slice(0, 10), "2026-03-21");
 });
 
+test("wiki cell attribute strippers keep every attribute form and do not backtrack on a=a=a…", () => {
+  const { splitSeasonTableRow, stripWikiCellAttributes } = loadParserExports();
+  const cell = (line) => splitSeasonTableRow(line)[0]?.content;
+  assert.equal(cell('| scope="row" | [[Tadej Pogačar]]'), "[[Tadej Pogačar]]");
+  assert.equal(cell("| align=right | 12"), "12");
+  assert.equal(cell("| style='x' data-sort-value=5 | y"), "y");
+  assert.equal(cell("| [[2026 Milan–San Remo|Milan–San Remo]]"), "[[2026 Milan–San Remo|Milan–San Remo]]");
+  assert.equal(stripWikiCellAttributes('! scope="row" | 1'), "1");
+  assert.equal(stripWikiCellAttributes("| align=right | 3h 20' 11\""), "3h 20' 11\"");
+
+  // Until 2026-09-27 each of these took about 40 s on 81 characters (X12).
+  const hostile = "a=".repeat(2000) + "a";
+  const startedAt = Date.now();
+  assert.equal(cell(`| ${hostile}`), hostile);
+  assert.equal(stripWikiCellAttributes(`| ${hostile}`), hostile);
+  assert.ok(Date.now() - startedAt < 1000, `${Date.now() - startedAt} ms`);
+});
+
 test("a companion article's GC block stands in only when it is newer, deeper and agrees with the main article", () => {
   const { selectStageArticleGcFallback } = loadParserExports();
   const rider = (place, name, extra = {}) => ({ place: String(place), rider: name, pageTitle: name, ...extra });
@@ -8343,6 +8370,53 @@ test("fetchText does not retry a definitive 4xx but still retries a 503", async 
   });
   assert.equal(await fetchText("https://example.test/flaky"), "hello");
   assert.equal(calls, 2, "a 503 is retried");
+});
+
+test("fetchText stops reading a body past its byte cap and does not retry it", async () => {
+  const { fetchText, readResponseText, setFetchForTest, FETCH_MAX_BODY_BYTES, WIKI_MAX_BODY_BYTES } = loadParserExports();
+  assert.ok(FETCH_MAX_BODY_BYTES >= 4 * 1024 * 1024, "headroom over YouTube's ~1.5 MB search page");
+  assert.ok(WIKI_MAX_BODY_BYTES >= 2 * 1024 * 1024, "headroom over a ~250 KB Grand Tour article");
+
+  // A streamed body: chunks are counted as they arrive and the stream is cancelled at
+  // the cap, so the rest is never read.
+  const chunk = new Uint8Array(1024).fill(0x61);
+  let pulled = 0;
+  let cancelled = false;
+  const streamed = (chunks) =>
+    new ReadableStream({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > chunks) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk);
+        }
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+  let calls = 0;
+  setFetchForTest(async () => {
+    calls += 1;
+    return { ok: true, status: 200, statusText: "OK", headers: new Headers(), body: streamed(1000) };
+  });
+  await assert.rejects(() => fetchText("https://example.test/huge", { maxBytes: 10 * 1024 }), /too large/);
+  assert.equal(calls, 1, "an oversized body is not asked for again");
+  assert.ok(cancelled, "the stream is cancelled");
+  assert.ok(pulled < 20, `stopped after ${pulled} chunks of 1000`);
+
+  pulled = 0;
+  const small = { ok: true, status: 200, headers: new Headers(), body: streamed(3) };
+  assert.equal((await readResponseText(small, 10 * 1024)).length, 3 * 1024, "a body under the cap is read whole");
+
+  // A declared length over the cap is refused before a byte is read.
+  const declared = { ok: true, headers: new Headers({ "content-length": String(20 * 1024) }), body: streamed(20), text: async () => assert.fail("read") };
+  await assert.rejects(() => readResponseText(declared, 10 * 1024), /too large/);
+
+  // A stubbed response with only text() is checked after reading.
+  await assert.rejects(() => readResponseText({ text: async () => "x".repeat(11) }, 10), /too large/);
+  assert.equal(await readResponseText({ text: async () => "ok" }, 10), "ok");
 });
 
 test("a finished race's news line leads with the result stories, then the rest, then the previews", () => {

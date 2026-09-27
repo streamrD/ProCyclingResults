@@ -153,6 +153,14 @@ const FETCH_RETRY_DELAYS_MS = [250, 750];
 // live-race rebuild indefinitely; a timed-out attempt is retried like any other
 // transient failure and ultimately degrades to partial data in enrichment paths.
 const FETCH_TIMEOUT_MS = 10 * 1000;
+// The most any upstream body may weigh before it is dropped unread (X12, 2026-09-27).
+// The timeout bounds a slow source but not what a parser is handed; a page grown by a
+// hostile edit or a broken CDN would otherwise go whole into regexes on the single
+// event loop. Measured that day: YouTube's search page ~1.5 MB (the largest we read),
+// an ASO rankings page ~700 KB, a Grand Tour article's wikitext ~250 KB. A body over the
+// cap fails like a definitive 4xx: logged once, never retried.
+const FETCH_MAX_BODY_BYTES = 8 * 1024 * 1024;
+const WIKI_MAX_BODY_BYTES = 4 * 1024 * 1024;
 // One JSON line per notable event, on stdout so Railway keeps it with the process
 // output: a failed rebuild, a failed upstream fetch, a 500, an unhandled rejection.
 // Until 2026-09-27 the server logged its startup line and nothing else, so a build
@@ -2020,7 +2028,11 @@ function splitSeasonTableRow(row) {
       .forEach((cell) => {
         cells.push({
           header: isHeaderLine && !/^\s*scope\s*=\s*"?row"?/i.test(cell),
-          content: cell.replace(/^\s*(?:[a-zA-Z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|"']+)\s*)+\|(?!\|)/, "").trim(),
+          // The bare value is matched atomically (`(?=(…))\1`): as a plain `[^\s|"']+`
+          // it could end at any `=`, so a cell like `a=a=a=…` with no closing pipe
+          // backtracked exponentially — 81 characters held the event loop for 40 s
+          // (X12, 2026-09-27). Same matches on every real attribute form.
+          content: cell.replace(/^\s*(?:[a-zA-Z-]+\s*=\s*(?:"[^"]*"|'[^']*'|(?=([^\s|"']+))\1)\s*)+\|(?!\|)/, "").trim(),
         });
       });
   }
@@ -2510,7 +2522,54 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
   return races;
 }
 
-async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
+function createBodyTooLargeError(bytes, maxBytes) {
+  const error = new Error(`Response body too large: over ${maxBytes} bytes (${bytes} seen)`);
+  error.bodyTooLarge = true;
+  error.bytes = bytes;
+  return error;
+}
+
+// A response's text, read no further than `maxBytes` (X12). A declared length over the
+// cap is refused before reading; otherwise the body is streamed and counted, and the
+// stream is cancelled the moment it passes the cap. Without a stream reader or a
+// TextDecoder (a stubbed response in the tests) the text is read whole and checked
+// after, which still keeps an oversized body away from the parsers. No `Buffer`: the
+// VM test harness does not have it.
+async function readResponseText(response, maxBytes = FETCH_MAX_BODY_BYTES) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    response.body?.cancel?.().catch(() => {});
+    throw createBodyTooLargeError(declared, maxBytes);
+  }
+
+  const reader = typeof TextDecoder === "function" ? response.body?.getReader?.() : null;
+  if (!reader) {
+    const text = await response.text();
+    if (text.length > maxBytes) {
+      throw createBodyTooLargeError(text.length, maxBytes);
+    }
+    return text;
+  }
+
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    received += value.byteLength;
+    if (received > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw createBodyTooLargeError(received, maxBytes);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+async function fetchText(url, { userAgent = FETCH_USER_AGENT, maxBytes = FETCH_MAX_BODY_BYTES } = {}) {
   let lastStatus = 0;
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
     let definitiveFailure = "";
@@ -2524,7 +2583,7 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       lastStatus = response.status;
 
       if (response.ok) {
-        return await response.text();
+        return await readResponseText(response, maxBytes);
       }
 
       if ((response.status === 429 || response.status >= 500) && attempt < FETCH_RETRY_DELAYS_MS.length) {
@@ -2537,6 +2596,15 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       // 2026-09-26: a missing Worlds page cost three requests every ten minutes).
       definitiveFailure = `${response.status} ${response.statusText}`;
     } catch (error) {
+      // An oversized body will be just as large on the next attempt.
+      if (error?.bodyTooLarge) {
+        logEvent("warn", "upstream-body-too-large", {
+          host: describeUrlHost(url),
+          bytes: error.bytes,
+          maxBytes,
+        });
+        throw error;
+      }
       if (attempt >= FETCH_RETRY_DELAYS_MS.length) {
         // One line per request that gave up, after every retry: the host and the last
         // status say which source is down without printing every attempt.
@@ -2669,8 +2737,8 @@ async function fetchWikiRaw(title) {
   return text;
 }
 
-async function fetchJson(url) {
-  const text = await fetchText(url);
+async function fetchJson(url, options = {}) {
+  const text = await fetchText(url, options);
   return JSON.parse(text);
 }
 
@@ -4013,11 +4081,14 @@ function extractStageLeadershipGcSnapshots(rawText) {
 }
 
 // Cell attributes are written both quoted and bare on Wikipedia (`scope="row" |` and
-// `scope=row |`, `align="right" |` and `align=right |`), so accept either form.
+// `scope=row |`, `align="right" |` and `align=right |`), so accept either form. The bare
+// value is matched atomically and may not open with a quote, so it can neither end at
+// any `=` nor shadow a quoted value: the plain `[^\s|]+` backtracked exponentially on
+// `a=a=a=…` (X12, 2026-09-27; see splitSeasonTableRow).
 function stripWikiCellAttributes(line) {
   return String(line || "")
     .replace(/^[!|]\s*/, "")
-    .replace(/^(?:[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|]+)\s*)+\|\s*/i, "")
+    .replace(/^(?:[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|(?=([^\s|"'][^\s|]*))\1)\s*)+\|\s*/i, "")
     .trim();
 }
 
@@ -14125,7 +14196,7 @@ async function commitSiteContentToGitHub(pageId, markdown) {
       signal: AbortSignal.timeout(10000),
     });
     if (current.ok) {
-      return { sha: (await current.json())?.sha || "" };
+      return { sha: JSON.parse(await readResponseText(current))?.sha || "" };
     }
     if (current.status === 404) {
       return { sha: "" };
@@ -14162,7 +14233,7 @@ async function commitSiteContentToGitHub(pageId, markdown) {
   if (!result.ok) {
     return { committed: false, reason: `GitHub commit failed (${result.status}).` };
   }
-  const payload = await result.json();
+  const payload = JSON.parse(await readResponseText(result));
   return { committed: true, commitUrl: payload?.commit?.html_url || "" };
 }
 
