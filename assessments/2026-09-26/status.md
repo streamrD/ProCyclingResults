@@ -35,7 +35,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | A7 | partial | 295f14e: calendar opens at this month, Worlds in the calendar, status line in the hero. Open: nothing pressing |
 | A8 | closed | 013cc62: footer and About say where results come from |
 | A9 | closed | 013cc62 |
-| A10 | open | Collapse finished stage-race cards on phones (comp first) |
+| A10 | closed | 2026-09-27: finished cards fold the jersey winners and stage results behind their headers (GC open); comped on the real Vuelta card at phone and desktop widths, chosen by the maintainer |
 | C2 | closed | 295f14e |
 | C3 | closed | 013cc62 + 8c564a5 |
 | P2 | closed | 013cc62 |

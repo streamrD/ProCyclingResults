@@ -1001,11 +1001,13 @@ this check yet.
    likely the day's quota, which every deploy's fresh counter can overrun), and the
    backlog pauses an hour. If deploys stay frequent, persist the day's count or lower
    `FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT`.
-2. **A10, collapse finished stage-race cards on phones (comp first).** The page is
-   555 KB / 22 cards after S3 (was 1,432 KB / 58); the six finished stage-race cards
-   with their 21 stage panels are what remains between it and the 400 KB target, and
-   the first rider name is still below the fold on a phone (S2). Comp it with real
-   data before shipping; the maintainer decides.
+2. **Bytes, after A10.** A10 shipped on 2026-09-27 (finished cards fold their
+   jerseys and stage results, GC open; the maintainer chose the default from a comp),
+   which fixes the height but not the bytes: the folded stage panels still travel
+   with the page (555 KB / 22 cards after S3, target 400 KB). The next lever is to
+   serve a finished card's folded stage results on first open (`/api/race-stages`
+   already renders a switcher; the folded panel could hold only the strip until the
+   header is tapped). Re-measure S2 (first rider name on a phone) after that.
 3. **The CSP, from report-only to enforcing.** The results page sends
    `Content-Security-Policy-Report-Only` (`buildContentSecurityPolicy`: the client
    script by hash, the analytics host, `'unsafe-inline'` styles, `report-uri

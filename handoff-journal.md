@@ -1008,6 +1008,14 @@ What shipped, with the numbers measured:
   555 KB / 22 / 3,846 (62 KB brotli on production); the almanac (208 KB) and the
   calendar (121 KB) are fragments, the rows behind "Load more races" too.
 - **Tour of Greece archived (L8); handoff split (M8).**
+- **A10, folding headers on finished cards (01:15 UTC).** The maintainer asked for it
+  after seeing the Vuelta card beside one-day cards on a phone. Comped with the real
+  card (`scratchpad/comp-a10-*.png`: default, all open, a one-day card for scale, and
+  the desktop grid), chose "GC open, jerseys and stages folded". Two things the comp
+  caught: a folded jersey header beside the podium in the two-column row squeezed the
+  names, so finished cards stack instead; and "Stage results (20)" counted raced
+  stages while the strip showed 21 chips (stage 3 cancelled), so the header counts
+  the race's stages.
 - **CSP, report-only (01:00 UTC).** `buildContentSecurityPolicy` on the results page:
   the client script by its sha256 (the script element holds exactly the file), the
   analytics host, `'unsafe-inline'` styles, reports posted to `/api/csp-report` and

@@ -661,6 +661,37 @@ test("the rows behind Load more, a linked card and the almanac are fetched on de
   assert.ok(out.fetches.includes("/api/recent-races?group=mens-worldtour&after=race-2026-race-6&until=race-2026-race-7"), out.fetches.join(" "));
 });
 
+test("a folded section header opens its panel on a tap and closes it on the next", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+  const markup = `<article class="card result-card stage-race-card" id="race-x">
+    <div class="card-subsection">
+      <button type="button" class="detail-label detail-toggle" data-detail-toggle aria-expanded="false" aria-controls="race-x-jerseys">Final jersey winners<span class="detail-toggle-chevron" aria-hidden="true"></span></button>
+      <ul class="jersey-list detail-panel" id="race-x-jerseys" hidden><li>General: Enric Mas</li></ul>
+    </div></article>`;
+  const probe = `
+    const out = { errors: window.__errors };
+    const toggle = document.querySelector('[data-detail-toggle]');
+    const panel = document.getElementById('race-x-jerseys');
+    out.hiddenAtStart = panel.hidden && getComputedStyle(panel).display === 'none';
+    out.hitHeight = toggle.getBoundingClientRect().height;
+    toggle.click();
+    out.openAfterTap = !panel.hidden && getComputedStyle(panel).display !== 'none' && toggle.getAttribute('aria-expanded') === 'true';
+    toggle.click();
+    out.closedAgain = panel.hidden && toggle.getAttribute('aria-expanded') === 'false';
+    document.getElementById('smoke').textContent = JSON.stringify(out);
+  `;
+  const out = runProbe(chrome, buildPage({ probe, markup }));
+  assert.deepEqual(out.errors, []);
+  assert.equal(out.hiddenAtStart, true);
+  assert.ok(out.hitHeight >= 30, `the header is a comfortable tap target: ${out.hitHeight}px`);
+  assert.equal(out.openAfterTap, true);
+  assert.equal(out.closedAgain, true);
+});
+
 test("the National Championships section fits a true 390px phone width", (t) => {
   const chrome = findChrome();
   if (!chrome) {

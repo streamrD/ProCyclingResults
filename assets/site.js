@@ -975,6 +975,22 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+// A folding section header (finished stage-race cards): the button's aria-expanded
+// and its panel's hidden attribute move together. Delegated, so cards that arrive
+// later (rows, fragments) need no binding.
+document.addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-detail-toggle]");
+  if (!toggle) {
+    return;
+  }
+  const open = toggle.getAttribute("aria-expanded") !== "true";
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  const panel = document.getElementById(toggle.getAttribute("aria-controls") || "");
+  if (panel) {
+    panel.hidden = !open;
+  }
+});
+
 // Delegated so stage strips inside deferred sections work without rebinding.
 document.addEventListener("click", (event) => {
   const chip = event.target.closest("[data-stage-target]");

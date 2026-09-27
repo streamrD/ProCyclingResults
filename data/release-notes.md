@@ -2,6 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 27 September 2026
 
+- **Shorter cards for finished stage races.** A finished Grand Tour's card now shows its final classification and folds the jersey winners and the stage results behind their headings, so it takes the space of a one-day card until you tap for more.
 - **A lighter page.** The page now carries the first row of each section's results, the Worlds and the upcoming races; the rows behind "Load more races", the national championships and the season calendar arrive as you reach them. It is less than half its former size, and a link straight to a race still lands on its card.
 - **Faster type.** The site's fonts are now a third of their old size and the two the header uses load first, so the page settles sooner. While they load, text is drawn in a stand-in sized to match, so nothing jumps when they arrive.
 - **Calendar and feed.** You can now subscribe to the season in your own calendar app, from the calendar's "Subscribe" link or "Add to calendar" on any upcoming race, and follow results in a feed reader, one entry per race and per stage. Over the winter each WorldTour section also says when the next season opens.

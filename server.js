@@ -10826,6 +10826,20 @@ function buildStagePanelMarkup(race, stage, stageId, isCurrentStage) {
 // and carry a control to pull the real podiums from the companion stage articles.
 // `options.stageResultsRequested` marks the re-render after that request, so the button
 // is not offered a second time when the source had nothing deeper to give.
+// On a finished stage-race card the three blocks under the title fold behind their
+// headers (A10, 2026-09-27): the final classification open, the jersey winners and
+// the stage results closed, so a three-week race takes about the height of a one-day
+// card until a reader opens what they want. The header is a button carrying
+// aria-expanded and aria-controls; the client flips the panel's hidden attribute.
+// Live cards keep plain labels and everything open.
+function buildDetailToggle(label, panelId, expanded) {
+  return `<button type="button" class="detail-label detail-toggle" data-detail-toggle aria-expanded="${expanded ? "true" : "false"}" aria-controls="${escapeHtml(panelId)}">${escapeHtml(label)}<span class="detail-toggle-chevron" aria-hidden="true"></span></button>`;
+}
+
+function buildDetailPanel(panelId, expanded, markup, className = "detail-panel") {
+  return `<div class="${className}" id="${escapeHtml(panelId)}"${expanded ? "" : " hidden"}>${markup}</div>`;
+}
+
 function buildStageSwitcherMarkup(race, options = {}) {
   const stages = (race.stageRace?.stages || []).filter((stage) => (stage?.standings?.length || 0) > 0);
   if (stages.length < 2) {
@@ -10899,12 +10913,21 @@ function buildStageSwitcherMarkup(race, options = {}) {
   const nextRow = nextStage ? buildNextStageRowMarkup(nextStage, stageId(nextStage.number), options.day) : "";
   const nextPanel = nextStage ? buildNextStagePanelMarkup(race, nextStage, stageId(nextStage.number)) : "";
 
-  return `
-      <div class="card-subsection stage-switcher" data-stage-switcher>
-        <div class="detail-label">Stage results</div>${nextRow}
+  const body = `${nextRow}
         <div class="stage-strip" role="tablist" aria-label="${escapeHtml(race.title)} stages">${chips}</div>
         ${panels}${nextPanel}
-        ${stageResultsControl}
+        ${stageResultsControl}`;
+  if (options.collapsible) {
+    const panelId = `${createRaceAnchorId(race)}-stages`;
+    return `
+      <div class="card-subsection stage-switcher" data-stage-switcher>
+        ${buildDetailToggle(`Stage results (${race.stageRace?.totalStages || stages.length} stages)`, panelId, false)}
+        ${buildDetailPanel(panelId, false, body)}
+      </div>`;
+  }
+  return `
+      <div class="card-subsection stage-switcher" data-stage-switcher>
+        <div class="detail-label">Stage results</div>${body}
       </div>`;
 }
 
@@ -11023,7 +11046,7 @@ function buildStageRaceCard(race, options = {}) {
     : isFinalized
       ? `<p class="stage-status-note">${escapeHtml(totalStagesLabel)}</p>`
       : "";
-  const stageSwitcher = buildStageSwitcherMarkup(race, { live: Boolean(options.live), day: liveDay });
+  const stageSwitcher = buildStageSwitcherMarkup(race, { live: Boolean(options.live), day: liveDay, collapsible: isFinalized });
   const stageContent = stageSwitcher
     ? stageSwitcher
     : latestStage?.winner
@@ -11055,19 +11078,28 @@ function buildStageRaceCard(race, options = {}) {
   // With jersey holders, the podium and the jersey list share a two-column row on a
   // card wide enough for both (a container query in .gc-columns), so the list adds no
   // height; on a narrow card it stacks beneath the podium as a second block.
-  const jerseyHolders = buildJerseyHoldersMarkup(race, { finalized: isFinalized });
+  const jerseyHolders = buildJerseyHoldersMarkup(race, { finalized: isFinalized, collapsible: isFinalized });
+  // A finished card stacks them instead: its jersey list is folded behind its header,
+  // and a lone header beside the podium would only squeeze the names.
   const withJerseys = (mainMarkup) =>
     jerseyHolders
-      ? `
+      ? isFinalized
+        ? `${mainMarkup}${jerseyHolders}`
+        : `
         <div class="gc-columns">
           <div class="gc-podium">${mainMarkup}</div>${jerseyHolders}
         </div>`
       : mainMarkup;
+  const gcPanelId = `${createRaceAnchorId(race)}-gc`;
   const gcContent = gcStandings.length > 0
     ? `
       <div class="card-subsection">
-        <div class="detail-label">${escapeHtml(classificationLabel)}</div>
-        ${withJerseys(buildPodiumMarkup(gcStandings, { metricContext: "gc" }))}
+        ${isFinalized ? buildDetailToggle(classificationLabel, gcPanelId, true) : `<div class="detail-label">${escapeHtml(classificationLabel)}</div>`}
+        ${withJerseys(
+          isFinalized
+            ? buildDetailPanel(gcPanelId, true, buildPodiumMarkup(gcStandings, { metricContext: "gc" }))
+            : buildPodiumMarkup(gcStandings, { metricContext: "gc" }),
+        )}
       </div>`
     : `
       <div class="card-subsection">
@@ -11421,6 +11453,15 @@ function buildJerseyHoldersMarkup(race, options = {}) {
     })
     .join("");
 
+  if (options.collapsible) {
+    const panelId = `${createRaceAnchorId(race)}-jerseys`;
+    return `
+        <div class="jersey-holders">
+          ${buildDetailToggle(label, panelId, false)}
+          <ul class="jersey-list detail-panel" id="${escapeHtml(panelId)}" hidden>${items}
+          </ul>
+        </div>`;
+  }
   return `
         <div class="jersey-holders">
           <div class="detail-label">${escapeHtml(label)}</div>

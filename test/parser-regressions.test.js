@@ -6078,6 +6078,49 @@ test("mergeStageRaceSnapshots keeps the jersey holders and bounds them by the ca
   assert.equal(early.classificationLeaders, undefined);
 });
 
+test("a finished stage-race card folds its jerseys and stages behind their headers and keeps the GC open", () => {
+  const { buildStageRaceCard } = loadParserExports();
+  const stage = (n) => ({ number: n, order: n, label: `Stage ${n}`, winner: "Rider " + n, standings: [{ place: "1", rider: "Rider " + n }] });
+  const race = {
+    id: "2026 Vuelta a España",
+    pageTitle: "2026 Vuelta a España",
+    title: "Vuelta a España",
+    series: "Men's WorldTour",
+    date: "22 August – 13 September 2026",
+    location: "Spain",
+    startDate: new Date("2026-08-22T00:00:00Z"),
+    endDate: new Date("2026-09-13T00:00:00Z"),
+    stageRace: {
+      totalStages: 21,
+      completedStages: 21,
+      stages: [19, 20, 21].map(stage),
+      latestStage: stage(21),
+      generalClassification: { stageNumber: 21, standings: [{ place: "1", rider: "Enric Mas", countryCode: "ESP" }] },
+      overallResult: [],
+      classificationLeaders: {
+        stageNumber: 21,
+        stageLabel: "Stage 21",
+        entries: [{ key: "general", label: "General", jersey: "red", rider: "Enric Mas", countryCode: "ESP" }],
+      },
+    },
+  };
+  const finished = buildStageRaceCard(race);
+  assert.match(finished, /<button type="button" class="detail-label detail-toggle" data-detail-toggle aria-expanded="true" aria-controls="race-2026-vuelta-a-espana-gc">Final general classification</);
+  assert.match(finished, /<div class="detail-panel" id="race-2026-vuelta-a-espana-gc">/);
+  assert.match(finished, /aria-expanded="false" aria-controls="race-2026-vuelta-a-espana-jerseys">Final jersey winners</);
+  assert.match(finished, /<ul class="jersey-list detail-panel" id="race-2026-vuelta-a-espana-jerseys" hidden>/);
+  assert.match(finished, /aria-expanded="false" aria-controls="race-2026-vuelta-a-espana-stages">Stage results \(21 stages\)</);
+  assert.match(finished, /<div class="detail-panel" id="race-2026-vuelta-a-espana-stages" hidden>/);
+  // The folded jerseys stack under the podium rather than sharing its row.
+  assert.doesNotMatch(finished, /gc-columns/);
+
+  // A live card keeps plain labels, everything open, and the two-column row.
+  const live = buildStageRaceCard({ ...race, stageRace: { ...race.stageRace, completedStages: 20 } }, { live: true });
+  assert.doesNotMatch(live, /data-detail-toggle/);
+  assert.match(live, /<div class="detail-label">Stage results<\/div>/);
+  assert.match(live, /gc-columns/);
+});
+
 test("buildStageRaceCard lists the jersey holders under the general classification", () => {
   const { buildStageRaceCard, buildJerseyHoldersMarkup } = loadParserExports();
   const race = {
