@@ -1987,6 +1987,13 @@ The state of play after the 2026-09-26 assessment and its two remediation batche
 - Item 3 (X2): `loadRequestedStageHistory` keeps the in-flight promise in
   `stageHistoryCache` (`{ fetchedAt, stages, promise }`) the way `articleCache` does;
   a failure deletes the entry so the next call retries.
+- Item 4 (S4, S9): fonts ship as woff2 (192 KB for six faces, was 550 KB of TTF);
+  both heads preload Barlow Semi Condensed 800 and Manrope 500; local Arial and Arial
+  Narrow fallback faces are metric-matched. `size-adjust` was calibrated in headless
+  Chrome on the site's own strings because the font-table average ran 5 to 10% wide
+  (Arial's capitals against Barlow's): re-measure in a browser, not from tables, if a
+  face changes. The about page's `@font-face` block is a one-line copy of the results
+  page's; keep the two in step (they had drifted).
 - Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
   `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
 - Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside

@@ -27,7 +27,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R7 | closed | 2026-09-27: backlog search of every finished race and stage under per-rebuild and daily caps, `data/finish-videos.json` seeded at boot, `npm run refresh:finish-videos`, `/api/finish-videos` |
 | R8 | closed | 8c564a5 |
 | S3 | open | Queue item 6 |
-| S4 | open | Queue item 4 (`woff2_compress` is installed) |
+| S4 | closed | 2026-09-27: six faces as woff2 (192 KB, was 550 KB), the two hero faces preloaded |
 | S5 | closed | 51770de: build at boot |
 | A4 | closed | 013cc62: Finished today / Yesterday pills on one-day cards |
 | A5 | closed | 013cc62 + 8c564a5: `sameTime` kept by the parser, "same time" printed |
@@ -65,7 +65,7 @@ Every finding from the report's register (section 6), with what happened to it. 
 | S6 | closed | aee8018 |
 | S7 | open | Parse the rider index only on hover devices |
 | S8 | closed | 2026-09-27: strong ETag (content hash, `-br`/`-gzip` per representation) with `cache-control: no-cache`, 304 on `if-none-match` |
-| S9 | open | With S4 |
+| S9 | closed | 2026-09-27: metric-matched local fallback faces (`size-adjust` calibrated in headless Chrome) |
 | S10 | closed | 77674e9: notes corrected; framed probe in the smoke test since 295f14e |
 | A11 | partial | 013cc62: chips and unit toggles have 44px hit areas; rider links unchanged |
 | A12 | closed | 013cc62 |

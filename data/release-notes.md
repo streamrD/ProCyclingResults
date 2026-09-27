@@ -2,6 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 27 September 2026
 
+- **Faster type.** The site's fonts are now a third of their old size and the two the header uses load first, so the page settles sooner. While they load, text is drawn in a stand-in sized to match, so nothing jumps when they arrive.
 - **Calendar and feed.** You can now subscribe to the season in your own calendar app, from the calendar's "Subscribe" link or "Add to calendar" on any upcoming race, and follow results in a feed reader, one entry per race and per stage. Over the winter each WorldTour section also says when the next season opens.
 - **Faster repeat visits.** The page and its data now carry a version tag, so a browser that already has the latest copy is told there is nothing new instead of downloading the whole page again. A rebuilt page still arrives the moment it changes.
 - **Every finished race gets its finish video back.** The site now looks for the finish highlights of every race and stage run this season, not only the last week's, a few at a time, and remembers what it finds across updates instead of starting over.
