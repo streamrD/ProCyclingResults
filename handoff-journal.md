@@ -1176,3 +1176,27 @@ Traps met:
 - The browser smoke test "a picture on a site page fills the window…" failed once
   under load and passed three times alone: timing, not a regression.
 
+## S7, A14 and C8 (2026-09-27)
+
+- S7: `bindRiderCards` reads `#rider-seasons` on the first card a pointer opens. A
+  phone binds no hover cards, so it never parses the 35 KB. The smoke test wraps
+  `JSON.parse` to count the parses, with hover forced on and off.
+- A14: card titles are h4 now (`.card h4` carries the old `.card h3` look), so the
+  outline is section h2 > block h3 > card h4. Tests that match `<h3>` on a card
+  must say `<h4>`. The skip link targets an empty `#page-content` div after the
+  hero. It has to be a focusable div because the first section changes (Worlds week,
+  close-out). A parser test fails on any `<svg` in server.js that has neither
+  `aria-hidden="true"` nor an `aria-label`.
+- C8: the per-panel km/mi pair is gone. The one control, `buildUnitToggle("unit-toggle-hero")`,
+  sits beside "Refresh results" and in the close-out header's look-back row, because
+  finished stage cards still print distances in the winter. The per-panel copies were
+  mostly DOM weight: a card shows one panel at a time, so readers saw one toggle per
+  card either way. A per-card control would have to sit in `buildStageSwitcherMarkup`
+  (the strip row) and costs a row at card width. It was not built. The comps are in
+  `/tmp/pcr-c8/` (before/after at 390 and 1000px). At 1000px the pill wraps under the
+  timestamp; at 390px it fits beside Refresh. The maintainer has not chosen yet.
+- Screenshots at a true 390px: drive Chrome over CDP with
+  `Emulation.setDeviceMetricsOverride` (Node 22+ has a global `WebSocket`). It avoids
+  the 500px window floor without an iframe, and `Runtime.evaluate` can open a folded
+  panel before the capture. `:focus` styles need `Emulation.setFocusEmulationEnabled`
+  in headless, or a focused skip link renders unfocused.

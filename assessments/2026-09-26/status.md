@@ -63,20 +63,20 @@ Every finding from the report's register (section 6), with what happened to it. 
 | R12 | partial | 8c564a5: backoff and `lastIndexError`. No test |
 | R13 | closed | 8c564a5 |
 | S6 | closed | aee8018 |
-| S7 | open | Parse the rider index only on hover devices |
+| S7 | closed | 2026-09-27: the index is parsed on the first rider card a pointer opens; phones never parse it (smoke test counts the parses) |
 | S8 | closed | 2026-09-27: strong ETag (content hash, `-br`/`-gzip` per representation) with `cache-control: no-cache`, 304 on `if-none-match` |
 | S9 | closed | 2026-09-27: metric-matched local fallback faces (`size-adjust` calibrated in headless Chrome) |
 | S10 | closed | 77674e9: notes corrected; framed probe in the smoke test since 295f14e |
 | A11 | partial | 013cc62: chips and unit toggles have 44px hit areas; rider links unchanged |
 | A12 | closed | 013cc62 |
 | A13 | closed | 2026-09-27: a WorldTour section with no upcoming race says when the next season opens (`buildSeasonOpeningCard`) |
-| A14 | partial | 013cc62: `<footer>`. Open: skip link, heading depth, icon `aria-hidden` |
+| A14 | closed | 013cc62: `<footer>`. 2026-09-27: "Skip to results" link (hidden until focused), card titles h4 under the block h3, `aria-hidden` on the last two unmarked svgs (stage pictogram, almanac chevron); a test fails on any new unlabelled svg |
 | A15 | closed | 013cc62 |
 | C4 | closed | 013cc62 |
 | C5 | open | Maintainer decision 5 |
 | C6 | closed | 8c564a5: result stories lead a finished race's news |
 | C7 | closed | 77674e9 |
-| C8 | open | Per-panel unit toggles |
+| C8 | partial | 2026-09-27: one km/mi control in the header beside "Refresh results" (and in the close-out header), none in the stage panels. Comp for the maintainer: `/tmp/pcr-c8/` before/after at 390 and 1000px; the per-card alternative was not built |
 | C9 | open | S3 shipped 2026-09-27; re-measure |
 | P7 | open | Maintainer decision 4 (Worlds ordering) |
 | P8 | closed | 013cc62 |

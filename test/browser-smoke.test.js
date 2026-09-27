@@ -31,7 +31,7 @@ function loadServer() {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup, buildSiteContentPage, buildRaceCard, buildStageRaceCard, buildNationalChampionshipsSection, parseNationalChampionshipsIndex };`,
+    `${serverSource.slice(0, serverSource.indexOf(listenMarker))}\n;globalThis.__SMOKE__ = { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildJerseyHoldersMarkup, buildSiteContentPage, buildRaceCard, buildStageRaceCard, buildNationalChampionshipsSection, parseNationalChampionshipsIndex, buildUnitToggle };`,
     sandbox,
   );
   return {
@@ -43,6 +43,7 @@ function loadServer() {
     buildStageRaceCard: sandbox.__SMOKE__.buildStageRaceCard,
     buildNationalChampionshipsSection: sandbox.__SMOKE__.buildNationalChampionshipsSection,
     parseNationalChampionshipsIndex: sandbox.__SMOKE__.parseNationalChampionshipsIndex,
+    buildUnitToggle: sandbox.__SMOKE__.buildUnitToggle,
     // The stylesheet and the homepage client script are the files the server inlines
     // (assets/site.css and assets/site.js since 2026-09-27); the deferred-group list
     // the script reads is a JSON element this page does not carry, so it sees none.
@@ -52,7 +53,7 @@ function loadServer() {
 }
 
 function buildPage({ probe: customProbe, setup = "", markup = "" } = {}) {
-  const { buildStageSwitcherMarkup, buildRaceNewsMarkup, style, script } = loadServer();
+  const { buildStageSwitcherMarkup, buildRaceNewsMarkup, buildUnitToggle, style, script } = loadServer();
   const profile = { source: "komoot", distanceKm: 166.6, elevationGainM: 4527, points: [[0, 113], [80, 900], [120, 700], [166.6, 2137]] };
   const race = {
     id: "2026 Vuelta a España",
@@ -134,7 +135,7 @@ function buildPage({ probe: customProbe, setup = "", markup = "" } = {}) {
   `;
   return `<!doctype html><meta charset="utf-8"><style>${style}</style>
 <body><script>window.__errors = []; window.addEventListener('error', (event) => window.__errors.push(event.message));${setup}</script>
-<main>${markup}${switcher}<article class="card" id="narrow" style="width: 300px">${news}</article></main><pre id="smoke"></pre>
+<main>${buildUnitToggle("unit-toggle-hero")}${markup}${switcher}<article class="card" id="narrow" style="width: 300px">${news}</article></main><pre id="smoke"></pre>
 <script>${script}</script>
 <script>${customProbe || probe}</script>`;
 }
@@ -480,6 +481,46 @@ test("the jersey list opens its contenders card on hover", (t) => {
   assert.equal(tap.collapsed, "false");
   assert.equal(tap.viaSwatch, true);
   assert.equal(tap.escaped, true);
+});
+
+// S7 (2026-09-27): the rider index is parsed on the first card a pointer opens, so a
+// phone, which binds no hover cards, never parses it at all.
+test("the rider index is parsed only when a pointer opens a rider card", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+
+  const index = { "enric mas": { name: "Enric Mas", wins: 1, stageWins: 0, podiums: 1, stagePodiums: 1, countryCode: "ESP" } };
+  const markup = `<article class="card"><span class="country-flag" aria-hidden="true">ES</span><a class="rider-link" data-rider-key="enric mas" href="https://www.procyclingstats.com/rider/enric-mas">Enric Mas</a></article>
+<script type="application/json" id="rider-seasons">${JSON.stringify(index)}</script>`;
+  // Count the parses of the index text; nothing else on the page names the rider.
+  const setup = `window.__indexParses = 0; const realParse = JSON.parse; JSON.parse = function (text) { if (String(text).indexOf('"enric mas"') !== -1) { window.__indexParses += 1; } return realParse.apply(this, arguments); };`;
+  const probe = `
+    const out = { errors: window.__errors, parsesAtLoad: window.__indexParses };
+    document.querySelector('.rider-link').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    setTimeout(() => {
+      const card = document.querySelector('body > .rider-card');
+      out.opened = Boolean(card);
+      out.tally = card ? card.querySelector('.rider-card-tally').textContent : "";
+      out.parsesAfterHover = window.__indexParses;
+      document.getElementById('smoke').textContent = JSON.stringify(out);
+    }, 400);
+  `;
+  const page = buildPage({ markup, setup, probe });
+
+  const pointer = runProbe(chrome, page, [HOVER_ON]);
+  assert.deepEqual(pointer.errors, []);
+  assert.equal(pointer.parsesAtLoad, 0);
+  assert.equal(pointer.opened, true);
+  assert.equal(pointer.tally, "1win2podiums");
+  assert.equal(pointer.parsesAfterHover, 1);
+
+  const phone = runProbe(chrome, page, [HOVER_OFF]);
+  assert.deepEqual(phone.errors, []);
+  assert.equal(phone.opened, false);
+  assert.equal(phone.parsesAfterHover, 0);
 });
 
 test("a picture on a site page fills the window on a click and goes back on the next one", (t) => {

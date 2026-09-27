@@ -618,8 +618,10 @@ here first.
 
 **5. Stage profiles (added 2026-09-03).** Each stage panel opens with a profile block:
 the measured altitude trace where one exists, otherwise a deliberately schematic
-pictogram for the stage type, plus the distance, the climbing total when known, and a
-km/mi toggle. Two data paths feed it.
+pictogram for the stage type, plus the distance and the climbing total when known. The
+km/mi toggle is not in the panel since 2026-09-27 (C8): it is one control in the page
+header beside "Refresh results" (`buildUnitToggle`, also in the close-out header's
+look-back row). Two data paths feed it.
 
 - *Route table.* `extractRouteStages` now reads every row of "Stage characteristics",
   raced or not, and adds `distanceKm` (from `{{convert|…|km}}`) and `stageType` (one of
@@ -737,6 +739,7 @@ and lavueltafemenina.es each spring — `STAGE_PROFILE_SOURCES` already lists th
 embed there lights up without code. Both unit systems render
 into `data-unit-metric` / `data-unit-imperial`; the client swaps text and remembers the
 choice in `localStorage` under `pcr-units`, re-applying it to any markup that lands later.
+The page's one toggle is in the header, so a panel fetched later needs no control of its own.
 No source publishes categorised-climb markers or a climbing total for the non-ASO races;
 the race centre (racecenter.lavuelta.es) draws them from an API its bundle obscures.
 

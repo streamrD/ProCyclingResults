@@ -10900,6 +10900,15 @@ function buildStageProfilePaths(stage) {
 // which of the two they are looking at. Both figures render in metric and carry their
 // imperial text in data attributes so the client's km/mi toggle swaps them without a
 // round trip.
+//
+// The km/mi toggle itself is not on the figure. It used to sit in every stage panel's
+// caption, 216 copies on one page (assessment C8, 2026-09-26), for a preference the
+// client already keeps per browser; it is now one control in the header, beside
+// "Refresh results" (and in the close-out header's look-back row in the winter).
+function buildUnitToggle(extraClass = "") {
+  return `<span class="unit-toggle${extraClass ? ` ${extraClass}` : ""}" role="group" aria-label="Distance and elevation units"><span class="unit-toggle-label" aria-hidden="true">Units</span><button type="button" class="unit-option is-active" data-unit-option="metric" aria-pressed="true">km</button><button type="button" class="unit-option" data-unit-option="imperial" aria-pressed="false">mi</button></span>`;
+}
+
 function buildStageProfileMarkup(stage) {
   const stageType = String(stage?.stageType || "");
   const typeLabel = STAGE_TYPE_LABELS[stageType] || "";
@@ -10993,7 +11002,7 @@ function buildStageProfileMarkup(stage) {
     : glyph
       ? `
         <div class="stage-profile-glyph" aria-hidden="true">
-          <svg viewBox="0 0 64 32" focusable="false">${glyph}</svg>
+          <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">${glyph}</svg>
         </div>`
       : "";
   const sourceLabel = paths
@@ -11023,13 +11032,6 @@ function buildStageProfileMarkup(stage) {
         )}</span>`
       : "",
   ].join("");
-  const toggle = distanceKm || elevationGainM
-    ? `
-          <span class="unit-toggle" role="group" aria-label="Distance and elevation units">
-            <button type="button" class="unit-option is-active" data-unit-option="metric" aria-pressed="true">km</button>
-            <button type="button" class="unit-option" data-unit-option="imperial" aria-pressed="false">mi</button>
-          </span>`
-    : "";
   const ariaLabel = [
     typeLabel,
     distanceKm ? formatStageDistance(distanceKm, "metric") : "",
@@ -11045,7 +11047,7 @@ function buildStageProfileMarkup(stage) {
           <figcaption class="stage-profile-caption">
             ${!paths && badge ? `<span class="stage-profile-badge is-inline">${escapeHtml(badge)}</span>` : ""}${
               typeLabel ? `<span class="stage-profile-type">${escapeHtml(typeLabel)}</span>` : ""
-            }${stats}${sourceLabel}${toggle}${expandControl}${genericNote}
+            }${stats}${sourceLabel}${expandControl}${genericNote}
           </figcaption>
         </figure>`;
 }
@@ -11374,7 +11376,7 @@ function buildStageRaceCard(race, options = {}) {
   return `
     <article class="card result-card stage-race-card" id="${escapeHtml(createRaceAnchorId(race))}">
       <div class="card-kicker">${escapeHtml(race.series)} ${statusBadge}</div>
-      <h3>${escapeHtml(race.title)}</h3>
+      <h4>${escapeHtml(race.title)}</h4>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${statusNote}
       ${orderedContent}
@@ -11421,7 +11423,7 @@ function buildRaceCard(race, now = new Date()) {
   return `
     <article class="card result-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
       <div class="card-kicker">${escapeHtml(race.series)}${statusBadge}</div>
-      <h3>${escapeHtml(race.title)}</h3>
+      <h4>${escapeHtml(race.title)}</h4>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${buildPodiumMarkup(standings)}
       ${buildRaceLinksMarkup([
@@ -11509,7 +11511,7 @@ function buildUpcomingCard(race, now = new Date()) {
   return `
     <article class="card upcoming-card" id="${escapeHtml(createRaceAnchorId(race))}"${championshipAttribute}>
       <div class="card-kicker">${escapeHtml(race.series)}${buildUpcomingTierChip(race)}</div>
-      <h3>${escapeHtml(race.title)}</h3>
+      <h4>${escapeHtml(race.title)}</h4>
       <p class="meta">${escapeHtml(race.date)} • ${escapeHtml(race.location)}</p>
       ${detail ? `<p class="meta upcoming-detail">${detail}</p>` : ""}
       ${buildRaceLinksMarkup([buildCalendarEventLink(race)])}
@@ -12106,7 +12108,7 @@ function buildSeasonOpeningCard(closeout, now = new Date()) {
   return `
     <article class="card upcoming-card season-opening-card">
       <div class="card-kicker">Season closed</div>
-      <h3>The ${escapeHtml(String(closeout.nextYear))} season</h3>
+      <h4>The ${escapeHtml(String(closeout.nextYear))} season</h4>
       <p class="meta upcoming-detail">${escapeHtml(line)}</p>
     </article>`;
 }
@@ -12194,7 +12196,7 @@ function buildNationalChampionshipEventCard(event) {
       ${event.status === "completed" ? "" : "hidden"}
     >
       <div class="card-kicker">${escapeHtml(statusLabel)} ${event.status === "completed" ? "National Title" : "National Title"}</div>
-      <h3 class="national-title">${flagMarkup}<span>${escapeHtml(event.country)}</span></h3>
+      <h4 class="national-title">${flagMarkup}<span>${escapeHtml(event.country)}</span></h4>
       <p class="meta">${escapeHtml(event.eventName)}</p>
       <div class="national-event-meta">
         <span>${escapeHtml(dateLabel)}</span>
@@ -12403,7 +12405,7 @@ function buildNationalChampionshipGroupMarkup(group) {
   return `
     <details class="national-group" data-national-group data-national-group-id="${escapeHtml(group.id)}">
       <summary class="national-group-summary">
-        <span class="national-group-chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"></path></svg></span>
+        <span class="national-group-chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"></path></svg></span>
         <span class="national-group-name">${escapeHtml(group.label)}</span>
         <span class="national-group-count">${escapeHtml(String(group.reportingCount))} of ${escapeHtml(String(group.federationCount))} federations with champions<span data-national-group-visible></span></span>
         ${hint}
@@ -12966,6 +12968,7 @@ function buildSeasonCloseoutHero(closeout, heroMenu) {
         </div>
         <nav class="closeout-lookback" aria-label="Look back at ${escapeHtml(String(closeout.year))}">
           <div class="eyebrow">Look back at ${escapeHtml(String(closeout.year))}</div>${heroMenu}
+          ${buildUnitToggle("unit-toggle-hero")}
         </nav>
       </section>`;
 }
@@ -13660,6 +13663,7 @@ function buildHtmlPage(data, view) {
             <div class="updated-row">
               <div class="updated">Updated ${escapeHtml(formatTimestamp(data.fetchedAt))} Eastern Time</div>
               <button type="button" class="refresh-button" data-refresh-button data-fetched-at="${escapeHtml(data.fetchedAt || "")}">${REFRESH_ICON_SVG}<span data-refresh-label>Refresh results</span></button>
+              ${buildUnitToggle("unit-toggle-hero")}
             </div>
             <p class="refresh-status" data-refresh-status role="status" aria-live="polite" hidden></p>
             ${
@@ -13702,8 +13706,10 @@ ${HOMEPAGE_STYLESHEET}
     </style>
   </head>
   <body${shareView.jump ? ` data-jump-to="${escapeHtml(shareView.jump)}"` : ""}>
+    <a class="skip-link" href="#page-content">Skip to results</a>
     <main class="page">
 ${heroMarkup}
+      <div id="page-content" class="skip-target" tabindex="-1"></div>
 
       ${seasonCalendarSection}
       ${competitionSections}
