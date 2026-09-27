@@ -62,6 +62,16 @@ the live race. After a restart there is also a one-time sweep of stage-profile l
 eight per rebuild until every stage of the current races has been asked about once.
 Before that day's review a rebuild made 58 requests, every minute, around the clock.
 
+## What we publish
+
+Two of the site's addresses are for programs rather than people, and neither asks any
+source for anything: `/calendar.ics` is the season calendar as an iCalendar file (one
+all-day event per WorldTour race and per elite Worlds event; the whole season, or one
+race with `?race=`), and `/feed.xml` is an Atom feed of results, one entry per finished
+race and per raced stage. Both are written from the copy of the results the server
+already holds in memory, so a calendar or feed reader polling them costs the sources
+above nothing.
+
 ## What we do not do
 
 - We do not fetch anything a visitor cannot see on our page.
@@ -168,3 +178,8 @@ how the site fetches. The review log below is updated each time.
   "no personal data" line now admits our anonymised page-view counts. Also added to
   the repository: the licence texts for the two fonts we self-host (not a fetch: the
   files are served from our own site). Three more changes the same day: the first build now starts when the server boots instead of on the first request (requests per rebuild and every cache TTL unchanged); a request that answers with a definitive 4xx is no longer retried (only 429, 5xx and network errors are); and on a one-day race's own race day, and the day after, its Wikipedia article is read on the live cadence like a stage race's, a page already among those we track. Later that night: the previous season's two WorldTour season pages joined the pages we read, for the "Last year: …" line on upcoming cards; they are fetched once per process (two raw reads at boot, then only the revision index, which a settled page never moves) and never again that process, even after a failure.
+- **2026-09-27, evening.** Added two published formats, a calendar file
+  (`/calendar.ics`) and a results feed (`/feed.xml`), both built from the results the
+  server already holds; while the first build after a restart is still running they
+  answer 503 with a Retry-After header rather than an empty document. No request to any
+  source, and no change to request counts.
