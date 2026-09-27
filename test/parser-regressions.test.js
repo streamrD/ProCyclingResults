@@ -303,6 +303,10 @@ function loadParserExports() {
       setFetchForTest: (fetchImpl) => {
         globalThis.fetch = fetchImpl;
       },
+      prepareResponseBody,
+      getCachedResponseBody,
+      sendPreparedBody,
+      loadRequestedStageHistory,
     };`,
     sandbox,
   );
@@ -8252,4 +8256,133 @@ test("the season calendar lists the Worlds among the months and draws them as th
   // The single-series views keep to their series.
   const mensView = markup.slice(markup.indexOf('data-season-view="mens"'), markup.indexOf('data-season-view="womens"'));
   assert.doesNotMatch(mensView, /WORLD CHAMPIONSHIPS/);
+});
+
+// A response object that only records what the server would have written.
+function makeRecordingResponse(requestHeaders = {}) {
+  const written = { status: null, headers: null, body: undefined, ended: false };
+  return {
+    req: { headers: requestHeaders },
+    written,
+    writeHead(status, headers) {
+      written.status = status;
+      written.headers = headers;
+    },
+    end(body) {
+      written.ended = true;
+      written.body = body;
+    },
+  };
+}
+
+test("sendPreparedBody validates a cached body with a strong ETag and answers 304 when it matches", () => {
+  const { prepareResponseBody, getCachedResponseBody, sendPreparedBody } = loadParserExports();
+  const cached = getCachedResponseBody("page:/|2026-09-26T10:00:00.000Z|0", () => "<!doctype html><p>hello</p>", new Map());
+
+  const first = makeRecordingResponse({});
+  sendPreparedBody(first, 200, "text/html; charset=utf-8", cached);
+  assert.equal(first.written.status, 200);
+  assert.match(first.written.headers.etag, /^"[A-Za-z0-9_-]{20,}"$/, "a quoted strong tag");
+  assert.equal(first.written.headers["cache-control"], "no-cache");
+  assert.equal(first.written.headers["content-length"], cached.identity.length);
+  assert.equal(first.written.body, cached.identity);
+  const etag = first.written.headers.etag;
+
+  const revalidated = makeRecordingResponse({ "if-none-match": etag });
+  sendPreparedBody(revalidated, 200, "text/html; charset=utf-8", cached);
+  assert.equal(revalidated.written.status, 304);
+  assert.equal(revalidated.written.body, undefined, "no body on a 304");
+  assert.equal(revalidated.written.ended, true);
+  assert.equal(revalidated.written.headers.etag, etag, "the same tag comes back");
+  assert.equal(revalidated.written.headers["cache-control"], "no-cache");
+  assert.equal(revalidated.written.headers.vary, "accept-encoding");
+  assert.equal("content-length" in revalidated.written.headers, false);
+  assert.equal("content-type" in revalidated.written.headers, false);
+
+  // Weak comparison: a W/ prefix and a list of tags both still match.
+  const weak = makeRecordingResponse({ "if-none-match": '"stale", W/' + etag });
+  sendPreparedBody(weak, 200, "text/html; charset=utf-8", cached);
+  assert.equal(weak.written.status, 304);
+
+  const stale = makeRecordingResponse({ "if-none-match": '"something-else"' });
+  sendPreparedBody(stale, 200, "text/html; charset=utf-8", cached);
+  assert.equal(stale.written.status, 200);
+  assert.equal(stale.written.headers.etag, etag);
+  assert.equal(stale.written.body, cached.identity);
+
+  // A different body carries a different tag.
+  const other = getCachedResponseBody("page:/|2026-09-26T11:00:00.000Z|0", () => "<!doctype html><p>later</p>", new Map());
+  const rebuilt = makeRecordingResponse({ "if-none-match": etag });
+  sendPreparedBody(rebuilt, 200, "text/html; charset=utf-8", other);
+  assert.equal(rebuilt.written.status, 200);
+  assert.notEqual(rebuilt.written.headers.etag, etag);
+
+  // A compressed representation is a different one, so its tag differs by the coding.
+  const big = getCachedResponseBody("races|x|0", () => JSON.stringify({ pad: "x".repeat(4096) }), new Map());
+  const brotli = makeRecordingResponse({ "accept-encoding": "br, gzip" });
+  sendPreparedBody(brotli, 200, "application/json; charset=utf-8", big);
+  assert.equal(brotli.written.headers["content-encoding"], "br");
+  assert.match(brotli.written.headers.etag, /-br"$/);
+  const plain = makeRecordingResponse({});
+  sendPreparedBody(plain, 200, "application/json; charset=utf-8", big);
+  assert.equal(plain.written.headers.etag, brotli.written.headers.etag.replace(/-br"$/, '"'));
+  const brotliAgain = makeRecordingResponse({ "accept-encoding": "br", "if-none-match": plain.written.headers.etag });
+  sendPreparedBody(brotliAgain, 200, "application/json; charset=utf-8", big);
+  assert.equal(brotliAgain.written.status, 200, "the plain tag does not validate the br body");
+
+  // An uncached body (errors, on-demand answers) carries no validator and stays no-store.
+  const uncached = makeRecordingResponse({ "if-none-match": "*" });
+  sendPreparedBody(uncached, 200, "text/html; charset=utf-8", prepareResponseBody("<p>once</p>"));
+  assert.equal(uncached.written.status, 200);
+  assert.equal("etag" in uncached.written.headers, false);
+  assert.equal(uncached.written.headers["cache-control"], "no-store");
+});
+
+test("concurrent loadRequestedStageHistory calls for one race share a single fetch and retry after a failure", async () => {
+  const { loadRequestedStageHistory, stubFunctionForTest, seasonCaches } = loadParserExports();
+  const race = { pageTitle: "2026 Tour de Suisse", stageRace: { stages: [] } };
+  let loaderCalls = 0;
+
+  stubFunctionForTest("createWikiRawLoader", () => async () => {
+    loaderCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return "";
+  });
+
+  const [a, b] = await Promise.all([loadRequestedStageHistory(race), loadRequestedStageHistory(race)]);
+  assert.equal(loaderCalls, 1, "the second caller shares the first fetch");
+  // Array.isArray sees across realms; deepEqual would trip on the VM's Array prototype.
+  assert.ok(Array.isArray(a) && a.length === 0, "no companion articles, so no stages");
+  assert.equal(a, b, "one answer for both");
+  const entry = seasonCaches.stageHistoryCache.get("2026 Tour de Suisse");
+  assert.equal(entry.stages, a);
+  assert.equal(entry.promise, null);
+  assert.ok(entry.fetchedAt > 0);
+
+  // Cached: a third call reads the entry without a loader.
+  assert.equal(await loadRequestedStageHistory(race), a);
+  assert.equal(loaderCalls, 1);
+
+  // A failure drops the entry so the next call fetches again.
+  const failing = { pageTitle: "2026 Tour de Pologne", stageRace: { stages: [] } };
+  stubFunctionForTest("createWikiRawLoader", () => async () => {
+    loaderCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    throw new Error("upstream 503");
+  });
+  const settled = await Promise.allSettled([loadRequestedStageHistory(failing), loadRequestedStageHistory(failing)]);
+  assert.deepEqual(
+    settled.map((result) => result.status),
+    ["rejected", "rejected"],
+  );
+  assert.equal(loaderCalls, 2, "the concurrent pair shared the failing fetch too");
+  assert.equal(seasonCaches.stageHistoryCache.has("2026 Tour de Pologne"), false, "nothing is kept from a failure");
+
+  stubFunctionForTest("createWikiRawLoader", () => async () => {
+    loaderCalls += 1;
+    return "";
+  });
+  const retried = await loadRequestedStageHistory(failing);
+  assert.ok(Array.isArray(retried) && retried.length === 0);
+  assert.equal(loaderCalls, 3, "the next call retried");
 });

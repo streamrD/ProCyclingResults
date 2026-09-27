@@ -7107,25 +7107,44 @@ const stageHistoryCache = new Map();
 const STAGE_HISTORY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_STAGE_HISTORY_CACHE_ENTRIES = 40;
 
+// An entry holds either a finished answer (`stages`, dated by `fetchedAt`) or the
+// promise of one (`promise`), the way articleCache does: every caller that arrives
+// while the first is still fetching shares that fetch instead of starting its own
+// (2026-09-26; a card's "Load full stage results" button clicked from two tabs read the
+// companion articles twice). A failed fetch drops the entry so the next call retries.
 async function loadRequestedStageHistory(race) {
   const cacheKey = getRaceId(race);
   const cached = stageHistoryCache.get(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < STAGE_HISTORY_CACHE_TTL_MS) {
+  if (cached?.stages && Date.now() - cached.fetchedAt < STAGE_HISTORY_CACHE_TTL_MS) {
     return cached.stages;
   }
+  if (cached?.promise) {
+    return cached.promise;
+  }
 
+  const promise = fetchRequestedStageHistory(race)
+    .then((stages) => {
+      stageHistoryCache.delete(cacheKey);
+      if (stageHistoryCache.size >= MAX_STAGE_HISTORY_CACHE_ENTRIES) {
+        stageHistoryCache.delete(stageHistoryCache.keys().next().value);
+      }
+      stageHistoryCache.set(cacheKey, { fetchedAt: Date.now(), stages, promise: null });
+      return stages;
+    })
+    .catch((error) => {
+      stageHistoryCache.delete(cacheKey);
+      throw error;
+    });
+  stageHistoryCache.set(cacheKey, { fetchedAt: 0, stages: null, promise });
+  return promise;
+}
+
+async function fetchRequestedStageHistory(race) {
   const loadWikiRaw = createWikiRawLoader();
   const raw = await loadWikiRaw(race.pageTitle);
   const stageArticleTexts = await loadStageArticleTexts(raw, loadWikiRaw);
   const teamNames = stageArticleTexts.length > 0 ? await loadStageRaceTeamNames(raw, stageArticleTexts) : new Map();
-  const stages =
-    stageArticleTexts.length > 0 ? extractStageRaceSnapshot(raw, stageArticleTexts, teamNames).stages || [] : [];
-
-  if (stageHistoryCache.size >= MAX_STAGE_HISTORY_CACHE_ENTRIES) {
-    stageHistoryCache.delete(stageHistoryCache.keys().next().value);
-  }
-  stageHistoryCache.set(cacheKey, { fetchedAt: Date.now(), stages });
-  return stages;
+  return stageArticleTexts.length > 0 ? extractStageRaceSnapshot(raw, stageArticleTexts, teamNames).stages || [] : [];
 }
 
 // Only races already on the page can be asked for, so the race id cannot be turned into
@@ -18420,10 +18439,44 @@ function compressResponseBody(body, encoding) {
 }
 
 // A body ready to send under any encoding: the bytes plus a memo of each encoded form,
-// filled on first use, so a cached page is compressed once per encoding.
+// filled on first use, so a cached page is compressed once per encoding. `etag` is set
+// only on bodies the response cache holds (getCachedResponseBody); a body without one
+// goes out with no validator.
 function prepareResponseBody(text) {
   const identity = NodeBuffer.isBuffer(text) ? text : NodeBuffer.from(String(text), "utf8");
-  return { identity, encoded: new Map() };
+  return { identity, encoded: new Map(), etag: null };
+}
+
+// The validator is a hash of the bytes, not of fetchedAt: the same payload renders
+// differently across a UTC minute (a race turning live) and after /api/race-stages
+// writes a deeper history back, and a tag that missed either would answer 304 for a
+// page that had changed. Hashing the identity bytes once per cached body catches both
+// and still turns over with every rebuild, because the page and payloads carry
+// fetchedAt.
+function buildResponseEtag(identity) {
+  return crypto.createHash("sha1").update(identity).digest("base64url");
+}
+
+// A strong ETag names one representation, and a content-coding makes a different one
+// (RFC 9110 §8.8.1), so the compressed bytes get their own tag, suffixed the way
+// Apache's mod_deflate does it: a cache never pairs a br body with a gzip tag, nor
+// serves a compressed body to a client that validated the plain one. Strong rather than
+// weak because the bytes really are identical whenever the tags match.
+function buildEncodedResponseEtag(etag, encoding) {
+  return '"' + etag + (encoding === "identity" ? "" : "-" + encoding) + '"';
+}
+
+// If-None-Match is compared weakly (RFC 9110 §13.1.2): a W/ prefix on either side is
+// ignored and "*" matches any current representation.
+function ifNoneMatchMatches(headerValue, etag) {
+  const wanted = String(etag || "").replace(/^W\//, "");
+  if (!wanted) {
+    return false;
+  }
+  return String(headerValue || "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .some((tag) => tag === "*" || tag.replace(/^W\//, "") === wanted);
 }
 
 function encodeResponseBody(prepared, encoding) {
@@ -18436,18 +18489,38 @@ function encodeResponseBody(prepared, encoding) {
   return { encoding, body: prepared.encoded.get(encoding) };
 }
 
+// A cached body (one carrying `etag`) goes out under `no-cache` with its validator, so a
+// browser keeps a copy and asks "still this one?" on the next visit; the answer is a
+// bodiless 304 while the payload has not rebuilt, and the full page the moment it has.
+// The request is read off `response.req`, which Node sets on every server response.
+// Nothing here waits or stores longer than before: `no-cache` still revalidates every
+// time, and the tag turns over with the body.
 function sendPreparedBody(response, statusCode, contentType, prepared, options = {}) {
   const { encoding, body } = encodeResponseBody(prepared, chooseResponseEncoding(response.req));
+  const etag = statusCode === 200 && prepared.etag ? buildEncodedResponseEtag(prepared.etag, encoding) : "";
   const headers = {
     ...securityHeaders(),
     "content-type": contentType,
-    "cache-control": options.cacheControl || "no-store",
+    "cache-control": options.cacheControl || (etag ? "no-cache" : "no-store"),
     vary: "accept-encoding",
     "content-length": body.length,
     ...(options.headers || {}),
   };
   if (encoding !== "identity") {
     headers["content-encoding"] = encoding;
+  }
+  if (etag) {
+    headers.etag = etag;
+    if (ifNoneMatchMatches(response.req?.headers?.["if-none-match"], etag)) {
+      // A 304 repeats the headers the 200 would have carried, minus the ones that
+      // describe the body it does not send (RFC 9110 §15.4.5).
+      delete headers["content-type"];
+      delete headers["content-length"];
+      delete headers["content-encoding"];
+      response.writeHead(304, headers);
+      response.end();
+      return;
+    }
   }
   response.writeHead(statusCode, headers);
   response.end(body);
@@ -18505,6 +18578,7 @@ function getCachedResponseBody(key, build, cache = responseBodyCache) {
     return hit;
   }
   const prepared = prepareResponseBody(build());
+  prepared.etag = buildResponseEtag(prepared.identity);
   cache.set(key, prepared);
   while (cache.size > RESPONSE_BODY_CACHE_LIMIT) {
     cache.delete(cache.keys().next().value);
