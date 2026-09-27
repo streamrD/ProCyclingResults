@@ -6353,70 +6353,12 @@ async function fetchVueltaABurgosFeminasOfficialSnapshot(race) {
   };
 }
 
-const TOUR_OF_GREECE_RESULTS_URL = "https://hellas-tour.gr/portal/en/results-2026";
 const GIRO_D_ITALIA_CLASSIFICATIONS_URL = "https://www.giroditalia.it/en/classifiche/";
 const GIRO_D_ITALIA_STAGE_RANKINGS_BASE_URL = "https://www.giroditalia.it/en/classifiche/di-tappa/";
 const GIRO_D_ITALIA_LIVEFEED_STAGE_BASE_URL = "https://www.giroditalia.it/en/livefeed/tappa/";
 const GIRO_D_ITALIA_WOMEN_RANKINGS_URL = "https://www.giroditaliawomen.it/en/rankings/";
 const GIRO_D_ITALIA_WOMEN_STAGE_RANKINGS_BASE_URL = "https://www.giroditaliawomen.it/en/rankings/di-tappa/";
 const GIRO_D_ITALIA_WOMEN_VIDEO_URL = "https://www.giroditaliawomen.it/en/video/";
-
-function extractTourOfGreeceResultsSection(html) {
-  const text = String(html || "");
-  const startIndex = text.search(/<h1[^>]*>\s*Results 2026\s*<\/h1>/i);
-  if (startIndex < 0) {
-    return "";
-  }
-
-  return text.slice(startIndex);
-}
-
-function parseTourOfGreeceOfficialStandings(html, heading) {
-  const section = extractTourOfGreeceResultsSection(html);
-  if (!section) {
-    return [];
-  }
-
-  const tableMatch = section.match(
-    new RegExp(
-      `<h4>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h4>[\\s\\S]*?<table>([\\s\\S]*?)<\\/table>`,
-      "i",
-    ),
-  );
-  if (!tableMatch) {
-    return [];
-  }
-
-  const tableHtml = tableMatch[1];
-  const headerRow = tableHtml.match(/<thead>[\s\S]*?<tr>([\s\S]*?)<\/tr>[\s\S]*?<\/thead>/i)?.[1] || "";
-  const headers = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((match) =>
-    cleanFeedText(match[1]).toLowerCase(),
-  );
-  const rankIndex = headers.findIndex((header) => header.includes("rank"));
-  const nameIndex = headers.findIndex((header) => header === "name" || header.includes("name"));
-  const nationIndex = headers.findIndex((header) => header.includes("nation"));
-
-  const tbody = tableHtml.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] || "";
-
-  return [...tbody.matchAll(/<tr>([\s\S]*?)<\/tr>/gi)]
-    .map((match) => {
-      const cells = [...match[1].matchAll(/<td>([\s\S]*?)<\/td>/gi)].map((cellMatch) => cellMatch[1]);
-      const place = Number.parseInt(cleanFeedText(cells[rankIndex] || "").match(/\d+/)?.[0] || "", 10);
-      const rider = toTitleCaseWords(cleanFeedText(cells[nameIndex] || "").replace(/\*/g, ""));
-      const alpha2Code = (cells[nationIndex] || "").match(/\/([a-z]{2})_black\.png/i)?.[1] || "";
-      const countryCode = normalizeAlpha2CountryCode(alpha2Code);
-      return Number.isInteger(place) && rider ? buildStandingEntry(place, rider, countryCode) : null;
-    })
-    .filter(Boolean)
-    .slice(0, MAX_RESULT_RIDERS);
-}
-
-function extractTourOfGreeceLatestStageNumber(html) {
-  return [...extractTourOfGreeceResultsSection(html).matchAll(/<h4>\s*Stage\s+(\d+)\s*<\/h4>/gi)]
-    .map((match) => Number.parseInt(match[1], 10))
-    .filter(Number.isFinite)
-    .reduce((max, stageNumber) => Math.max(max, stageNumber), 0);
-}
 
 function parseGiroDItaliaClassificationStandings(html, category) {
   const normalized = String(html || "").replace(/</g, "\n<");
@@ -6770,55 +6712,6 @@ async function fetchGiroDItaliaWomenOfficialSnapshot(race, fetchHtml = fetchText
   };
 }
 
-async function fetchTourOfGreeceOfficialSnapshot(race, fetchHtml = fetchText) {
-  const today = new Date();
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const startUtc = toUtcDateOnly(race?.startDate);
-  const endUtc = toUtcDateOnly(race?.endDate);
-
-  if (
-    !matchesSeasonEdition(race, "Tour of Greece") ||
-    !startUtc ||
-    !endUtc ||
-    todayUtc.getTime() < startUtc.getTime()
-  ) {
-    return null;
-  }
-
-  const html = await fetchHtml(TOUR_OF_GREECE_RESULTS_URL);
-  const gcStandings = parseTourOfGreeceOfficialStandings(html, "General Classification");
-  const latestStageNumber = extractTourOfGreeceLatestStageNumber(html);
-  const latestStageStandings = latestStageNumber
-    ? parseTourOfGreeceOfficialStandings(html, `Stage ${latestStageNumber}`)
-    : [];
-  if (gcStandings.length === 0 && latestStageStandings.length === 0) {
-    return null;
-  }
-
-  return {
-    totalStages: inferStageCountFromDates(race) || 5,
-    completedStages: latestStageNumber,
-    latestStage:
-      latestStageStandings.length > 0
-        ? {
-            number: latestStageNumber,
-            label: `Stage ${latestStageNumber}`,
-            standings: latestStageStandings,
-            ...getWinnerDetails(latestStageStandings),
-          }
-        : null,
-    generalClassification:
-      gcStandings.length > 0
-        ? {
-            stageNumber: latestStageNumber,
-            standings: gcStandings,
-            ...getLeaderDetails(gcStandings),
-          }
-        : null,
-    overallResult: gcStandings,
-  };
-}
-
 // The edition a provider is written for. Its markup and endpoints were checked
 // against one season's pages, and every provider used to match a literal
 // "2026 Tour de France", so the rollover would have dropped them all at once and every
@@ -6846,7 +6739,6 @@ const OFFICIAL_STAGE_RACE_PROVIDERS = [
   seasonEditionProvider("la-vuelta-femenina-rankings", "La Vuelta Femenina", fetchLaVueltaFemeninaOfficialSnapshot),
   seasonEditionProvider("grande-premio-anicolor-live", "Grande Prémio Anicolor", fetchGrandePremioAnicolorLiveSnapshot),
   seasonEditionProvider("vuelta-asturias", "Vuelta Asturias", fetchVueltaAsturiasOfficialSnapshot),
-  seasonEditionProvider("tour-of-greece-results", "Tour of Greece", fetchTourOfGreeceOfficialSnapshot),
   seasonEditionProvider("tour-auvergne-rhone-alpes-rankings", "Tour Auvergne-Rhône-Alpes", fetchTourAuvergneRhoneAlpesOfficialSnapshot),
   seasonEditionProvider("giro-ditalia-stage-one", "Giro d'Italia", fetchGiroDItaliaOfficialSnapshot),
   seasonEditionProvider("tour-de-france-rankings", "Tour de France", fetchTourDeFranceOfficialSnapshot),
