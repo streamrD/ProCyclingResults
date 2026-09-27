@@ -189,9 +189,37 @@ body {
   padding: 1.25rem 0 3rem;
 }
 
+/* Off screen until a keyboard reaches it; the first Tab on the page shows it. */
+.skip-link {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  background: var(--uci-blue-deep);
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+.skip-target:focus {
+  outline: none;
+}
+
+/* Card titles are h4 under their block's h3 (assessment A14): the outline goes
+   section h2, block h3, card h4, and they look exactly as the h3 did. */
 h1,
 h2,
-h3 {
+h3,
+.card h4 {
   margin: 0;
   line-height: 0.96;
   font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
@@ -1922,7 +1950,7 @@ h1 {
   font-size: 0.75rem;
 }
 
-.card h3 {
+.card h4 {
   font-size: 1.58rem;
   text-transform: uppercase;
 }
@@ -3088,6 +3116,7 @@ html[data-units="imperial"] .stage-profile.is-expanded .stage-profile-gridline[d
 }
 
 .stage-profile-expand {
+  margin-left: auto;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   padding: 0.2rem 0.6rem;
@@ -3292,6 +3321,47 @@ html[data-units="imperial"] .stage-profile.is-expanded .stage-profile-gridline[d
 .unit-option.is-active {
   background: var(--uci-blue);
   color: white;
+}
+
+.unit-toggle-label {
+  display: none;
+}
+
+/* The page's one km/mi control, beside "Refresh results" on the dark header (C8). */
+.unit-toggle-hero {
+  align-items: center;
+  margin-left: 0;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.unit-toggle-hero .unit-toggle-label {
+  display: inline;
+  padding: 0 0.3rem 0 0.8rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-family: "Barlow Semi Condensed", "Barlow Semi Condensed Fallback", "Barlow Semi Condensed Fallback Arial", "Arial Narrow", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.unit-toggle-hero .unit-option {
+  padding: 0.55rem 0.8rem;
+  color: white;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.unit-toggle-hero .unit-option.is-active {
+  background: white;
+  color: var(--uci-blue-deep);
+}
+
+.closeout-lookback .unit-toggle-hero {
+  margin-left: auto;
 }
 
 .stage-results-button {

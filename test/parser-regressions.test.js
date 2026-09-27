@@ -225,6 +225,7 @@ function loadParserExports() {
       buildLiveRaceDayNote,
       applyRouteDetails,
       buildStageProfileMarkup,
+      buildUnitToggle,
       parseStageType,
       parseStageDistanceKm,
       parseTeamReference,
@@ -3764,7 +3765,7 @@ test("National Championships country headers carry a flag, but podium riders do 
   const markup = buildNationalChampionshipsSection(parsed);
 
   // Flag sits in the country header.
-  assert.match(markup, /<h3 class="national-title"><span class="national-flag"[^>]*>🇺🇸<\/span><span>United States<\/span>/);
+  assert.match(markup, /<h4 class="national-title"><span class="national-flag"[^>]*>🇺🇸<\/span><span>United States<\/span>/);
   // A single podium list renders its riders without an inline flag.
   const podiumMatch = markup.match(/<ol class="national-podium-list">[\s\S]*?<\/ol>/);
   assert.ok(podiumMatch, "expected a rendered podium list");
@@ -5763,6 +5764,40 @@ test("mergeStageRaceSnapshots gives a provider-supplied stage its route details"
   assert.equal(merged.route.length, 3);
 });
 
+// C8 (2026-09-27): the km/mi control is one per page, beside "Refresh results", not
+// one per stage panel. buildHtmlPage needs a whole payload, so the header is checked
+// in the function source.
+test("the km/mi toggle is one control in the page header, not one per stage panel", () => {
+  const { buildUnitToggle, buildStageProfileMarkup, buildHtmlPage } = loadParserExports();
+  const toggle = buildUnitToggle("unit-toggle-hero");
+  assert.match(toggle, /^<span class="unit-toggle unit-toggle-hero" role="group" aria-label="Distance and elevation units">/);
+  assert.match(toggle, /data-unit-option="metric" aria-pressed="true">km</);
+  assert.match(toggle, /data-unit-option="imperial" aria-pressed="false">mi</);
+  const profile = { source: "komoot", distanceKm: 166.6, elevationGainM: 4527, points: [[0, 113], [80, 900], [166.6, 2137]] };
+  const measured = buildStageProfileMarkup({ number: 12, stageType: "mountain", distanceKm: 166.5, profile });
+  assert.match(measured, /data-unit-metric="166.5 km"/);
+  assert.match(measured, /data-profile-toggle/, "the per-panel expand control stays");
+  assert.doesNotMatch(measured, /data-unit-option/);
+  assert.match(String(buildHtmlPage), /Refresh results<\/span><\/button>\s*\$\{buildUnitToggle\("unit-toggle-hero"\)\}/);
+});
+
+// A14 (2026-09-27): a skip link past the header, card titles one level under their
+// block's h3, and every decorative icon hidden from assistive technology.
+test("the results page has a skip link, h4 card titles and hidden decorative icons", () => {
+  const { buildHtmlPage, buildStageProfileMarkup, buildRaceCard } = loadParserExports();
+  const source = String(buildHtmlPage);
+  assert.match(source, /<body[^>]*>\s*<a class="skip-link" href="#page-content">Skip to results<\/a>/);
+  assert.match(source, /\$\{heroMarkup\}\s*<div id="page-content" class="skip-target" tabindex="-1"><\/div>/);
+  const card = buildRaceCard({ id: "2026 Il Lombardia", title: "Il Lombardia", series: "UCI WorldTour", date: "10 October 2026", location: "Italy", winner: "Tadej Pogačar" });
+  assert.match(card, /<h4>Il Lombardia<\/h4>/);
+  assert.doesNotMatch(card, /<h3/);
+  const glyph = buildStageProfileMarkup({ number: 5, stageType: "mountain", distanceKm: 155.9 });
+  assert.match(glyph, /<svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">/);
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const unlabelled = (serverSource.match(/<svg\b[^>]*>/g) || []).filter((tag) => !/aria-hidden="true"|aria-label="/.test(tag));
+  assert.deepEqual(unlabelled, [], "every inline svg is either aria-hidden or labelled");
+});
+
 test("buildStageProfileMarkup shows an obviously generic pictogram when no trace is known", () => {
   const { buildStageProfileMarkup } = loadParserExports();
   const html = buildStageProfileMarkup({ number: 5, stageType: "mountain", distanceKm: 155.9 });
@@ -5773,7 +5808,8 @@ test("buildStageProfileMarkup shows an obviously generic pictogram when no trace
   assert.match(html, /stage-profile-glyph/);
   assert.match(html, /no elevation profile is available/);
   assert.match(html, /data-unit-metric="155.9 km" data-unit-imperial="96.9 mi"/);
-  assert.match(html, /data-unit-option="imperial"/);
+  // The km/mi control is the page's, not the figure's (C8): no panel carries one.
+  assert.doesNotMatch(html, /data-unit-option/);
   assert.doesNotMatch(html, /climbing/);
   assert.doesNotMatch(html, /stage-profile-area|stage-profile-peak|Elevation data|data-profile-toggle/);
   // Two stages of the same type draw the identical icon: nothing generic may look
@@ -7374,6 +7410,9 @@ test("buildSeasonCloseoutHero shows the next season's first day only once its ca
   assert.match(waiting, /<span>First results<\/span>January 2027/);
   assert.match(waiting, /once the 2027 WorldTour calendar is published/);
   assert.match(waiting, /welcoming you back for the 2027 racing season/);
+  // The winter header keeps the page's one km/mi control (C8): the finished stage
+  // cards below it still print distances.
+  assert.equal((waiting.match(/data-unit-option="imperial"/g) || []).length, 1);
 
   const opening = { year: 2027, date: "2027-01-16", title: "Women's Tour Down Under" };
   const known = buildSeasonCloseoutHero(buildSeasonCloseout(calendar, opening), "");
@@ -8942,7 +8981,7 @@ test("a WorldTour section with nothing upcoming says when the next season opens"
   const section = buildCompetitionSection(group, { seasonCloseout: closeout }, now);
   assert.match(section, /<h3>Upcoming<\/h3>/);
   assert.match(section, /season-opening-card/);
-  assert.match(section, /<h3>The 2027 season<\/h3>/);
+  assert.match(section, /<h4>The 2027 season<\/h4>/);
   assert.match(section, /on 20 January 2027, in 116 days\./);
   assert.equal(buildCompetitionSection(group, {}, now), "", "nothing to say while the season runs");
   assert.equal(buildCompetitionSection(group), "", "the old one-argument call still works");

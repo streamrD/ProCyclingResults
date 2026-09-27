@@ -1346,13 +1346,22 @@ function bindJerseyContenderCards() {
 }
 
 // What this site holds about a rider's season, and the two outward links.
+// The index (~35 KB of JSON) is parsed on the first card a pointer opens, never at
+// load: a phone cannot hover, so bindHoverCards binds nothing there and the parse
+// never happens (assessment S7, 2026-09-26).
 function bindRiderCards() {
-  let index = {};
-  try {
-    const node = document.getElementById("rider-seasons");
-    index = (node && JSON.parse(node.textContent)) || {};
-  } catch (error) {
-    index = {};
+  let index = null;
+  function readIndex() {
+    if (index) {
+      return index;
+    }
+    try {
+      const node = document.getElementById("rider-seasons");
+      index = (node && JSON.parse(node.textContent)) || {};
+    } catch (error) {
+      index = {};
+    }
+    return index;
   }
 
   function escapeText(value) {
@@ -1392,7 +1401,7 @@ function bindRiderCards() {
       return "";
     }
     const key = link.getAttribute("data-rider-key") || "";
-    const entry = index[key] || null;
+    const entry = readIndex()[key] || null;
     const best = entry ? describeBestPlacing(entry.bestPlacing) : "";
     const name = entry ? entry.name : link.textContent.trim();
     const flagNode = link.previousElementSibling;

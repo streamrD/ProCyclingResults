@@ -2,6 +2,8 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 27 September 2026
 
+- **One switch for kilometres or miles.** The units switch now sits once at the top of the page, beside Refresh, instead of in every stage panel.
+- **Easier with a keyboard.** A "Skip to results" link now leads the page for keyboard and screen-reader users, and the headings nest in order.
 - **A lighter page again.** A finished stage race's stage-by-stage results now load when you open them, so the page is less than half its size of this morning.
 - **A link to the organiser's results.** Cards for the Tour, the Vuelta and the other races whose results come from their organiser's site now link to the full classification there, under the top five.
 - **Finish videos are back.** Video searches had stopped overnight after hitting YouTube's daily limit; they resume each day and the missing videos fill in over the next few days.
