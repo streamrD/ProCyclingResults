@@ -972,94 +972,84 @@ date or a function name when a rule in `AGENTS.md` cites one of them. A session'
 closing notes go at the end of the journal; this map changes only when the shape of
 the project does.
 
-## Next Session Starts Here (written 2026-09-27, 00:00 UTC)
+## Next Session Starts Here (written 2026-09-27, 00:45 UTC)
 
-The state of play after the 2026-09-26 assessment and its two remediation batches (commits 77674e9 → 295f14e, all on `main` and verified live). Read `assessments/2026-09-26/report.md` section 4 for the full plan; this is the queue, in the order the last session would have taken it, with what it already found out.
+The state of play after the 2026-09-27 session, which took queue items 0 to 8 of the
+list written at 00:00 UTC (commits 1ac9f2f → 0532b1e, all on `main` and verified
+live). `assessments/2026-09-26/status.md` is the complete list; what closed today is
+R7, S8, X2, L8, P5, A13, F2/F3/F23, S4, S9, M7, M8, and S3 went to partial. The
+session's notes are the last section of `handoff-journal.md`.
 
-**First, on 27 September (race day):** the Worlds men's road race is 09:00–15:40 Montréal (13:00–19:40 UTC). Nothing to push. Check in the evening: the hero's status line should read "next: Worlds men's road race, today" during the day and the headline "X wins the men's road race" after the finish; the card should carry the podium from the medal summary within minutes of Wikipedia's edit (`resultSource: wikipedia-medal-summary`), then the top five once the event page exists (`wikipedia-event-page`). `curl -s https://procyclingresults.up.railway.app/api/data-status` says whether the last build succeeded. If a page is wrong, check production before local code.
-
-**The complete list**, every finding with closed/partial/open/deferred and the closing commit, is `assessments/2026-09-26/status.md`; update it as you close items, it is what the next monthly report starts from. The queue below is the open items in the order to take them.
+**First, on 27 September (race day):** the Worlds men's road race is 09:00–15:40
+Montréal (13:00–19:40 UTC). Nothing to push in those hours. Check in the evening: the
+hero's status line should read "next: Worlds men's road race, today" during the day
+and the headline "X wins the men's road race" after the finish; the card should carry
+the podium from the medal summary within minutes of Wikipedia's edit
+(`resultSource: wikipedia-medal-summary`), then the top five once the event page
+exists (`wikipedia-event-page`). `curl -s https://procyclingresults.up.railway.app/api/data-status`
+says whether the last build succeeded. If a page is wrong, check production before
+local code. The last session ended at 00:45 UTC, before the race, so nobody has done
+this check yet.
 
 **Then the queue (no maintainer decision needed):**
 
-0. **First: finish videos for past races (R7), now that the YouTube Data API key is set** (`YOUTUBE_API_KEY` on Railway since 2026-09-26; the API path in `fetchYouTubeFinishVideoUrl` takes over automatically and found the three Worlds videos on its first build). Today only races finished within `FINISH_VIDEO_MAX_AGE_DAYS` (6) are searched, at most `FINISH_VIDEO_LOOKUP_LIMIT` (6) per rebuild, `enrichStageFinishVideos` runs for live races only, and the cache is in memory, so every redeploy forgets every video: 37 of 40 finished cards and every finished stage have none. Do three things: (a) widen the window for finished one-day races, finalized stage races and their stages, keeping a per-rebuild budget and a daily cap that stays inside the API quota (10,000 units a day, about 102 per lookup, so roughly 90 lookups a day: budget for, say, 6 per rebuild and 60 a day, oldest-first, and the rest fill in over the following days); (b) persist what is found in `data/finish-videos.json` the way `data/stage-profiles.json` is kept: seed the cache from it at boot, and add `npm run refresh:finish-videos` that writes the file from a running server's finds (or from a direct run) for the maintainer to commit, so redeploys stop wiping them (hand-picked URLs stay in `RACE_FINISH_VIDEO_URLS`); (c) keep `selectFinishVideo`'s filters (official channel first, right stage and year, no previews). Measure the lookups with the harness, update the YouTube row and review log in `DATA-SOURCES.md`, add a release note ("Every finished race gets its finish video back"), and mark R7 in `assessments/2026-09-26/status.md`.
+1. **Keep the finish-video file growing.** The backlog fills at 60 a day (about 170
+   to find from empty); run `npm run refresh:finish-videos` and commit
+   `data/finish-videos.json` at the start of each session until
+   `/api/data-status` → `finishVideos.known` stops rising. Watch for
+   `finish-video-lookup-failed` in Railway's logs: it means the API refused (most
+   likely the day's quota, which every deploy's fresh counter can overrun), and the
+   backlog pauses an hour. If deploys stay frequent, persist the day's count or lower
+   `FINISH_VIDEO_BACKLOG_LOOKUP_LIMIT`.
+2. **A10, collapse finished stage-race cards on phones (comp first).** The page is
+   555 KB / 22 cards after S3 (was 1,432 KB / 58); the six finished stage-race cards
+   with their 21 stage panels are what remains between it and the 400 KB target, and
+   the first rider name is still below the fold on a phone (S2). Comp it with real
+   data before shipping; the maintainer decides.
+3. **The CSP, report-only.** Now that the client script is `assets/site.js`, hash it
+   (`'sha256-…'` of `HOMEPAGE_CLIENT_SCRIPT`, computed once at startup) rather than
+   nonce it: the page bodies are cached and shared between requests, so a per-request
+   nonce would have to be stored beside each cached body. Allow the umami host for
+   `script-src`; `style-src` needs `'unsafe-inline'` for the style attributes in the
+   markup; the JSON elements need nothing. Send
+   `Content-Security-Policy-Report-Only` on `/` only, then read the console on the
+   live page before making it enforcing.
+4. Smaller items from the register: S7 (parse the rider index only on hover
+   devices), C8 (per-panel unit toggles), A14's remainder (skip link, heading depth,
+   `aria-hidden` on icons), X12 (cap upstream body size before parsing), L7
+   (wikitext through the API instead of `action=raw`), R12 (a test for the backoff),
+   M6 (the clock-dependent-test lint), C9 (re-measure after S3).
+5. Item 27, the ASO provider parameterisation, only when one of them next needs a
+   change. The deferred-group machinery (`/api/competition-section`,
+   `DEFERRED_COMPETITION_GROUP_IDS`) is still unused; S3 built its own fragment
+   endpoints beside it.
 
-1. **Plan item 28, the feeds and the winter states (S each).** `/calendar.ics` and `/feed.xml` go beside the `/api/races` route in the request handler (search `url.pathname === "/api/races"`); build the bodies from `data.seasonCalendar.races[]` (`id`, `anchor`, `title`, `series`, `startDate`, `endDate`, `location`, `winner`, `tier`, `status`) plus the four Worlds events from `upcomingRaces`/`recentResults` (`isWorldChampionshipRace`); send through `sendPreparedBody(response, 200, "text/calendar; charset=utf-8", prepareResponseBody(text))` so compression and headers apply; during warm-up (`shouldServeHomepageWarmup`) answer 503 with `Retry-After`, never an empty calendar. Fold lines at 75 octets, escape `,;\`, DTEND is exclusive. Links: "Add to calendar" in `buildUpcomingCard`, a subscribe link in the calendar header and in `buildSiteFooterLinks`. The Atom feed: one entry per finished race and per raced stage, GUID from `race.id` (+ stage number), date from the race or stage day in the host zone. F23: `buildCompetitionSection(group)` takes no data today and `buildCompetitionBlock` returns "" for an empty list; when a group has no upcoming race and `data.seasonCloseout` exists, render one dated line from `seasonCloseout.nextSeasonOpening` ("The 2027 season opens with the Tour Down Under on 20 January, in 116 days"), and the month only when the date is unknown. Add a `DATA-SOURCES.md` line under "what we publish" (no fetch change) and release notes.
-2. **S8, an ETag on `/` (S).** The response cache already keys on `fetchedAt` (`buildResponseCacheKey`); send `etag: "<fetchedAt>"` with `cache-control: no-cache` and answer 304 on `if-none-match`, in `sendPreparedBody`. Live semantics hold because the tag changes with every rebuild.
-3. **X2, in-flight dedupe on `/api/race-stages` (S).** `loadRequestedStageHistory` (search the name) has no in-flight promise: N concurrent first requests for one race each fetch and parse. Store the promise in `stageHistoryCache` the way `articleCache` does; a unit test with two concurrent calls sharing one fetch.
-4. **S4, the fonts (S).** `woff2_compress` is installed (`/opt/homebrew/bin/woff2_compress`); `fontTools` is not, so no subsetting without installing it. Convert the six TTFs in `assets/fonts/` (550 KB) to woff2, point the six `@font-face` rules in the stylesheet at them, preload the two hero faces (`<link rel="preload" as="font">`), add `size-adjust`/`ascent-override` on the fallbacks, and bump the `?v=` on the asset URLs per the static-asset rule.
-5. **M7, the stylesheet and client script out of the template literal (M).** Measured on 2026-09-27: the `<style>` block is 87.7 KB with **zero** `${` interpolations and the homepage client `<script>` is 48.7 KB with **one** (find it with `grep -n '\${' ` inside the script block and replace it with a data attribute). So both can become `assets/site.css` and `assets/site.js`, read once at startup with `fs.readFileSync` (resolve the path inside a function: the VM harness has no `__dirname`) and inlined into the page unchanged. `test/browser-smoke.test.js`'s `loadServer()` extracts `style` and `script` by regex from `server.js`; change it to read the two files. The `${` ban in AGENTS.md then applies only to what remains in the template. Do this before S3, so the client edits happen in a real file.
-6. **S3, ship less HTML (M).** 58 cards and 11,283 elements go to every phone; only a handful are visible. Serve the rows behind "Load more", the `#season-calendar` section (83 KB, hidden) and the nationals almanac (200 KB) as fragments on demand: the deferred-section machinery (`deferred-load-button`, `/api/competition-section`, the `-mount` divs) already exists. The calendar's jump-to-card links must reveal a hidden row before jumping (the reveal logic exists). Target ≤ 400 KB uncompressed; measure with `assessments/tools/area2/compose.js`.
-7. **L8, archive the Tour of Greece provider (S).** hellas-tour.gr answers even `/robots.txt` with a Cloudflare challenge; move `fetchTourOfGreeceOfficialSnapshot` and its registry entry (`tour-of-greece-results`) to `archive/` with the ProSeries leftovers, delete the fixture and its test, and say so in `DATA-SOURCES.md`.
-8. **Item 26, split `handoff.md`** into a durable map and a dated journal before it passes 2,000 lines (it is past that now); item 27, the ASO provider parameterisation, only when one of them next needs a change; A10 (collapse finished stage-race cards on phones) and the CSP (per-request nonce on the inline scripts, easy after M7) after those.
+**Waiting on the maintainer** (section 5 of the report, still open): the ASO email
+about the rankings partials; nationals from Wikipedia instead of Cyclingnews;
+Railway's wait-for-CI setting; the GitHub token's scope and who else can reach
+Railway; an uptime monitor pointed at `/api/data-status`; Worlds results ordering
+(men-first stays until told otherwise); the committee's one line on the results
+page; analytics access; komoot/ASO about the derived traces. Discoverability is
+deliberately last. The YouTube key question is settled: the key is set and the
+search page is no longer read.
 
-**Waiting on the maintainer** (section 5 of the report, still open): the YouTube Data API key (`YOUTUBE_API_KEY` switches the search off the scrape) or curated-only; the ASO email about the rankings partials; nationals from Wikipedia instead of Cyclingnews; Railway's wait-for-CI setting; the GitHub token's scope and who else can reach Railway; an uptime monitor pointed at `/api/data-status`; Worlds results ordering (men-first stays until told otherwise); the committee's one line on the results page; analytics access. Discoverability is deliberately last.
+**Dates to keep:** the season close-out note goes live on 19 October 2026 (add its
+release note that day); the site moves to 2027 about 9 January 2027 (check the
+nationals source, the Worlds parser and the cards that week); the next monthly
+assessment is due 27 October 2026.
 
-**How the last session worked, for the next one:** seven parallel agents in isolated worktrees, each owning line ranges of `server.js`, merged onto `main` by hand; four were cut off by the account's monthly spend limit, so do not spawn many agents at once until that resets. Every branch appends tests to the end of `test/parser-regressions.test.js` and extends the harness export block, so every merge conflicts there; keep both sides and check the closing `});` and `},` lines with `node -c`. Phone widths are verified only through the framed probe (`runFramedProbe` in the smoke test, `assessments/tools/area2/frame.sh`); a bare `--window-size=390` is a 500px layout. After pushing, `npm run verify:deploy`.
-
-### Closed on 2026-09-27, after the queue was written
-
-- Item 0 (R7): see "The backlog and the persisted file" under "Finish Video Links".
-- Item 1 (P5, F2/F3, A13/F23): `/calendar.ics` and `/feed.xml` are built per request from
-  the cached payload and never touch the response-body LRU; UIDs and Atom ids are the
-  card anchors (`createRaceAnchorId`), so renaming a race's page title changes its id in
-  subscribers' calendars: keep anchors stable. Feed entries are dated at midnight of the
-  race or stage day in the host zone (`formatDayInZoneRfc3339`); a stage with no
-  route-table date is placed by its number from the start date. iCalendar folding is
-  done by hand (`foldIcsLine`) because the VM harness has no `TextEncoder`/`Buffer`.
-  `buildCompetitionSection(group, data, now)` now takes the payload; the winter
-  "season opens" card appears only for the two WorldTour groups when `seasonCloseout`
-  exists, with the hero's month-only wording when `nextSeasonOpening` is null.
-- Item 2 (S8): the ETag on `/` and the payload endpoints is a hash of the cached bytes,
-  not `fetchedAt`, because the response cache re-renders per UTC minute and
-  `/api/race-stages` clears it; either can change the body under one `fetchedAt`, and
-  a 304 for a changed page is the one bug an ETag must never have. Compressed bodies
-  get a `-br`/`-gzip` suffix (strong tags are per representation). `sendPreparedBody`
-  reads `response.req.headers["if-none-match"]`; only bodies from
-  `getCachedResponseBody` carry a tag, so 404/500, `/api/race-news`, `?debug=1` and
-  the static assets are unchanged.
-- Item 3 (X2): `loadRequestedStageHistory` keeps the in-flight promise in
-  `stageHistoryCache` (`{ fetchedAt, stages, promise }`) the way `articleCache` does;
-  a failure deletes the entry so the next call retries.
-- Item 4 (S4, S9): fonts ship as woff2 (192 KB for six faces, was 550 KB of TTF);
-  both heads preload Barlow Semi Condensed 800 and Manrope 500; local Arial and Arial
-  Narrow fallback faces are metric-matched. `size-adjust` was calibrated in headless
-  Chrome on the site's own strings because the font-table average ran 5 to 10% wide
-  (Arial's capitals against Barlow's): re-measure in a browser, not from tables, if a
-  face changes. The about page's `@font-face` block is a one-line copy of the results
-  page's; keep the two in step (they had drifted).
-- Item 5 (M7): the stylesheet and homepage client script are `assets/site.css` and
-  `assets/site.js`, read by `readSiteAsset` (from `process.cwd()`, the harness has no
-  `__dirname`) into `HOMEPAGE_STYLESHEET` / `HOMEPAGE_CLIENT_SCRIPT` once per process
-  and inlined unchanged, so the page's bytes did not change. The script's one
-  interpolation, the deferred-group list, is now `buildDeferredGroupsScript` (a JSON
-  element, id `deferred-groups`) read on load. `test/browser-smoke.test.js` reads the
-  two files instead of slicing `server.js`. The about page's stylesheet and the warm-up
-  page's script are still inline template literals. The CSP nonce (next item) can now
-  wrap the two inline blocks in `buildHtmlPage` without touching the files.
-- Item 6 (S3): the page carries only the first row of each section's recent results
-  (`buildRecentResultsBlock`, with `data-recent-anchors`, the anchors of every race in
-  order) and stubs for the almanac and the calendar (`buildNationalChampionshipsStub`,
-  `buildSeasonCalendarStub`, both keeping the section id and naming
-  `data-fragment-src`). `/api/recent-races?group=&after=<anchor>&until=<anchor>`
-  (`buildRecentRacesFragment`) answers the next row or every row through a linked
-  card; `/api/national-championships` and `/api/season-calendar` answer `{ html }`
-  through the response LRU. On the client `loadRecentRaces` appends rows (skipping a
-  card already present), `revealRaceCard` fetches a card's row for calendar bars, feed
-  links and `#race-…` hashes (`bindRaceHashJump`), `bindFragmentSections` swaps the
-  almanac in as it scrolls near (900 px) and `bindSeasonCalendar` fetches the calendar
-  when opened and binds it (`bindSeasonCalendarSection`) then. Measured locally with
-  `assessments/tools/area2/compose.js`: 1,432 KB / 58 cards / 14,113 elements before,
-  555 KB / 22 / 3,846 after (62 KB brotli); the almanac is 208 KB and the calendar
-  121 KB on demand. The 400 KB target needs A10 next. `history.replaceState` throws on
-  a file:// page, so the client goes through `replaceAddress`; the smoke test now opens
-  the calendar. The deferred-group machinery (`/api/competition-section`) is still
-  unused (`DEFERRED_COMPETITION_GROUP_IDS` is empty).
-- Item 7 (L8): `fetchTourOfGreeceOfficialSnapshot` and its helpers are in
-  `archive/tour-of-greece-provider.js`; the fixture and its two tests are gone.
-- Test trap: `assert.deepEqual([], vmArray)` and `deepEqual` on any object built inside
-  the VM harness fail because the sandbox's prototypes are another realm's; compare
-  `JSON.parse(JSON.stringify(...))` copies.
+**How the last session worked, for the next one:** four parallel agents in isolated
+worktrees (feeds and winter states, ETag and dedupe, fonts, Greece archive), each
+owning named regions of `server.js`, merged onto `main` one at a time while the
+orchestrator did the finish-video work, then M7 and S3 alone. The agents cost 100 to
+175 thousand tokens each and the spend limit did not bite. Every branch appended
+tests to `test/parser-regressions.test.js`, and on two of the three conflicting
+merges git dropped the shared closing `});` at the seam: run `node -c` on the test
+file after every merge and put the brace back. `git pull --rebase` with local merge
+commits replays and re-conflicts them; fetch, confirm origin has not moved, and push.
+The agents' worktrees are under `.claude/worktrees/` (untracked) and their
+`worktree-agent-*` branches are merged; both can be deleted. After pushing,
+`npm run verify:deploy`.
 
 ## Suggested First Checks For A New Agent
 

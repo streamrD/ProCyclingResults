@@ -980,3 +980,46 @@ Seven workstreams from the assessment's plan ran in parallel as agents in isolat
 - **Merging lesson**: every branch appended tests at the end of `test/parser-regressions.test.js` and several extended the harness export block, so each merge conflicted there; resolving by keeping both sides needs the closing `});` and `},` lines checked by hand, because git treats a shared trailing closer as common and a naive dedupe drops repeated `},` lines. `node -c` on the test file after every resolution.
 - **The first screen, later the same evening (comp B).** The hero's subtitle is now the season status line (`buildSeasonStatusLine`, shared with the calendar header so the two never disagree) whose "next" is Worlds-aware (`describeNextRace`: the WorldTour calendar's next race or the next Worlds event, whichever is sooner, "today"/"tomorrow" when it is); under the timestamp a Today/Yesterday pill and the day's headline (`buildHeroHeadline`: the newest one-day, finalized or live-stage result on the host-country day; older results get no line). The sentence written earlier that evening stays as the fallback for a payload with no calendar. On phones the menu is a flex row of chips; three entries carry a short label in a second span (`HERO_MENU_SHORT_LABELS`, `buildHeroMenuLabel`) that the ≤720px rules swap in. Upcoming cards (`buildUpcomingCard(race, now)`, the call site must not pass `map`'s index as the clock) carry a tier chip (`UPCOMING_TIER_CHIPS` from `getSeasonCalendarTier`, never for the Worlds), "Saturday, in 14 days" or "Tuesday to Sunday, in 17 days · 6 days" (`describeUpcomingWhen`, host-country day), and "Last year: 🇸🇮 Tadej Pogačar" from `race.previousWinner`, which `attachPreviousSeasonWinners` sets in `buildRaceMetadata` from `loadPreviousSeasonWinners(SEASON_YEAR - 1)`: the previous season's two WorldTour pages, parsed by the same `parseSeasonRows`, cached per process (a failure is cached as empty and logged), joined by series and title, and settled by `applyCanonicalRiderNames`. The calendar: `buildCalendarChampionships(data, today)` builds the four Worlds rows at render time (their winners arrive with the payload's enrichment, not the metadata), drawn as a "World Championships" lane on the "both" timeline with a rainbow gradient per view id and listed among the months with a rainbow dot; they are never counted among the WorldTour races. The phone month list folds the finished months into one native `<details class="season-months-past">` (summary "January to August · 56 races run · Open"), so the list opens at this month; the old per-month `season-month-folded` is gone. `buildSeasonCalendarSection` takes a clock as its third argument; the existing test passes one, because the "next" line says "tomorrow" on the right day.
 - **Still open from the plan**: the CSP; the ETag on `/`; an external uptime monitor and Railway's wait-for-CI (maintainer settings); the YouTube key or curated-only decision; the ASO email; nationals from Wikipedia; persisting found finish videos; the first-screen comps (hero "Today" strip, upcoming cards) awaiting the maintainer's choice; the `rejectedEmptyBuildAt` flag in the debug payload; the revision-index backoff has no test.
+
+## Process Lessons From The 2026-09-27 Session
+
+The remediation queue written at 00:00 UTC, taken in one session of about 40
+minutes of wall clock with four agents in parallel (commits 1ac9f2f → 0532b1e).
+
+What shipped, with the numbers measured:
+
+- **Finish videos (R7).** Every finished race and stage is searched through the
+  YouTube Data API, six per rebuild and sixty a day, newest first; hits are final,
+  misses wait a week, errors 20 minutes with the backlog paused an hour. The finds
+  persist in `data/finish-videos.json` (`npm run refresh:finish-videos`,
+  `/api/finish-videos`). Production had found four (Montréal, Vuelta 10, 20, 21) by
+  00:40 UTC, over three deploys. The in-memory daily counter restarts with every
+  deploy: six deploys today each spent up to seven lookups, so the quota, not the
+  counter, is the backstop on a busy day.
+- **Feeds and winter states (P5, F2/F3, A13/F23).** `/calendar.ics` (65 events, no
+  line over 75 octets) and `/feed.xml` (135 entries), the winter "season opens" card.
+- **ETag (S8) and dedupe (X2).** A content-hash ETag with `-br`/`-gzip` per
+  representation; one in-flight promise per race in `stageHistoryCache`.
+- **Fonts (S4, S9).** 550 KB of TTF → 192 KB of woff2; `size-adjust` calibrated in
+  headless Chrome because the font-table average ran 5 to 10% wide.
+- **Assets out of the template (M7).** `assets/site.css` (76 KB) and
+  `assets/site.js` (42 KB), inlined from disk; bytes unchanged.
+- **Ship less HTML (S3, partial).** 1,432 KB / 58 cards / 14,113 elements →
+  555 KB / 22 / 3,846 (62 KB brotli on production); the almanac (208 KB) and the
+  calendar (121 KB) are fragments, the rows behind "Load more races" too.
+- **Tour of Greece archived (L8); handoff split (M8).**
+
+Traps met:
+
+- Merging two branches that both append to the end of the test file loses the
+  closing `});` at the seam (twice today). `node -c` catches it.
+- `git pull --rebase` on a branch holding merge commits replays them linearly and
+  re-raises their conflicts. Fetch, check origin, push.
+- `assert.deepEqual` on any object built inside the VM harness fails across realms;
+  compare `JSON.parse(JSON.stringify(...))`.
+- `history.replaceState` throws on a file:// page, so the smoke test could never
+  open the calendar until the client went through `replaceAddress`.
+- Race ids that already start with "race-" get the anchor prefix again
+  (`race-race-1`): fixtures should use realistic ids.
+- The Railway CLI is installed and logged in but the project is not linked, so
+  production logs were not readable from the session; `railway link` is interactive.
