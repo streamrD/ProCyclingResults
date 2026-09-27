@@ -988,8 +988,42 @@ document.addEventListener("click", (event) => {
   const panel = document.getElementById(toggle.getAttribute("aria-controls") || "");
   if (panel) {
     panel.hidden = !open;
+    if (open) {
+      loadFoldedStageResults(panel);
+    }
   }
 });
+
+// A finished card's stage results arrive on first open (the panel names its race in
+// data-stage-results-src). A failed fetch says so and is tried again on the next open.
+function loadFoldedStageResults(panel) {
+  const raceId = panel.dataset.stageResultsSrc;
+  if (!raceId || panel.dataset.stageResultsState === "loading" || panel.dataset.stageResultsState === "loaded") {
+    return;
+  }
+  panel.dataset.stageResultsState = "loading";
+  const status = panel.querySelector("[data-stage-results-status]");
+  if (status) {
+    status.textContent = "Loading stage results…";
+  }
+  fetch("/api/stage-results?" + new URLSearchParams({ race: raceId }).toString())
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Unable to load stage results");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      panel.innerHTML = payload.html || "";
+      panel.dataset.stageResultsState = "loaded";
+    })
+    .catch(() => {
+      panel.dataset.stageResultsState = "failed";
+      if (status) {
+        status.textContent = "Stage results could not be loaded. Close and reopen to try again.";
+      }
+    });
+}
 
 // Delegated so stage strips inside deferred sections work without rebinding.
 document.addEventListener("click", (event) => {

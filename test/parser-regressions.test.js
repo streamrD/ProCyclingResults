@@ -6265,7 +6265,16 @@ test("a finished stage-race card folds its jerseys and stages behind their heade
   assert.match(finished, /aria-expanded="false" aria-controls="race-2026-vuelta-a-espana-jerseys">Final jersey winners</);
   assert.match(finished, /<ul class="jersey-list detail-panel" id="race-2026-vuelta-a-espana-jerseys" hidden>/);
   assert.match(finished, /aria-expanded="false" aria-controls="race-2026-vuelta-a-espana-stages">Stage results \(21 stages\)</);
-  assert.match(finished, /<div class="detail-panel" id="race-2026-vuelta-a-espana-stages" hidden>/);
+  // The stage results travel only when opened: the panel names its race and carries
+  // no stage panels, strip or chips until /api/stage-results fills it.
+  assert.match(finished, /<div class="detail-panel" id="race-2026-vuelta-a-espana-stages" hidden data-stage-results-src="2026 Vuelta a España">/);
+  assert.doesNotMatch(finished, /data-stage-panel|stage-strip|data-stage-target/);
+  // What /api/stage-results sends to fill it: the strip and a panel per raced stage.
+  const { buildStageSwitcherMarkup } = loadParserExports();
+  const body = buildStageSwitcherMarkup(race, { bodyOnly: true });
+  assert.match(body, /class="stage-strip"/);
+  assert.equal((body.match(/data-stage-panel/g) || []).length, 3);
+  assert.doesNotMatch(body, /data-stage-results-src|data-detail-toggle/);
   // The folded jerseys stack under the podium rather than sharing its row.
   assert.doesNotMatch(finished, /gc-columns/);
 

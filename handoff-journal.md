@@ -1175,4 +1175,12 @@ Traps met:
   `stage-race-wikipedia-failed`. If Railway ever shows it, look there first.
 - The browser smoke test "a picture on a site page fills the window…" failed once
   under load and passed three times alone: timing, not a regression.
+- Item 2 of the queue (bytes after A10) is done: `buildStageSwitcherMarkup(race,
+  { collapsible: true })` renders an empty panel carrying `data-stage-results-src`, and
+  the detail-toggle handler calls `loadFoldedStageResults`, which fills it from
+  `/api/stage-results` (the same function with `bodyOnly: true`, from the cached
+  payload, no upstream fetch). It is kept out of `responseBodyCache` on purpose: eight
+  slots hold the page and the payloads, and thirteen races' panels would evict them.
+  The MutationObserver that re-applies the unit and profile preferences covers the
+  late panels; hover cards and chips are delegated. Page 561 KB → 254 KB raw.
 

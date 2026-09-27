@@ -11173,12 +11173,21 @@ function buildStageSwitcherMarkup(race, options = {}) {
         <div class="stage-strip" role="tablist" aria-label="${escapeHtml(race.title)} stages">${chips}</div>
         ${panels}${nextPanel}
         ${stageResultsControl}`;
+  if (options.bodyOnly) {
+    return body;
+  }
   if (options.collapsible) {
+    // A finished card's stage results travel only when the reader opens them (after
+    // A10, 2026-09-27): the folded panels were 306 KB of a 559 KB page, the Vuelta's
+    // alone 235 KB. The panel carries the race id; the first tap fills it from
+    // /api/stage-results, which renders from the cached payload without fetching.
     const panelId = `${createRaceAnchorId(race)}-stages`;
     return `
       <div class="card-subsection stage-switcher" data-stage-switcher>
         ${buildDetailToggle(`Stage results (${race.stageRace?.totalStages || stages.length} stages)`, panelId, false)}
-        ${buildDetailPanel(panelId, false, body)}
+        <div class="detail-panel" id="${escapeHtml(panelId)}" hidden data-stage-results-src="${escapeHtml(getRaceId(race))}">
+          <p class="stage-panel-meta" data-stage-results-status>Loading stage results…</p>
+        </div>
       </div>`;
   }
   return `
@@ -15220,6 +15229,21 @@ const server = http.createServer(async (request, response) => {
           raceId,
           html: buildRaceNewsMarkup(race, { articles }),
         });
+        return;
+      }
+
+      // A finished card's folded stage results, on first open. Rendered from the cached
+      // payload (no upstream fetch) and not kept in responseBodyCache, whose eight slots
+      // hold the page and the payloads: rendering one race's panels is string building.
+      if (url.pathname === "/api/stage-results") {
+        const raceId = url.searchParams.get("race") || "";
+        const data = await loadRaceData({ includeDeferred: false });
+        const race = findStageRaceById(data, raceId);
+        if (!race) {
+          sendJson(response, 404, { error: "Unknown stage race." });
+          return;
+        }
+        sendJson(response, 200, { raceId: getRaceId(race), html: buildStageSwitcherMarkup(race, { bodyOnly: true }) });
         return;
       }
 

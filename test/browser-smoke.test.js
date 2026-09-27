@@ -692,6 +692,61 @@ test("a folded section header opens its panel on a tap and closes it on the next
   assert.equal(out.closedAgain, true);
 });
 
+test("a finished card's folded stage results are fetched on first open, once, and retried after a failure", (t) => {
+  const chrome = findChrome();
+  if (!chrome) {
+    t.skip("no Chrome found; set CHROME_PATH to run the browser smoke test");
+    return;
+  }
+  const markup = `<article class="card result-card stage-race-card" id="race-x">
+    <div class="card-subsection stage-switcher" data-stage-switcher>
+      <button type="button" class="detail-label detail-toggle" data-detail-toggle aria-expanded="false" aria-controls="race-x-stages">Stage results (21 stages)<span class="detail-toggle-chevron" aria-hidden="true"></span></button>
+      <div class="detail-panel" id="race-x-stages" hidden data-stage-results-src="2026 Race X">
+        <p class="stage-panel-meta" data-stage-results-status>Loading stage results…</p>
+      </div>
+    </div></article>`;
+  const setup = `
+    window.__fetches = [];
+    window.__failNext = true;
+    window.fetch = (url) => {
+      window.__fetches.push(url);
+      if (window.__failNext) {
+        window.__failNext = false;
+        return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({}) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({
+        html: '<div class="stage-strip" role="tablist"><button type="button" class="stage-chip is-active" data-stage-target="race-x-stage-21">21</button></div><div data-stage-panel id="race-x-stage-21">Stage 21 panel</div>',
+      }) });
+    };
+  `;
+  const probe = `
+    const out = { errors: window.__errors };
+    const toggle = document.querySelector('[data-detail-toggle]');
+    const panel = document.getElementById('race-x-stages');
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    (async () => {
+      toggle.click();
+      await wait(50);
+      out.failureText = panel.textContent.trim();
+      toggle.click();
+      toggle.click();
+      await wait(50);
+      out.filled = Boolean(panel.querySelector('[data-stage-panel]')) && !panel.hidden;
+      toggle.click();
+      toggle.click();
+      await wait(50);
+      out.fetches = window.__fetches;
+      document.getElementById('smoke').textContent = JSON.stringify(out);
+    })();
+  `;
+  const out = runProbe(chrome, buildPage({ probe, setup, markup }));
+  assert.deepEqual(out.errors, []);
+  assert.match(out.failureText, /could not be loaded/);
+  assert.equal(out.filled, true);
+  // One failed try, one success, and nothing on the third open.
+  assert.deepEqual(out.fetches, ["/api/stage-results?race=2026+Race+X", "/api/stage-results?race=2026+Race+X"]);
+});
+
 test("the National Championships section fits a true 390px phone width", (t) => {
   const chrome = findChrome();
   if (!chrome) {

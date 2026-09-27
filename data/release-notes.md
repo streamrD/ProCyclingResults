@@ -2,6 +2,7 @@ Every change to the site, in plain language, newest first. Dates are the day the
 
 ## 27 September 2026
 
+- **A lighter page again.** A finished stage race's stage-by-stage results now load when you open them, so the page is less than half its size of this morning.
 - **A link to the organiser's results.** Cards for the Tour, the Vuelta and the other races whose results come from their organiser's site now link to the full classification there, under the top five.
 - **Finish videos are back.** Video searches had stopped overnight after hitting YouTube's daily limit; they resume each day and the missing videos fill in over the next few days.
 - **Overall standings sooner after a stage.** When a race's main Wikipedia page is slow to update the overall classification, the card now takes it from that stage's own page, checked against the race leader, instead of waiting.
