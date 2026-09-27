@@ -18,6 +18,8 @@ function loadParserExports() {
   // It also lacks `__dirname` and `Buffer`, on purpose: resolve data paths inside
   // functions (from `process.cwd()`) and avoid `Buffer` in code the tests reach, or
   // the whole suite fails at load with a ReferenceError from inside the VM.
+  // `TextDecoder` is here so fetchText's capped stream reader (X12) runs as it does in
+  // production; server code must still work without it (it falls back to `text()`).
   const sandbox = {
     require,
     console,
@@ -32,6 +34,7 @@ function loadParserExports() {
     setImmediate,
     AbortController,
     AbortSignal,
+    TextDecoder,
   };
 
   vm.createContext(sandbox);
@@ -163,6 +166,12 @@ function loadParserExports() {
       getRaceResultsUrl,
       RACE_RESULT_SLUGS,
       indexWikiRevisions,
+      fetchWikiRaw,
+      readResponseText,
+      FETCH_MAX_BODY_BYTES,
+      WIKI_MAX_BODY_BYTES,
+      splitSeasonTableRow,
+      stripWikiCellAttributes,
       FETCH_USER_AGENT,
       YOUTUBE_FETCH_USER_AGENT,
       parseNationalChampionshipsIndex,
@@ -1826,7 +1835,7 @@ test("getCompetitionGroups gives the Worlds their own section, men's events firs
   assert.deepEqual(JSON.parse(JSON.stringify(groups[0].upcomingRaces.map((race) => race.title))), ["Il Lombardia"]);
   assert.equal(groups[1].upcomingRaces.length, 0);
   // With the events raced, the group is empty and its section is not rendered.
-  const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] })[2];
+  const after = getCompetitionGroups({ upcomingRaces: [worldTourRace], recentResults: [], liveStageRaces: [] }, new Date("2026-10-05T12:00:00Z"))[2];
   assert.equal(after.upcomingRaces.length, 0);
   assert.equal(after.tag, "");
 });
@@ -2298,7 +2307,9 @@ test("Worlds results render in their section, men first, all four cards visible"
     make("Men's time trial", "mens", "20", "Remco Evenepoel", "BEL"),
     make("Women's time trial", "womens", "20", "Marlen Reusser", "SUI"),
   ];
-  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] }).find((group) => group.id === "world-championships");
+  const worlds = getCompetitionGroups({ recentResults, liveStageRaces: [], upcomingRaces: [] }, new Date("2026-09-28T12:00:00Z")).find(
+    (group) => group.id === "world-championships",
+  );
 
   assert.deepEqual(
     JSON.parse(JSON.stringify(worlds.recentResults.map((race) => race.title))),
@@ -3775,16 +3786,19 @@ test("National Championships country headers carry a flag, but podium riders do 
 
 test("getCompetitionGroups keeps retired ProSeries and Europe Tour sections out of the active UI", () => {
   const { getCompetitionGroups } = loadParserExports();
-  const groups = getCompetitionGroups({
-    recentResults: [
-      { series: "Men's WorldTour" },
-      { series: "Women's WorldTour" },
-      { series: "Men's ProSeries" },
-      { series: "Men's Europe Tour" },
-    ],
-    liveStageRaces: [],
-    upcomingRaces: [],
-  });
+  const groups = getCompetitionGroups(
+    {
+      recentResults: [
+        { series: "Men's WorldTour" },
+        { series: "Women's WorldTour" },
+        { series: "Men's ProSeries" },
+        { series: "Men's Europe Tour" },
+      ],
+      liveStageRaces: [],
+      upcomingRaces: [],
+    },
+    new Date("2026-06-15T12:00:00Z"),
+  );
 
   assert.deepEqual(JSON.parse(JSON.stringify(groups.map((group) => group.id))), [
     "mens-worldtour",
@@ -6892,6 +6906,109 @@ test("indexWikiRevisions maps requested titles through normalization, redirects 
   assert.equal(revids.has("Unasked"), false);
 });
 
+// A stand-in for Wikipedia's Action API: the content query (rvprop=ids|content) answers
+// from `pages`, the batched revisions query (rvprop=ids) from `revids()` or its error.
+function stubWikipediaApi(setFetchForTest, state) {
+  const requests = [];
+  setFetchForTest(async (url, init) => {
+    const parsed = new URL(url);
+    const isContent = /content/.test(parsed.searchParams.get("rvprop") || "");
+    requests.push({ url: String(url), kind: isContent ? "content" : "revisions", params: parsed.searchParams, userAgent: init?.headers?.["user-agent"] });
+    let body;
+    if (isContent) {
+      const title = parsed.searchParams.get("titles");
+      const page = state.pages[title];
+      body = page
+        ? { query: { pages: [{ title, revisions: [{ revid: page.revid, slots: { main: { content: page.text } } }] }] } }
+        : { query: { pages: [{ title, missing: true }] } };
+    } else if (state.revisionsError) {
+      body = { error: { code: state.revisionsError, info: "Waiting for a database server" } };
+    } else {
+      const titles = parsed.searchParams.get("titles").split("|");
+      body = { query: { pages: titles.map((title) => ({ title, revisions: [{ revid: state.pages[title]?.revid || 0 }] })) } };
+    }
+    return { ok: true, status: 200, statusText: "OK", text: async () => JSON.stringify(body) };
+  });
+  return requests;
+}
+
+test("wikitext is read through the Action API with its revision, not the robots-disallowed action=raw (L7)", async () => {
+  const { fetchWikiRaw, wikiRevisionIndex, setFetchForTest, FETCH_USER_AGENT } = loadParserExports();
+  const state = { pages: { "2026 Test Race": { revid: 100, text: "{{Infobox cycling race report}}" }, "2027 UCI World Tour": { revid: 7, text: "#REDIRECT [[UCI World Tour]]" } } };
+  const requests = stubWikipediaApi(setFetchForTest, state);
+
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "{{Infobox cycling race report}}");
+  const [read] = requests;
+  assert.match(read.url, /^https:\/\/en\.wikipedia\.org\/w\/api\.php\?/);
+  assert.doesNotMatch(read.url, /action=raw|index\.php/);
+  assert.equal(read.params.get("rvslots"), "main");
+  assert.equal(read.params.has("redirects"), false, "a redirect page's own text is what the parsers expect");
+  assert.equal(read.userAgent, FETCH_USER_AGENT);
+  assert.equal(await fetchWikiRaw("2027 UCI World Tour"), "#REDIRECT [[UCI World Tour]]");
+
+  // The first read stored the revision it came with, so the first index check that
+  // agrees costs one revisions query and no second read (a raw read stored none and
+  // every page was read twice after a restart).
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "{{Infobox cycling race report}}");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"]);
+  assert.equal(requests[0].params.has("redirects"), false, "the index compares the redirect page's own revision");
+
+  // An edit is read again once the index reports it.
+  state.pages["2026 Test Race"] = { revid: 101, text: "edited" };
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "edited");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions", "content"]);
+
+  // A missing page throws, as the raw path's 404 did, and is not cached.
+  await assert.rejects(() => fetchWikiRaw("2026 No Such Race"), /404/);
+
+  // A page first read after the last index check is served from the cache until the
+  // next check, though the index has not seen it yet.
+  state.pages["2026 Late Race"] = { revid: 5, text: "late" };
+  wikiRevisionIndex.checkedAt = Date.now() - 1000;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
+  assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
+  assert.deepEqual(requests.map((request) => request.kind), ["content"]);
+});
+
+test("a failed revisions query backs off for the index window and keeps serving cached pages (R12)", async () => {
+  const { fetchWikiRaw, wikiRevisionIndex, setFetchForTest } = loadParserExports();
+  const state = { pages: { "2026 Test Race": { revid: 100, text: "race" }, "2026 Other Race": { revid: 200, text: "other" } } };
+  const requests = stubWikipediaApi(setFetchForTest, state);
+  await fetchWikiRaw("2026 Test Race");
+  await fetchWikiRaw("2026 Other Race");
+  wikiRevisionIndex.checkedAt = 0;
+  await fetchWikiRaw("2026 Test Race");
+  assert.equal(wikiRevisionIndex.lastIndexError ?? null, null);
+
+  // Wikipedia under load answers the revisions query with maxlag. That counts as a
+  // check: the pages are served from the cache under the last good index, the error is
+  // kept for the debug payload, and nothing is asked again until the window passes —
+  // before 8c564a5 every tracked page was refetched on every rebuild instead.
+  state.revisionsError = "maxlag";
+  wikiRevisionIndex.checkedAt = 0;
+  requests.length = 0;
+  for (let rebuild = 0; rebuild < 5; rebuild += 1) {
+    assert.equal(await fetchWikiRaw("2026 Test Race"), "race");
+    assert.equal(await fetchWikiRaw("2026 Other Race"), "other");
+  }
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"], "one failed query, no page reads");
+  assert.match(wikiRevisionIndex.lastIndexError?.message || "", /maxlag/);
+  assert.ok(Date.now() - wikiRevisionIndex.checkedAt < 5000, "the failure advanced checkedAt");
+
+  // Once the window has passed the query is tried again, and success clears the error.
+  state.revisionsError = "";
+  wikiRevisionIndex.checkedAt -= 46 * 1000;
+  requests.length = 0;
+  assert.equal(await fetchWikiRaw("2026 Test Race"), "race");
+  assert.deepEqual(requests.map((request) => request.kind), ["revisions"]);
+  assert.equal(wikiRevisionIndex.lastIndexError, null);
+});
+
 test("describeLiveRaceDay reads rest days, stage days and finish days off the route dates", () => {
   const { describeLiveRaceDay, buildLiveRaceDayNote } = loadParserExports();
   const race = {
@@ -7273,30 +7390,115 @@ test("a stale article pool renders as a placeholder and the news endpoint waits 
   };
   const stale = [{ title: "Küng wins stage 18", publisher: "Reuters", url: "https://example.com/18" }];
   const fresh = [{ title: "Landa wins stage 20", publisher: "Cycling Weekly", url: "https://example.com/20" }];
-  // The code reads the window against the real clock, so the test must too: a fixed
-  // date inside the race stopped matching once the Vuelta was two days finished.
-  const ttl = getArticleCacheTtlMs(race);
+  // One clock for the test and the code under test (M6): until 2026-09-27 the pool
+  // functions read the real clock, so a fixed date inside the race stopped matching
+  // once the Vuelta was two days finished and the test had to follow the real clock.
+  const now = Date.parse("2026-09-10T12:00:00Z");
+  const ttl = getArticleCacheTtlMs(race, new Date(now));
+  assert.equal(ttl, 15 * 60 * 1000, "a live race's pool is kept for 15 minutes");
 
   // Warm and inside its window: the card renders ready from it.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - 1000, data: stale, promise: null });
-  assert.equal(peekRaceArticlePool(race), stale);
+  articleCache.set(race.pageTitle, { updatedAt: now - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, now), stale);
 
   // Older than its window: the card renders a placeholder so the client asks for it.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: null });
-  assert.equal(peekRaceArticlePool(race), null);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, now), null);
+  // The same pool two days after the finish sits inside the settled six-hour window.
+  const settled = Date.parse("2026-09-16T12:00:00Z");
+  articleCache.set(race.pageTitle, { updatedAt: settled - ttl - 1000, data: stale, promise: null });
+  assert.equal(peekRaceArticlePool(race, settled), stale);
 
   // A refresh already in flight: the endpoint waits for it rather than serving the
   // old stories, and a caller that did not ask to wait still gets the old pool now.
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: Promise.resolve(fresh) });
-  assert.equal(await loadRaceArticlePool(race), stale);
-  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), fresh);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: Promise.resolve(fresh) });
+  assert.equal(await loadRaceArticlePool(race, { now }), stale);
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true, now }), fresh);
 
   // A refresh that fails leaves the waiting caller with the old pool, not an error.
   const failing = Promise.reject(new Error("bing down"));
   failing.catch(() => {});
-  articleCache.set(race.pageTitle, { updatedAt: Date.now() - ttl - 1000, data: stale, promise: failing });
-  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true }), stale);
+  articleCache.set(race.pageTitle, { updatedAt: now - ttl - 1000, data: stale, promise: failing });
+  assert.equal(await loadRaceArticlePool(race, { waitForRefresh: true, now }), stale);
   articleCache.delete(race.pageTitle);
+});
+
+// How many arguments a call passes, read from the character after its `(`: commas at
+// the top level, skipping strings and nested brackets. Enough for this file's calls.
+function countCallArguments(source, start) {
+  let depth = 0;
+  let commas = 0;
+  let last = "";
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '"' || char === "'" || char === "`") {
+      for (index += 1; index < source.length && source[index] !== char; index += source[index] === "\\" ? 2 : 1);
+      last = char;
+      continue;
+    }
+    if (char === ")" && depth === 0) {
+      return last === "" ? 0 : commas + (last === "," ? 0 : 1);
+    }
+    if ("([{".includes(char)) {
+      depth += 1;
+    } else if (")]}".includes(char)) {
+      depth -= 1;
+    } else if (char === "," && depth === 0) {
+      commas += 1;
+    }
+    if (!/\s/.test(char)) {
+      last = char;
+    }
+  }
+  return Infinity;
+}
+
+// M6 (2026-09-26 assessment): a test that lets one of these read the real clock passes
+// the day it is written and fails on its own when the calendar moves on. It happened
+// on 2026-09-15 (red for four days). Each entry is where the function takes `now`; a
+// call in this file must pass a clock there. Add a function here when it gains a `now`
+// parameter and its answer changes with the date.
+const CLOCK_ARGUMENT_POSITION = {
+  getCompetitionGroups: 2,
+  isWorldChampionshipWeek: 2,
+  getArticleCacheTtlMs: 2,
+  peekRaceArticlePool: 2,
+  hasRaceEndedDaysAgo: 3,
+  partitionRaceBuckets: 2,
+  describeNextRace: 2,
+  buildSeasonStatusLine: 2,
+  buildHeroHeadline: 2,
+  buildHeroStatus: 2,
+  describeUpcomingWhen: 2,
+  describeOneDayRecency: 2,
+  describeLiveRaceDay: 2,
+  isRaceWithinRacingHours: 2,
+  getLiveRaceRefreshDelayMs: 2,
+};
+
+test("tests hand a clock to every function whose answer moves with the calendar (M6)", () => {
+  const source = fs.readFileSync(__filename, "utf8");
+  const offenders = [];
+  Object.entries(CLOCK_ARGUMENT_POSITION).forEach(([name, position]) => {
+    for (const match of source.matchAll(new RegExp(`\\b${name}\\(`, "g"))) {
+      if (countCallArguments(source, match.index + match[0].length) < position) {
+        offenders.push(`${name} without a clock, line ${source.slice(0, match.index).split("\n").length}`);
+      }
+    }
+  });
+  // loadRaceArticlePool takes its clock in the options object.
+  for (const match of source.matchAll(/\bloadRaceArticlePool\(([^)]*)\)/g)) {
+    if (!/\bnow\b/.test(match[1])) {
+      offenders.push(`loadRaceArticlePool without { now }, line ${source.slice(0, match.index).split("\n").length}`);
+    }
+  }
+  assert.deepEqual(offenders, [], "pass a fixed clock (`new Date(\"2026-…\")`) as the code under test's `now`");
+
+  // The counter itself: a missing clock is caught, a trailing comma is not an argument.
+  assert.equal(countCallArguments("data)", 0), 1);
+  assert.equal(countCallArguments("{ a: [1, 2] }, new Date(\"x, y\"))", 0), 2);
+  assert.equal(countCallArguments("data,\n)", 0), 1);
+  assert.equal(countCallArguments(")", 0), 0);
 });
 
 test("every card links out to the full placings on ProCyclingStats", () => {
@@ -8187,6 +8389,24 @@ test("parseSeasonRows reads the real 2026 WorldTour page, a sortable table and a
   assert.equal(new Date(sanremo.startDate).toISOString().slice(0, 10), "2026-03-21");
 });
 
+test("wiki cell attribute strippers keep every attribute form and do not backtrack on a=a=a…", () => {
+  const { splitSeasonTableRow, stripWikiCellAttributes } = loadParserExports();
+  const cell = (line) => splitSeasonTableRow(line)[0]?.content;
+  assert.equal(cell('| scope="row" | [[Tadej Pogačar]]'), "[[Tadej Pogačar]]");
+  assert.equal(cell("| align=right | 12"), "12");
+  assert.equal(cell("| style='x' data-sort-value=5 | y"), "y");
+  assert.equal(cell("| [[2026 Milan–San Remo|Milan–San Remo]]"), "[[2026 Milan–San Remo|Milan–San Remo]]");
+  assert.equal(stripWikiCellAttributes('! scope="row" | 1'), "1");
+  assert.equal(stripWikiCellAttributes("| align=right | 3h 20' 11\""), "3h 20' 11\"");
+
+  // Until 2026-09-27 each of these took about 40 s on 81 characters (X12).
+  const hostile = "a=".repeat(2000) + "a";
+  const startedAt = Date.now();
+  assert.equal(cell(`| ${hostile}`), hostile);
+  assert.equal(stripWikiCellAttributes(`| ${hostile}`), hostile);
+  assert.ok(Date.now() - startedAt < 1000, `${Date.now() - startedAt} ms`);
+});
+
 test("a companion article's GC block stands in only when it is newer, deeper and agrees with the main article", () => {
   const { selectStageArticleGcFallback } = loadParserExports();
   const rider = (place, name, extra = {}) => ({ place: String(place), rider: name, pageTitle: name, ...extra });
@@ -8391,6 +8611,53 @@ test("fetchText does not retry a definitive 4xx but still retries a 503", async 
   });
   assert.equal(await fetchText("https://example.test/flaky"), "hello");
   assert.equal(calls, 2, "a 503 is retried");
+});
+
+test("fetchText stops reading a body past its byte cap and does not retry it", async () => {
+  const { fetchText, readResponseText, setFetchForTest, FETCH_MAX_BODY_BYTES, WIKI_MAX_BODY_BYTES } = loadParserExports();
+  assert.ok(FETCH_MAX_BODY_BYTES >= 4 * 1024 * 1024, "headroom over YouTube's ~1.5 MB search page");
+  assert.ok(WIKI_MAX_BODY_BYTES >= 2 * 1024 * 1024, "headroom over a ~250 KB Grand Tour article");
+
+  // A streamed body: chunks are counted as they arrive and the stream is cancelled at
+  // the cap, so the rest is never read.
+  const chunk = new Uint8Array(1024).fill(0x61);
+  let pulled = 0;
+  let cancelled = false;
+  const streamed = (chunks) =>
+    new ReadableStream({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > chunks) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk);
+        }
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+  let calls = 0;
+  setFetchForTest(async () => {
+    calls += 1;
+    return { ok: true, status: 200, statusText: "OK", headers: new Headers(), body: streamed(1000) };
+  });
+  await assert.rejects(() => fetchText("https://example.test/huge", { maxBytes: 10 * 1024 }), /too large/);
+  assert.equal(calls, 1, "an oversized body is not asked for again");
+  assert.ok(cancelled, "the stream is cancelled");
+  assert.ok(pulled < 20, `stopped after ${pulled} chunks of 1000`);
+
+  pulled = 0;
+  const small = { ok: true, status: 200, headers: new Headers(), body: streamed(3) };
+  assert.equal((await readResponseText(small, 10 * 1024)).length, 3 * 1024, "a body under the cap is read whole");
+
+  // A declared length over the cap is refused before a byte is read.
+  const declared = { ok: true, headers: new Headers({ "content-length": String(20 * 1024) }), body: streamed(20), text: async () => assert.fail("read") };
+  await assert.rejects(() => readResponseText(declared, 10 * 1024), /too large/);
+
+  // A stubbed response with only text() is checked after reading.
+  await assert.rejects(() => readResponseText({ text: async () => "x".repeat(11) }, 10), /too large/);
+  assert.equal(await readResponseText({ text: async () => "ok" }, 10), "ok");
 });
 
 test("a finished race's news line leads with the result stories, then the rest, then the previews", () => {

@@ -147,12 +147,28 @@ const NATIONAL_CHAMPIONSHIPS_CACHE_TTL_MS = 60 * 60 * 1000;
 const WIKI_REVISION_INDEX_TTL_MS = 45 * 1000;
 const WIKI_REVISION_QUERY_BATCH = 50;
 const WIKI_RAW_CACHE_IDLE_MS = 24 * 60 * 60 * 1000;
-const WIKI_FETCH_CONCURRENCY = 3;
+// Wikimedia's robot policy asks Action API clients for one request at a time and
+// fewer than five a second (L7, 2026-09-27; it was three at a time, up to 32 a second
+// on a cold build). Measured that day in the counting harness: the cold build's 88
+// Wikipedia requests spread from 13 s to 23 s (at most 4 a second), the cold build as
+// a whole ~9 s longer; a rebuild makes two or three, so it costs nothing there. The
+// interval is the knob if cold start matters more: 0 keeps one-at-a-time and gives
+// back ~8 s, at up to 13 requests a second while the cache is empty.
+const WIKI_FETCH_CONCURRENCY = 1;
+const WIKI_MIN_REQUEST_INTERVAL_MS = 250;
 const FETCH_RETRY_DELAYS_MS = [250, 750];
 // Per-attempt request timeout. A hung upstream would otherwise stall a synchronous
 // live-race rebuild indefinitely; a timed-out attempt is retried like any other
 // transient failure and ultimately degrades to partial data in enrichment paths.
 const FETCH_TIMEOUT_MS = 10 * 1000;
+// The most any upstream body may weigh before it is dropped unread (X12, 2026-09-27).
+// The timeout bounds a slow source but not what a parser is handed; a page grown by a
+// hostile edit or a broken CDN would otherwise go whole into regexes on the single
+// event loop. Measured that day: YouTube's search page ~1.5 MB (the largest we read),
+// an ASO rankings page ~700 KB, a Grand Tour article's wikitext ~250 KB. A body over the
+// cap fails like a definitive 4xx: logged once, never retried.
+const FETCH_MAX_BODY_BYTES = 8 * 1024 * 1024;
+const WIKI_MAX_BODY_BYTES = 4 * 1024 * 1024;
 // One JSON line per notable event, on stdout so Railway keeps it with the process
 // output: a failed rebuild, a failed upstream fetch, a 500, an unhandled rejection.
 // Until 2026-09-27 the server logged its startup line and nothing else, so a build
@@ -1972,20 +1988,34 @@ function sleep(ms) {
 }
 
 let activeWikiFetches = 0;
+let lastWikiRequestAt = 0;
 const wikiFetchQueue = [];
 
+// Every Wikipedia request runs through here: at most WIKI_FETCH_CONCURRENCY at once,
+// started at least WIKI_MIN_REQUEST_INTERVAL_MS apart. A finished task hands its slot
+// straight to the next waiter; until 2026-09-27 it freed the slot first, so a new
+// caller arriving in between could run beside the woken one, over the limit.
 async function withWikiFetchSlot(task) {
   if (activeWikiFetches >= WIKI_FETCH_CONCURRENCY) {
     await new Promise((resolve) => wikiFetchQueue.push(resolve));
+  } else {
+    activeWikiFetches += 1;
   }
 
-  activeWikiFetches += 1;
-
   try {
+    const wait = lastWikiRequestAt + WIKI_MIN_REQUEST_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      await sleep(wait);
+    }
+    lastWikiRequestAt = Date.now();
     return await task();
   } finally {
-    activeWikiFetches -= 1;
-    wikiFetchQueue.shift()?.();
+    const next = wikiFetchQueue.shift();
+    if (next) {
+      next();
+    } else {
+      activeWikiFetches -= 1;
+    }
   }
 }
 
@@ -2020,7 +2050,11 @@ function splitSeasonTableRow(row) {
       .forEach((cell) => {
         cells.push({
           header: isHeaderLine && !/^\s*scope\s*=\s*"?row"?/i.test(cell),
-          content: cell.replace(/^\s*(?:[a-zA-Z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|"']+)\s*)+\|(?!\|)/, "").trim(),
+          // The bare value is matched atomically (`(?=(…))\1`): as a plain `[^\s|"']+`
+          // it could end at any `=`, so a cell like `a=a=a=…` with no closing pipe
+          // backtracked exponentially — 81 characters held the event loop for 40 s
+          // (X12, 2026-09-27). Same matches on every real attribute form.
+          content: cell.replace(/^\s*(?:[a-zA-Z-]+\s*=\s*(?:"[^"]*"|'[^']*'|(?=([^\s|"']+))\1)\s*)+\|(?!\|)/, "").trim(),
         });
       });
   }
@@ -2510,7 +2544,54 @@ async function enrichWorldChampionshipResults(races, loadWikiRaw = fetchWikiRaw,
   return races;
 }
 
-async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
+function createBodyTooLargeError(bytes, maxBytes) {
+  const error = new Error(`Response body too large: over ${maxBytes} bytes (${bytes} seen)`);
+  error.bodyTooLarge = true;
+  error.bytes = bytes;
+  return error;
+}
+
+// A response's text, read no further than `maxBytes` (X12). A declared length over the
+// cap is refused before reading; otherwise the body is streamed and counted, and the
+// stream is cancelled the moment it passes the cap. Without a stream reader or a
+// TextDecoder (a stubbed response in the tests) the text is read whole and checked
+// after, which still keeps an oversized body away from the parsers. No `Buffer`: the
+// VM test harness does not have it.
+async function readResponseText(response, maxBytes = FETCH_MAX_BODY_BYTES) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    response.body?.cancel?.().catch(() => {});
+    throw createBodyTooLargeError(declared, maxBytes);
+  }
+
+  const reader = typeof TextDecoder === "function" ? response.body?.getReader?.() : null;
+  if (!reader) {
+    const text = await response.text();
+    if (text.length > maxBytes) {
+      throw createBodyTooLargeError(text.length, maxBytes);
+    }
+    return text;
+  }
+
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    received += value.byteLength;
+    if (received > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw createBodyTooLargeError(received, maxBytes);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+async function fetchText(url, { userAgent = FETCH_USER_AGENT, maxBytes = FETCH_MAX_BODY_BYTES } = {}) {
   let lastStatus = 0;
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
     let definitiveFailure = "";
@@ -2524,7 +2605,7 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       lastStatus = response.status;
 
       if (response.ok) {
-        return await response.text();
+        return await readResponseText(response, maxBytes);
       }
 
       if ((response.status === 429 || response.status >= 500) && attempt < FETCH_RETRY_DELAYS_MS.length) {
@@ -2537,6 +2618,15 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
       // 2026-09-26: a missing Worlds page cost three requests every ten minutes).
       definitiveFailure = `${response.status} ${response.statusText}`;
     } catch (error) {
+      // An oversized body will be just as large on the next attempt.
+      if (error?.bodyTooLarge) {
+        logEvent("warn", "upstream-body-too-large", {
+          host: describeUrlHost(url),
+          bytes: error.bytes,
+          maxBytes,
+        });
+        throw error;
+      }
       if (attempt >= FETCH_RETRY_DELAYS_MS.length) {
         // One line per request that gave up, after every retry: the host and the last
         // status say which source is down without printing every attempt.
@@ -2558,14 +2648,20 @@ async function fetchText(url, { userAgent = FETCH_USER_AGENT } = {}) {
   }
 }
 
-// Raw wikitext by title, with the current revision id it was fetched under. Pages are
+// Raw wikitext by title, with the revision id it was fetched under. Pages are
 // refetched only when Wikipedia reports a new revision, which it is asked for at most
 // once per WIKI_REVISION_INDEX_TTL_MS for every tracked title in batched queries.
+// Neither the content read nor the index follows redirects: a redirect page's text is
+// what we parse (next season's pages are redirects until they are written, and
+// following one would read the generic "UCI World Tour" article as the season), so the
+// revision compared must be the redirect page's own. Until 2026-09-27 the index asked
+// with `redirects=1` while the text came from `action=raw`, which never follows one.
 const wikiRawCache = new Map();
 const wikiRevisionIndex = { checkedAt: 0, promise: null, revids: new Map() };
 
 // Maps each requested title to the revision id of the page it resolves to (0 when the
-// page is missing), following the query's normalization and redirect records.
+// page is missing), following the query's normalization records (and redirect records,
+// though the index no longer asks for redirects to be followed: see wikiRawCache).
 function indexWikiRevisions(payload, titles) {
   const query = payload?.query || {};
   const normalized = new Map((query.normalized || []).map((entry) => [entry.from, entry.to]));
@@ -2592,7 +2688,6 @@ async function fetchWikiRevisionIndex(titles) {
       action: "query",
       prop: "revisions",
       rvprop: "ids",
-      redirects: "1",
       format: "json",
       formatversion: "2",
       maxlag: "5",
@@ -2647,30 +2742,67 @@ async function getWikiRevision(title) {
 async function fetchWikiRaw(title) {
   const key = String(title || "").trim();
   const cached = wikiRawCache.get(key);
-  let revid;
   if (cached) {
+    let revid;
     try {
       revid = await getWikiRevision(key);
     } catch {
       revid = undefined;
     }
-    if (revid !== undefined && cached.revid !== null && cached.revid === revid) {
+    // Served from the cache when the index agrees, or when the text was read since the
+    // index last checked (it is then at least as new as anything the index could say):
+    // a page first read after a check is not read again on every call until the next.
+    const readSinceLastCheck = cached.fetchedAt > wikiRevisionIndex.checkedAt;
+    if (cached.revid !== null && (readSinceLastCheck || (revid !== undefined && cached.revid === revid))) {
       cached.lastUsed = Date.now();
       return cached.text;
     }
   }
 
-  const url = `https://en.wikipedia.org/w/index.php?title=${encodeURIComponent(key)}&action=raw`;
-  const fetched = await withWikiFetchSlot(() => fetchText(url));
-  const text = fetched.startsWith("<!DOCTYPE html>") ? "" : fetched;
-  // A page first seen without a known revision is stored as such and refetched once
-  // the index supplies one, so text fetched just before an edit is never pinned.
-  wikiRawCache.set(key, { revid: revid === undefined ? null : revid, text, lastUsed: Date.now() });
+  const { text, revid: fetchedRevid } = await fetchWikiPageContent(key);
+  // Stored under the revision the text itself came from, so a page read on a cold
+  // start is not read again when the index first reports on it. An index that lags an
+  // edit costs one more read, never a pinned stale page.
+  wikiRawCache.set(key, { revid: fetchedRevid, text, lastUsed: Date.now(), fetchedAt: Date.now() });
   return text;
 }
 
-async function fetchJson(url) {
-  const text = await fetchText(url);
+// The wikitext of one page and the revision it belongs to, in one Action API query
+// (L7, 2026-09-27). Until then pages came from `/w/index.php?action=raw`, a path
+// Wikipedia's robots.txt disallows for every agent. Redirects are not followed, as
+// `action=raw` did not follow them; a missing or invalid title throws, as the raw
+// path's 404 did. No `maxlag` here: a lagged replica still serves reads, and the
+// revision index already steps aside under load.
+async function fetchWikiPageContent(title) {
+  const params = new URLSearchParams({
+    action: "query",
+    prop: "revisions",
+    rvprop: "ids|content",
+    rvslots: "main",
+    format: "json",
+    formatversion: "2",
+    titles: title,
+  });
+  const payload = await withWikiFetchSlot(() =>
+    fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`, { maxBytes: WIKI_MAX_BODY_BYTES }),
+  );
+  if (payload?.error) {
+    throw new Error(`Wikipedia content query failed: ${payload.error.code || "unknown"}`);
+  }
+  const page = payload?.query?.pages?.[0];
+  if (!page || page.missing || page.invalid) {
+    throw new Error("Request failed: 404 Not Found (no such Wikipedia page)");
+  }
+  const revision = page.revisions?.[0];
+  const content = revision?.slots?.main?.content;
+  return {
+    text: typeof content === "string" ? content : "",
+    revid: Number(revision?.revid) || null,
+  };
+}
+
+async function fetchJson(url, options = {}) {
+  const text = await fetchText(url, options);
   return JSON.parse(text);
 }
 
@@ -3203,8 +3335,10 @@ async function resolveTeamNames(references) {
           .map((reference) => `{{UCI team code|${reference.code}${reference.edition ? `|${reference.edition}` : ""}}}`)
           .join(TEAM_NAME_SEPARATOR),
       });
-      const payload = await fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`);
-      const expanded = String(payload?.expandtemplates?.wikitext || "").split(TEAM_NAME_SEPARATOR);
+      // Through the same slots as every other Wikipedia request (until 2026-09-27 this
+      // one bypassed them, and a cold build reached ten concurrent Wikipedia requests).
+      const payload = await withWikiFetchSlot(() => fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`));
+      const expanded =String(payload?.expandtemplates?.wikitext || "").split(TEAM_NAME_SEPARATOR);
 
       wanted.forEach((reference, index) => {
         // The template expands to a wikilink; the display half is the readable name.
@@ -4013,11 +4147,14 @@ function extractStageLeadershipGcSnapshots(rawText) {
 }
 
 // Cell attributes are written both quoted and bare on Wikipedia (`scope="row" |` and
-// `scope=row |`, `align="right" |` and `align=right |`), so accept either form.
+// `scope=row |`, `align="right" |` and `align=right |`), so accept either form. The bare
+// value is matched atomically and may not open with a quote, so it can neither end at
+// any `=` nor shadow a quoted value: the plain `[^\s|]+` backtracked exponentially on
+// `a=a=a=…` (X12, 2026-09-27; see splitSeasonTableRow).
 function stripWikiCellAttributes(line) {
   return String(line || "")
     .replace(/^[!|]\s*/, "")
-    .replace(/^(?:[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s|]+)\s*)+\|\s*/i, "")
+    .replace(/^(?:[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|(?=([^\s|"'][^\s|]*))\1)\s*)+\|\s*/i, "")
     .trim();
 }
 
@@ -8055,10 +8192,10 @@ function getArticleCacheTtlMs(race, now = new Date()) {
 // refresh (the on-demand news endpoint does, because the card it fills has already
 // shown a placeholder and a stale pool there is exactly what the reader came to
 // replace). A failed refresh falls back to the stale pool for a waiting caller.
-async function loadRaceArticlePool(race, { waitForRefresh = false } = {}) {
+// `now` is a parameter so a test can hold the clock still (M6).
+async function loadRaceArticlePool(race, { waitForRefresh = false, now = Date.now() } = {}) {
   const raceId = getRaceId(race);
   const cached = articleCache.get(raceId);
-  const now = Date.now();
 
   const startRefresh = () =>
     fetchRaceArticles(race)
@@ -8076,7 +8213,7 @@ async function loadRaceArticlePool(race, { waitForRefresh = false } = {}) {
       });
 
   if (cached?.data) {
-    if (now - cached.updatedAt < getArticleCacheTtlMs(race)) {
+    if (now - cached.updatedAt < getArticleCacheTtlMs(race, new Date(now))) {
       return cached.data;
     }
 
@@ -11809,12 +11946,12 @@ function formatTimestamp(timestamp) {
 // cache window counts as cold here — rendering it "ready" would leave the client with
 // nothing to ask for, and nothing else refreshes a warm pool (the Vuelta's news line
 // stopped at stage 18 for two days that way, 2026-09-10 to 2026-09-12).
-function peekRaceArticlePool(race) {
+function peekRaceArticlePool(race, now = Date.now()) {
   const cached = articleCache.get(getRaceId(race));
   if (!Array.isArray(cached?.data)) {
     return null;
   }
-  return Date.now() - cached.updatedAt < getArticleCacheTtlMs(race) ? cached.data : null;
+  return now - cached.updatedAt < getArticleCacheTtlMs(race, new Date(now)) ? cached.data : null;
 }
 
 // Start filling the cache in the background so the next render carries the
@@ -14140,7 +14277,7 @@ async function commitSiteContentToGitHub(pageId, markdown) {
       signal: AbortSignal.timeout(10000),
     });
     if (current.ok) {
-      return { sha: (await current.json())?.sha || "" };
+      return { sha: JSON.parse(await readResponseText(current))?.sha || "" };
     }
     if (current.status === 404) {
       return { sha: "" };
@@ -14177,7 +14314,7 @@ async function commitSiteContentToGitHub(pageId, markdown) {
   if (!result.ok) {
     return { committed: false, reason: `GitHub commit failed (${result.status}).` };
   }
-  const payload = await result.json();
+  const payload = JSON.parse(await readResponseText(result));
   return { committed: true, commitUrl: payload?.commit?.html_url || "" };
 }
 
