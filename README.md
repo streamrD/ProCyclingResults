@@ -220,7 +220,7 @@ The application fetches raw page content, with its revision id, through the Acti
 
 - `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=ids|content&rvslots=main&format=json&formatversion=2&titles=<PAGE>`
 
-Redirects are not followed (a redirect page's own text is returned, as `action=raw` did), a missing page throws, and every Wikipedia request goes through `withWikiFetchSlot`: one at a time (`WIKI_FETCH_CONCURRENCY`), started at least `WIKI_MIN_REQUEST_INTERVAL_MS` (250 ms) apart, as Wikimedia's robot policy asks. Upstream bodies are capped (`FETCH_MAX_BODY_BYTES` 8 MB, `WIKI_MAX_BODY_BYTES` 4 MB). A page is read again only when the batched revision query (`rvprop=ids`, 50 titles, `maxlag=5`, at most every 45 s) reports a new revision.
+Redirects are not followed (a redirect page's own text is returned, as `action=raw` did), a missing page throws, page reads waiting for the queue are batched into one query of up to ten titles (`WIKI_CONTENT_BATCH_SIZE`, `pendingWikiContent`; a page left out of a batch, or a batch that fails, is read again alone), and every Wikipedia request goes through `withWikiFetchSlot`: one at a time (`WIKI_FETCH_CONCURRENCY`), started at least `WIKI_MIN_REQUEST_INTERVAL_MS` (250 ms) apart, as Wikimedia's robot policy asks. Upstream bodies are capped (`FETCH_MAX_BODY_BYTES` 8 MB, `WIKI_MAX_BODY_BYTES` 4 MB). A page is read again only when the batched revision query (`rvprop=ids`, 50 titles, `maxlag=5`, at most every 45 s) reports a new revision.
 
 It parses season tables, race pages, infobox fields, result templates, and stage-race sections directly from raw wiki markup using regular expressions and string heuristics.
 

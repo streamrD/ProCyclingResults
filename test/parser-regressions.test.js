@@ -6916,11 +6916,27 @@ function stubWikipediaApi(setFetchForTest, state) {
     requests.push({ url: String(url), kind: isContent ? "content" : "revisions", params: parsed.searchParams, userAgent: init?.headers?.["user-agent"] });
     let body;
     if (isContent) {
-      const title = parsed.searchParams.get("titles");
-      const page = state.pages[title];
-      body = page
-        ? { query: { pages: [{ title, revisions: [{ revid: page.revid, slots: { main: { content: page.text } } }] }] } }
-        : { query: { pages: [{ title, missing: true }] } };
+      // Several titles per query since reads are batched; `truncate` names pages the
+      // API leaves without content in a batch (its result-size limit), `failBatches`
+      // makes any multi-page query fail.
+      const titles = parsed.searchParams.get("titles").split("|");
+      if (state.failBatches && titles.length > 1) {
+        return { ok: false, status: 500, statusText: "Server Error", text: async () => "" };
+      }
+      body = {
+        query: {
+          pages: titles.map((title) => {
+            const page = state.pages[title];
+            if (!page) {
+              return { title, missing: true };
+            }
+            if (titles.length > 1 && state.truncate?.has(title)) {
+              return { title };
+            }
+            return { title, revisions: [{ revid: page.revid, slots: { main: { content: page.text } } }] };
+          }),
+        },
+      };
     } else if (state.revisionsError) {
       body = { error: { code: state.revisionsError, info: "Waiting for a database server" } };
     } else {
@@ -6973,6 +6989,49 @@ test("wikitext is read through the Action API with its revision, not the robots-
   assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
   assert.equal(await fetchWikiRaw("2026 Late Race"), "late");
   assert.deepEqual(requests.map((request) => request.kind), ["content"]);
+});
+
+test("page reads waiting for the Wikipedia queue share one query (batched, as the robot policy asks)", async () => {
+  const { fetchWikiRaw, setFetchForTest } = loadParserExports();
+  const pages = {};
+  for (let index = 1; index <= 12; index += 1) {
+    pages[`2026 Race ${index}`] = { revid: index, text: `race ${index}` };
+  }
+  const state = { pages };
+  const requests = stubWikipediaApi(setFetchForTest, state);
+
+  // Twelve reads at once: the first turn takes the one waiting, the next every other
+  // title waiting up to ten, the last the remainder, one request at a time.
+  const titles = Object.keys(pages);
+  const texts = await Promise.all(titles.map((title) => fetchWikiRaw(title)));
+  assert.deepEqual(texts, titles.map((title) => pages[title].text));
+  const contentQueries = requests.filter((request) => request.kind === "content");
+  assert.ok(contentQueries.length <= 3, `${contentQueries.length} content queries for 12 pages`);
+  assert.ok(contentQueries.every((request) => request.params.get("titles").split("|").length <= 10));
+
+  // A page the API leaves out of a batch is asked again alone; a missing one still throws.
+  state.pages["2026 Big Race"] = { revid: 50, text: "big" };
+  state.pages["2026 Small Race"] = { revid: 51, text: "small" };
+  state.truncate = new Set(["2026 Big Race"]);
+  requests.length = 0;
+  const [big, small, missing] = await Promise.allSettled([
+    fetchWikiRaw("2026 Big Race"),
+    fetchWikiRaw("2026 Small Race"),
+    fetchWikiRaw("2026 Missing Race"),
+  ]);
+  assert.equal(big.value, "big");
+  assert.equal(small.value, "small");
+  assert.match(String(missing.reason), /404/);
+  assert.ok(requests.some((request) => request.params.get("titles") === "2026 Big Race"), "the truncated page alone");
+
+  // A batch that fails is read page by page.
+  state.truncate = null;
+  state.failBatches = true;
+  state.pages["2026 Race A"] = { revid: 60, text: "a" };
+  state.pages["2026 Race B"] = { revid: 61, text: "b" };
+  state.pages["2026 Race C"] = { revid: 62, text: "c" };
+  const settled = await Promise.all(["2026 Race A", "2026 Race B", "2026 Race C"].map((title) => fetchWikiRaw(title)));
+  assert.deepEqual(settled, ["a", "b", "c"]);
 });
 
 test("a failed revisions query backs off for the index window and keeps serving cached pages (R12)", async () => {

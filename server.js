@@ -2767,13 +2767,75 @@ async function fetchWikiRaw(title) {
   return text;
 }
 
-// The wikitext of one page and the revision it belongs to, in one Action API query
-// (L7, 2026-09-27). Until then pages came from `/w/index.php?action=raw`, a path
-// Wikipedia's robots.txt disallows for every agent. Redirects are not followed, as
-// `action=raw` did not follow them; a missing or invalid title throws, as the raw
-// path's 404 did. No `maxlag` here: a lagged replica still serves reads, and the
-// revision index already steps aside under load.
-async function fetchWikiPageContent(title) {
+// The wikitext of a page and the revision it belongs to, through the Action API (L7,
+// 2026-09-27; until then pages came from `/w/index.php?action=raw`, a path Wikipedia's
+// robots.txt disallows). Redirects are not followed, as `action=raw` did not follow
+// them; a missing or invalid title throws, as the raw path's 404 did. No `maxlag`: a
+// lagged replica still serves reads, and the revision index already steps aside.
+//
+// Reads are batched (2026-09-27). Wikimedia's robot policy asks unauthenticated Action
+// API clients for one request at a time, fewer than five a second, and batch requests
+// where the API supports them. One page per request at 250 ms apart made a cold build
+// ~9 s slower (6.4 s to 15.5 s). Now every read joins `pendingWikiContent`, and one
+// turn of the queue takes every title waiting when it starts, up to
+// WIKI_CONTENT_BATCH_SIZE, into a single query. A page the API leaves out of a batch
+// (its result-size limit truncates large batches) and every page of a batch that
+// failed (too big for the body cap, say) are asked again alone.
+const WIKI_CONTENT_BATCH_SIZE = 10;
+const pendingWikiContent = new Map();
+let wikiContentTurnQueued = false;
+
+function fetchWikiPageContent(title) {
+  const key = String(title || "");
+  const waiting = pendingWikiContent.get(key);
+  if (waiting) {
+    return waiting.promise;
+  }
+  const entry = { alone: false };
+  entry.promise = new Promise((resolve, reject) => {
+    entry.resolve = resolve;
+    entry.reject = reject;
+  });
+  pendingWikiContent.set(key, entry);
+  queueWikiContentTurn();
+  return entry.promise;
+}
+
+function queueWikiContentTurn() {
+  if (wikiContentTurnQueued) {
+    return;
+  }
+  wikiContentTurnQueued = true;
+  withWikiFetchSlot(async () => {
+    wikiContentTurnQueued = false;
+    const batch = [];
+    for (const [title, entry] of pendingWikiContent) {
+      if (batch.length >= WIKI_CONTENT_BATCH_SIZE || (entry.alone && batch.length > 0)) {
+        break;
+      }
+      batch.push([title, entry]);
+      if (entry.alone) {
+        break;
+      }
+    }
+    batch.forEach(([title]) => pendingWikiContent.delete(title));
+    if (pendingWikiContent.size > 0) {
+      queueWikiContentTurn();
+    }
+    await readWikiPageBatch(batch);
+  }).catch(() => {});
+}
+
+function askWikiPageAgainAlone(title, entry) {
+  entry.alone = true;
+  pendingWikiContent.set(title, entry);
+  queueWikiContentTurn();
+}
+
+async function readWikiPageBatch(batch) {
+  if (batch.length === 0) {
+    return;
+  }
   const params = new URLSearchParams({
     action: "query",
     prop: "revisions",
@@ -2781,24 +2843,45 @@ async function fetchWikiPageContent(title) {
     rvslots: "main",
     format: "json",
     formatversion: "2",
-    titles: title,
+    titles: batch.map(([title]) => title).join("|"),
   });
-  const payload = await withWikiFetchSlot(() =>
-    fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`, { maxBytes: WIKI_MAX_BODY_BYTES }),
-  );
-  if (payload?.error) {
-    throw new Error(`Wikipedia content query failed: ${payload.error.code || "unknown"}`);
+  let payload;
+  try {
+    payload = await fetchJson(`https://en.wikipedia.org/w/api.php?${params.toString()}`, { maxBytes: WIKI_MAX_BODY_BYTES });
+    if (payload?.error) {
+      throw new Error(`Wikipedia content query failed: ${payload.error.code || "unknown"}`);
+    }
+  } catch (error) {
+    if (batch.length > 1) {
+      batch.forEach(([title, entry]) => askWikiPageAgainAlone(title, entry));
+    } else {
+      batch[0][1].reject(error);
+    }
+    return;
   }
-  const page = payload?.query?.pages?.[0];
-  if (!page || page.missing || page.invalid) {
-    throw new Error("Request failed: 404 Not Found (no such Wikipedia page)");
-  }
-  const revision = page.revisions?.[0];
-  const content = revision?.slots?.main?.content;
-  return {
-    text: typeof content === "string" ? content : "",
-    revid: Number(revision?.revid) || null,
-  };
+
+  const query = payload?.query || {};
+  const normalized = new Map((query.normalized || []).map((record) => [record.from, record.to]));
+  const pages = query.pages || [];
+  const pageByTitle = new Map(pages.map((page) => [page.title, page]));
+  batch.forEach(([title, entry]) => {
+    const page = pageByTitle.get(normalized.get(title) || title) || (batch.length === 1 ? pages[0] : null);
+    if (page?.missing || page?.invalid) {
+      entry.reject(new Error("Request failed: 404 Not Found (no such Wikipedia page)"));
+      return;
+    }
+    const revision = page?.revisions?.[0];
+    const content = revision?.slots?.main?.content;
+    if (typeof content !== "string" && batch.length > 1) {
+      askWikiPageAgainAlone(title, entry);
+      return;
+    }
+    if (!page) {
+      entry.reject(new Error("Request failed: 404 Not Found (no such Wikipedia page)"));
+      return;
+    }
+    entry.resolve({ text: typeof content === "string" ? content : "", revid: Number(revision?.revid) || null });
+  });
 }
 
 async function fetchJson(url, options = {}) {

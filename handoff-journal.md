@@ -1253,3 +1253,12 @@ Traps met:
 - **Clock guard**: `CLOCK_ARGUMENT_POSITION` in the tests lists calendar-sensitive
   functions and fails any call that omits the clock. Add a function there when it
   gains a `now` parameter. The card builders are deliberately not listed.
+- Wikipedia pacing vs cold start, settled: the robot policy (wikitech.wikimedia.org,
+  "Robot policy", Action API rules) says unauthenticated clients keep to one request at
+  a time and under five a second, and batch where supported. The maintainer chose
+  compliance over speed; batching then got the speed back. Measured cold builds, ready
+  on `/api/data-status`: 6.4 s before L7, 15.5 s with L7's pacing, 7.3 s with pacing
+  off (non-compliant, rejected), 6.9 s with batched reads (10 content queries for 43
+  pages). A preload that wraps `globalThis.fetch` and counts by host is the quick way
+  to count requests per build.
+
