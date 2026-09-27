@@ -26,7 +26,10 @@ const USER_AGENT = "ProCyclingResults verify-deploy (reads /api/build-info, /api
 // Any one of these proves a section rendered. The page escapes the apostrophe in
 // "Men's WorldTour" as an entity, so the check matches the tail of the heading.
 const SECTION_HEADING_MARKERS = ["WorldTour</h2>", "World Championships</h2>", "National Championships</h2>"];
-const RACE_CARD_MARKER = 'id="race-';
+// A card is an <article> with a race- id; the folded panels inside a finished card
+// carry race-…-gc / -jerseys / -stages ids of their own (2026-09-27), so a bare
+// id="race-" count would overstate the cards.
+const RACE_CARD_MARKER = /<article\b[^>]*\bid="race-/g;
 
 function parseArgs(argv) {
   const options = { sha: "", baseUrl: DEFAULT_BASE_URL, pollIntervalMs: DEFAULT_POLL_INTERVAL_MS, help: false };
@@ -157,7 +160,7 @@ async function main(argv) {
   log(`data-status: ${describeStatus(dataStatus)}`);
 
   const page = await fetchOnce(`${options.baseUrl}/`);
-  const cardCount = page.text.split(RACE_CARD_MARKER).length - 1;
+  const cardCount = (page.text.match(RACE_CARD_MARKER) || []).length;
   const headingsFound = SECTION_HEADING_MARKERS.filter((marker) => page.text.includes(marker));
   const problems = [];
   if (page.status !== 200) {

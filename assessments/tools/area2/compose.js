@@ -23,7 +23,7 @@ const svg = sumMatches(/<svg[\s\S]*?<\/svg>/g);
 const img = [...html.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
 const fontFaces = [...html.matchAll(/@font-face\s*\{[^}]*url\("([^"]+)"\)/g)].map((m) => m[1]);
 const links = [...html.matchAll(/<link\b[^>]*>/g)].map((m) => m[0]);
-const raceCards = (html.match(/\bid="race-/g) || []).length;
+const raceCards = (html.match(/<article\b[^>]*\bid="race-/g) || []).length;
 const newsPending = (html.match(/data-race-news-state="pending"/g) || []).length;
 const newsTotal = (html.match(/data-race-news=/g) || []).length;
 const hiddenAttrs = (html.match(/\shidden(?=[\s>])/g) || []).length;
