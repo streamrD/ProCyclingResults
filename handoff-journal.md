@@ -1292,3 +1292,11 @@ Traps met:
 - Lesson: on a day with a big evening race, do not deploy in bursts in the morning, or
   check `finishVideos.quotaPausedUntil` after the last deploy. A deploy is not free.
 
+## Close-Out, 2026-09-28 18:00 UTC
+
+- The maintainer closed the two-day stretch with a direction rather than a task: keep
+  improving concretely and get the site on solid ground in architecture, sourcing
+  policy and process. That is now "The Plan: Getting On Solid Ground" in `handoff.md`
+  (P1–P4, A1–A5, W1–W7), pointed to from AGENTS.md. The evidence behind each item is in
+  this journal's sections of 27–28 September.
+

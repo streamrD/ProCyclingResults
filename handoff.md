@@ -1041,51 +1041,28 @@ date or a function name when a rule in `AGENTS.md` cites one of them. A session'
 closing notes go at the end of the journal; this map changes only when the shape of
 the project does.
 
-## Next Session Starts Here (written 2026-09-27, 12:00 UTC)
+## Next Session Starts Here (written 2026-09-28, 18:00 UTC)
 
-The state of play at the close of the second 2026-09-27 session (03:30 to 12:00 UTC).
-Everything below is pushed to `main` and verified live with `npm run verify:deploy`
-unless it says otherwise. `assessments/2026-09-26/status.md` is the complete list of
-findings; the session's story is the last dated sections of `handoff-journal.md`
-("Finish Videos And The Search Quota", "The ASO Question", and the notes after them).
-Start by reading this section, then the status file, then take the list below in order.
+Two sessions on 27–28 September took the site from "works" to "works and behaves":
+the results got faster and lighter, and every source we read was checked against its
+own rules. Everything is pushed to `main` and verified live (last deploy `b9228b0`).
+`assessments/2026-09-26/status.md` is the list of findings; `handoff-journal.md`'s last
+dated sections tell the story. Read this section, then "The Plan" below it, then the
+status file.
 
-**What this session shipped** (all live):
+**Where things stand:**
 
-1. Finish videos: the YouTube key's Google project allows **100 searches a day**, reset
-   at midnight Pacific (07:00 UTC); the first refusal now pauses every lookup until then
-   (`finishVideos.quotaPausedUntil` in `/api/data-status`).
-2. GC top five from Wikipedia's per-stage articles while the main article lags
-   (`selectStageArticleGcFallback`, guarded against stale copies).
-3. ASO read through its public pages first, a live ASO race at most every two minutes,
-   and a dormant `ASO_SOURCES=off` switch. See "If ASO Says No" above.
-4. "Full classification on lavuelta.es ↗" on every card whose results come from an ASO
-   site (maintainer's wording; "Official rankings" was rejected).
-5. A finished stage race's stage results load on first open (`/api/stage-results`):
-   page 561 KB → 254 KB, 3,467 → 693 elements. Closed S3 and C9.
-6. Client-side register items by an agent: lazy rider index (S7), skip link and h4
-   card titles (A14), one km/mi control in the header (C8, chosen by the maintainer
-   from a comp, **with the note that per-panel toggles may come back later**).
-7. Server-side register items by an agent: upstream body caps and two regex lock-ups
-   fixed (X12), backoff test (R12), clock guard for tests (M6), Wikipedia read through
-   the Action API instead of `action=raw` (L7).
-8. Wikipedia reads batched (up to ten pages a query) and kept to Wikimedia's robot
-   policy for unauthenticated Action API clients: one request at a time, under five a
-   second. Cold build ready in ~7 s (it was 15.5 s with unbatched pacing).
-
-**Still to do today, 27 September:**
-
-- **The Worlds men's road race check,** after 19:40 UTC (race 13:00–19:40 UTC, no
-  pushes in those hours). The hero should read "next: Worlds men's road race, today"
-  in the day and the headline "X wins the men's road race" after; the card should carry
-  the podium from the medal summary within minutes of Wikipedia's edit
-  (`resultSource: wikipedia-medal-summary`), then the top five once the event page
-  exists (`wikipedia-event-page`). Check production, not local code.
-- **One local commit waits to be pushed:** `9883025` (a comment correction) plus this
-  handoff commit. Push after 19:40 UTC if the session did not push them before 13:00;
-  `git log origin/main..HEAD` says.
-- **Finish-video refresh in the evening:** `npm run refresh:finish-videos`, commit
-  `data/finish-videos.json` if it grew (production knew 13 at 09:30 UTC).
+- The site: page 254 KB (was 1.4 MB before the check-in), finished cards load their
+  stage results on open, one km/mi switch in the header, skip link, organiser links on
+  ASO cards, GC top five from Wikipedia's stage articles when the main article lags.
+- Sources: Wikipedia through the Action API, one request at a time, under five a
+  second, batched (Wikimedia's robot policy); ASO through its public pages first, at
+  most every two minutes live, with a dormant `ASO_SOURCES=off`; YouTube through the
+  Data API within a 100-searches-a-day quota, the backlog waiting an hour after a
+  restart so deploys cannot spend it.
+- The Worlds: all four elite events have results from their event pages and finish
+  videos (checked 28 September).
+- Finish videos: 14 in `data/finish-videos.json` (refreshed 28 September).
 
 **The ASO letter (the maintainer's current project):**
 
@@ -1120,34 +1097,112 @@ Start by reading this section, then the status file, then take the list below in
 
 **Then the queue (no maintainer decision needed):**
 
-1. **Keep the finish-video file growing** each session until `finishVideos.known`
-   stops rising; about 60 backlog finds a day at most under the quota.
+1. **Keep the finish-video file growing** at the start of each session
+   (`npm run refresh:finish-videos`, commit if it grew) until `finishVideos.known` stops
+   rising. After a deploy, check `finishVideos.quotaPausedUntil` is null.
 2. **The CSP, from report-only to enforcing,** once Railway's logs show no
-   `csp-report` lines over a few days of real browsers (report-only since 2026-09-27
-   01:00 UTC); then the about and warm-up pages.
-3. **What is left of the register:** A11 (rider-link hit areas), S2 (the first rider is
-   still below the fold on a phone: the hero is 521 px; a design question, comp it),
-   F9 (a guide page). M9 only when an ASO provider next needs a change.
+   `csp-report` lines over a few days (report-only since 2026-09-27 01:00 UTC); then the
+   about and warm-up pages.
+3. **Start "The Plan" below**, item P1 first (it needs no decision), then the rest in
+   its order, asking the maintainer where it says so.
 
 **Waiting on the maintainer:** the ASO letter (above); an uptime monitor on
 `/api/data-status` (R3); Railway's wait-for-CI (M2); the GitHub token's scope (X4);
-nationals from Wikipedia instead of Cyclingnews (L3); decisions 4, 5 and 11 (P7, C5,
-M11); discoverability last (P1).
+nationals from Wikipedia instead of Cyclingnews (L3, and see P3 below); decisions 4, 5
+and 11 (P7, C5, M11); discoverability last (P1 in the register).
 
 **Dates to keep:** the season close-out note goes live on 19 October 2026 (add its
-release note that day); the next monthly assessment is due 27 October 2026; the site
-moves to 2027 about 9 January 2027 (check the nationals source, the Worlds parser, the
-cards and the ASO providers' public-page reads on the first 2027 ASO race).
+release note that day); the next monthly assessment is due 27 October 2026 (fold "The
+Plan" into its remediation plan); the site moves to 2027 about 9 January 2027 (check the
+nationals source, the Worlds parser, the cards and the ASO public-page reads on the
+first 2027 ASO race). **The first 2027 ASO races are the first live test of this week's
+ASO and Wikipedia changes:** watch Eschborn–Frankfurt (1 May) and La Vuelta Femenina
+(early May) closely.
 
-**How this session worked, for the next one:** the lead took the user-visible items
-(comp, choice, push) and ran two agents in isolated worktrees for the register items,
-each told which functions to stay out of and to put tests beside related ones rather
-than at the end of the file; both merged cleanly. `git add -A` swept the agents'
-worktrees into a commit once (now in `.gitignore`). Two browser smoke tests are flaky
-under load ("a picture on a site page fills the window…", "phones keep stage profiles
-compact…"): rerun alone before treating a failure as real. The maintainer answers
-tersely; a choice of comp is the go-ahead to push, and pushes are announced with the
-UTC time because of race windows.
+## The Plan: Getting On Solid Ground (standing, from 2026-09-28)
+
+The maintainer's direction: keep improving in concrete ways, and put the site on solid
+ground architecturally and in how it treats its sources and how it is worked on. Each
+item says what, why (the evidence), the first concrete step, and who decides. Take
+them in order within each part; the parts can interleave. Tick items off here, dated,
+and carry what is left into the next monthly assessment.
+
+**Part 1: Sources and policy (be a guest every site would welcome)**
+
+- **P1. A terms register for every source.** Two costly misses came from not reading a
+  source's own rules (ASO's conditions, three months late; the YouTube key's real
+  limit). Add a column to the table in `DATA-SOURCES.md` or a short companion table:
+  per host, what its terms and robots.txt say about automated reading, the limits on
+  our account, and whether we comply. First step: fill it for the hosts not yet
+  reviewed: giroditalia.it and giroditaliawomen.it (RCS Sport; likely the same
+  position as ASO), vueltaburgos.com, Bing News RSS (check its terms for the
+  non-commercial condition before any coffee link goes up), Cyclingnews (Future plc's
+  terms forbid scraping: see P3), komoot. No decision needed to write it down.
+- **P2. Send the ASO letter** (above) and act on the answer. Maintainer.
+- **P3. Nationals from Wikipedia instead of Cyclingnews** (register L3). The one source
+  whose terms we are plainly outside of with no letter planned. First step: a comp of
+  the almanac built from Wikipedia's national championships pages, with the replay
+  method to show coverage by date. Maintainer decides on the comp.
+- **P4. The same letter to RCS Sport** (Giro, Giro Women) if P1 finds the same terms.
+  Maintainer decides after P1.
+
+**Part 2: Architecture (make the fragile parts sturdy)**
+
+- **A1. One source-policy layer.** Today each host's manners live in a different place:
+  a queue for Wikipedia (`withWikiFetchSlot`), an interval cache for ASO
+  (`ASO_LIVE_MIN_INTERVAL_MS`), a quota for YouTube, nothing for the rest. A small table
+  keyed by host (concurrency, minimum spacing, daily cap, body cap) enforced in
+  `fetchText` would make every source follow its row of the P1 register by
+  construction. First step: move the Wikipedia queue behind such a table without
+  changing behaviour (tests exist), then add the other hosts one at a time, counting
+  requests per rebuild before and after. Register item M9 fits inside it.
+- **A2. State that survives a deploy.** Every deploy wipes the in-memory caches,
+  counters and found data; the files in `data/` (finish videos, stage profiles) exist
+  only because of it, and the daily YouTube count still resets (worked around by
+  `FINISH_VIDEO_BACKLOG_MIN_UPTIME_MS`). First step: list what a restart loses and what
+  it costs (the journal has the incidents), then propose one small durable store (a
+  Railway volume or a single JSON file written on shutdown) to the maintainer. Decision:
+  maintainer, since it adds infrastructure.
+- **A3. No silent fallbacks.** 22 bare `catch {}` blocks in `server.js`; one of them hid
+  finished cards losing their stage history (`stage-race-wikipedia-failed`, now
+  logged). First step: give every catch that changes what a reader sees a `logEvent`
+  line, and add the new events to `/api/data-status`'s counts.
+- **A4. Rebuilds that do not wait for visitors.** Outside a live race the payload
+  rebuilds only when someone visits, so news, results and video searches go stale on a
+  quiet night (the road race video waited for the maintainer's visit). First step:
+  measure what an hourly timer rebuild would cost per source (Wikipedia's revision
+  index makes most rebuilds a single request) and update `DATA-SOURCES.md` if adopted.
+- **A5. `server.js` is 15,661 lines.** Splitting it is the largest architectural
+  question and the riskiest: the test harness loads the file whole into a VM. Do not
+  start without the maintainer. When asked, propose extracting pure parsers (no I/O)
+  into modules first, with the harness change as step one, one module per commit,
+  behaviour and request counts unchanged.
+
+**Part 3: Process (how the work is done)**
+
+- **W1. Deploys are not free.** A deploy restarts the process: caches, counters and the
+  YouTube day's count reset, and the cold build reads every source again. Batch
+  commits; never push in bursts on a race day; no pushes during a race window; after
+  the last push of a session, check `/api/data-status` (`quotaPausedUntil`, section
+  counts, `lastBuildError`).
+- **W2. Prove against the real thing before shipping.** Fixtures lag the live sites:
+  run a changed provider against the live page (a finished race costs a couple of
+  requests), replay Wikipedia revisions for timing questions
+  (`assessments/tools/area9/wiki-replay.js`, scanning every revision, never bisecting),
+  and diff `/api/races` before and after any change to a shared parser.
+- **W3. Read the source's rules first** (AGENTS.md says so since 2026-09-27): terms,
+  robots.txt, and one real request's error body for account limits.
+- **W4. Tests before every push**, including one-line fixes (CI failed once on
+  2026-09-27 for exactly that). Two browser smoke tests are flaky under load; rerun
+  alone before believing a failure.
+- **W5. The maintainer chooses anything visible from a comp** of the real card at phone
+  and desktop widths; the choice is the go-ahead to push. Wording matters to them
+  ("Official rankings" was rejected as implying our numbers might be wrong).
+- **W6. Parallel agents for register work** in isolated worktrees, each told which
+  functions to leave alone and to put tests beside related ones, merged one at a time
+  with `node -c` on the test files; the lead keeps user-visible work and pushes.
+- **W7. Leave the next session exactly positioned:** this section rewritten at the
+  close, the journal appended, the status file current, memories updated.
 
 ## Suggested First Checks For A New Agent
 
