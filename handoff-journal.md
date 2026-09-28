@@ -1277,3 +1277,18 @@ Traps met:
 - A long session with a maintainer who edits a shared doc: read the doc since your
   last revision before every edit; keep the French in step with their English.
 
+## The Worlds Road Race Video, And Deploys Spending The Quota (2026-09-28)
+
+- The maintainer saw no video on the Worlds men's road race card the next morning.
+  Railway's logs: the first search after the 11:58 UTC deploy on 27 September was
+  refused (`finish-video-quota-refused`, paused until 07:00 UTC on the 28th). Six
+  deploys that morning had each run a fresh process whose first build searched up to
+  six backlog stages plus the recent pass; the daily count restarts with each process,
+  so the quota was spent before the road race (finish 19:40 UTC) could be searched.
+  The video was found at 12:20 UTC on the 28th, on the first rebuild after the quota
+  reset (outside a live race, rebuilds happen only when someone visits).
+- Fix: `FINISH_VIDEO_BACKLOG_MIN_UPTIME_MS` (an hour): the backlog searches only in a
+  process that has settled; known videos are still applied from the first build.
+- Lesson: on a day with a big evening race, do not deploy in bursts in the morning, or
+  check `finishVideos.quotaPausedUntil` after the last deploy. A deploy is not free.
+

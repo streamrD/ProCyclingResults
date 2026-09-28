@@ -74,6 +74,13 @@ const FINISH_VIDEO_BACKLOG_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FINISH_VIDEO_DAILY_LOOKUP_CAP = 90;
 const FINISH_VIDEO_BACKLOG_DAILY_LOOKUP_CAP = 60;
 const FINISH_VIDEO_BACKLOG_PAUSE_MS = 60 * 60 * 1000;
+// The backlog searches only once a process has run this long. Every deploy starts a
+// fresh process whose first build would spend six backlog searches, and the daily count
+// restarts with it: six deploys on the morning of 2026-09-27 spent the key's 100
+// searches by noon, so the Worlds men's road race that evening went unsearched until the
+// next day. A burst of deploys now costs only the recent races' searches; the backlog
+// waits for a process that has settled. Known videos are applied from the first build.
+const FINISH_VIDEO_BACKLOG_MIN_UPTIME_MS = 60 * 60 * 1000;
 // A plausible highlights runtime: long enough to be real coverage rather than a
 // clip/Short, short enough to exclude full-stage replays and livestream VODs.
 const FINISH_VIDEO_MIN_LENGTH_SECONDS = 2 * 60;
@@ -10851,7 +10858,12 @@ function listFinishVideoBacklogSubjects(races, todayUtc) {
 async function enrichFinishVideoBacklog(
   races,
   now = new Date(),
-  { apiKey = process.env.YOUTUBE_API_KEY, lookup, budgetMs = FINISH_VIDEO_BACKLOG_BUDGET_MS } = {},
+  {
+    apiKey = process.env.YOUTUBE_API_KEY,
+    lookup,
+    budgetMs = FINISH_VIDEO_BACKLOG_BUDGET_MS,
+    uptimeMs = process.uptime() * 1000,
+  } = {},
 ) {
   const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const nowMs = now.getTime();
@@ -10873,6 +10885,7 @@ async function enrichFinishVideoBacklog(
   if (
     !String(apiKey || "").trim() ||
     searchable.length === 0 ||
+    uptimeMs < FINISH_VIDEO_BACKLOG_MIN_UPTIME_MS ||
     nowMs < finishVideoBacklogPausedUntil ||
     nowMs < finishVideoQuotaPausedUntil
   ) {

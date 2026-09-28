@@ -5190,9 +5190,9 @@ test("a failed lookup is retried after 20 minutes in the backlog too, and pauses
     endDate: new Date("2026-08-30T00:00:00Z"),
     stageRace: { totalStages: 2, completedStages: 2, latestStage: { number: 2 }, stages: [1, 2].map((n) => ({ number: n, label: `Stage ${n}`, standings: [{ place: "1", rider: "R" }] })) },
   };
-  let summary = await enrichFinishVideoBacklog([race], new Date(now + 21 * minute), { apiKey: "test", lookup: failing });
+  let summary = await enrichFinishVideoBacklog([race], new Date(now + 21 * minute), { uptimeMs: Infinity, apiKey: "test", lookup: failing });
   assert.deepEqual(JSON.parse(JSON.stringify(summary)), { known: 0, pending: 2, searched: 0, found: 0 });
-  summary = await enrichFinishVideoBacklog([race], new Date(now + 61 * minute), { apiKey: "test", lookup: failing });
+  summary = await enrichFinishVideoBacklog([race], new Date(now + 61 * minute), { uptimeMs: Infinity, apiKey: "test", lookup: failing });
   assert.equal(summary.searched, 2);
   assert.equal(calls, 3);
 });
@@ -5204,6 +5204,36 @@ test("the YouTube quota day starts at midnight Pacific", () => {
   assert.equal(new Date(getYouTubeQuotaDayStartMs(Date.parse("2026-09-27T07:00:00Z"))).toISOString(), "2026-09-27T07:00:00.000Z");
   // Winter: midnight PST is 08:00 UTC.
   assert.equal(new Date(getYouTubeQuotaDayStartMs(Date.parse("2027-01-10T20:00:00Z"))).toISOString(), "2027-01-10T08:00:00.000Z");
+});
+
+test("the finish-video backlog waits for a settled process but applies known videos at once", async () => {
+  const { enrichFinishVideoBacklog, finishVideoCache, finishVideoLookupLog } = loadParserExports();
+  finishVideoCache.clear();
+  finishVideoLookupLog.length = 0;
+  const now = new Date("2026-09-28T12:00:00Z");
+  const race = {
+    pageTitle: "2026 Tour de Pologne",
+    title: "Tour de Pologne",
+    startDate: new Date("2026-08-24T00:00:00Z"),
+    endDate: new Date("2026-08-30T00:00:00Z"),
+    stageRace: { totalStages: 2, completedStages: 2, latestStage: { number: 2 }, stages: [1, 2].map((n) => ({ number: n, label: `Stage ${n}`, standings: [{ place: "1", rider: "R" }] })) },
+  };
+  finishVideoCache.set("2026 Tour de Pologne|2", { url: "https://www.youtube.com/watch?v=known", persistent: true, updatedAt: 0 });
+  let calls = 0;
+  const lookup = async () => {
+    calls += 1;
+    return "https://www.youtube.com/watch?v=found";
+  };
+  // Ten minutes after a deploy: the known video is applied, nothing is searched.
+  let summary = await enrichFinishVideoBacklog([race], now, { uptimeMs: 10 * 60 * 1000, apiKey: "test", lookup });
+  assert.equal(summary.known, 1);
+  assert.equal(summary.searched, 0);
+  assert.equal(calls, 0);
+  assert.equal(race.stageRace.stages[1].finishVideoUrl, "https://www.youtube.com/watch?v=known");
+  // An hour in, the backlog searches.
+  summary = await enrichFinishVideoBacklog([race], now, { uptimeMs: 61 * 60 * 1000, apiKey: "test", lookup });
+  assert.equal(summary.searched, 1);
+  assert.equal(calls, 1);
 });
 
 test("a quota refusal stops every finish-video lookup until the quota day turns", async () => {
@@ -5237,14 +5267,14 @@ test("a quota refusal stops every finish-video lookup until the quota day turns"
     endDate: new Date("2026-08-30T00:00:00Z"),
     stageRace: { totalStages: 1, completedStages: 1, latestStage: { number: 1 }, stages: [{ number: 1, label: "Stage 1", standings: [{ place: "1", rider: "R" }] }] },
   };
-  const summary = await enrichFinishVideoBacklog([race], new Date(now + 2 * hour), { apiKey: "test", lookup: found });
+  const summary = await enrichFinishVideoBacklog([race], new Date(now + 2 * hour), { uptimeMs: Infinity, apiKey: "test", lookup: found });
   assert.equal(summary.searched, 0);
   assert.equal(calls, 1, "no search is made while the quota is spent");
 
   // After midnight Pacific both search again.
   const turned = Date.parse("2026-09-27T07:01:00Z");
   assert.equal(await resolveRaceFinishVideoUrl(TDF_STAGE21_RACE, { now: turned, lookup: found }), "https://www.youtube.com/watch?v=found");
-  assert.equal((await enrichFinishVideoBacklog([race], new Date(turned), { apiKey: "test", lookup: found })).found, 1);
+  assert.equal((await enrichFinishVideoBacklog([race], new Date(turned), { uptimeMs: Infinity, apiKey: "test", lookup: found })).found, 1);
   assert.equal(calls, 3);
 });
 
@@ -5324,7 +5354,7 @@ test("enrichFinishVideoBacklog applies known videos to every finished stage and 
   };
 
   // No key: known videos are applied, nothing is searched.
-  let summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "", lookup });
+  let summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { uptimeMs: Infinity, apiKey: "", lookup });
   assert.equal(pologne.stageRace.stages[2].finishVideoUrl, "https://www.youtube.com/watch?v=known");
   assert.equal(pologne.stageRace.latestStage.finishVideoUrl, "https://www.youtube.com/watch?v=known", "the final stage is the race's video too");
   assert.deepEqual(queries, []);
@@ -5332,7 +5362,7 @@ test("enrichFinishVideoBacklog applies known videos to every finished stage and 
 
   // With the key: six per rebuild, newest race first, last stage first; the recent
   // race and the live race belong to the other passes.
-  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "test", lookup });
+  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { uptimeMs: Infinity, apiKey: "test", lookup });
   assert.deepEqual(queries, [
     "Bretagne Classic 2026 highlights",
     "Tour de Pologne 2026 stage 2 highlights",
@@ -5354,12 +5384,12 @@ test("enrichFinishVideoBacklog applies known videos to every finished stage and 
   // The next rebuild searches only the one left over: a backlog hit is final and a
   // miss waits a week.
   queries.length = 0;
-  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { apiKey: "test", lookup });
+  summary = await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], now, { uptimeMs: Infinity, apiKey: "test", lookup });
   assert.deepEqual(queries, ["Tour of the Basque Country 2026 stage 1 highlights"]);
   assert.deepEqual(plain(summary), { known: 0, pending: 1, searched: 1, found: 0 });
   queries.length = 0;
   const weekLater = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
-  await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], weekLater, { apiKey: "test", lookup });
+  await enrichFinishVideoBacklog([pologne, basque, bretagne, recent, live], weekLater, { uptimeMs: Infinity, apiKey: "test", lookup });
   // The five misses again, plus the one-day race that has aged out of the recent window.
   assert.equal(queries.length, 6, "the misses are asked about again after a week");
   assert.ok(queries.includes("Clásica de San Sebastián 2026 highlights"));
@@ -5372,7 +5402,7 @@ test("enrichFinishVideoBacklog applies known videos to every finished stage and 
   }
   const fresh = stageRaceOf("2026 Tour de Pologne", "2026-08-24T00:00:00Z", "2026-08-30T00:00:00Z", 3);
   finishVideoCache.clear();
-  summary = await enrichFinishVideoBacklog([fresh], now, { apiKey: "test", lookup });
+  summary = await enrichFinishVideoBacklog([fresh], now, { uptimeMs: Infinity, apiKey: "test", lookup });
   assert.deepEqual(queries, []);
   assert.deepEqual(plain(summary), { known: 0, pending: 3, searched: 0, found: 0 });
 });
