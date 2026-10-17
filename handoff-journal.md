@@ -1300,3 +1300,31 @@ Traps met:
   (P1–P4, A1–A5, W1–W7), pointed to from AGENTS.md. The evidence behind each item is in
   this journal's sections of 27–28 September.
 
+
+## Season Close-Out, Checked Ahead (2026-10-17, 20:00 UTC)
+
+- Production two days before the close: Tour of Guangxi live (five of six stages, last
+  day 18 October), nothing upcoming, `seasonCloseout` null as it should be. Running the
+  close-out count on the live calendar with Guangxi marked finished gives 27 WorldTour
+  races from launch day (29 April), Guangxi last. The calendar's status is by UTC date
+  (`buildSeasonCalendar`), so the note appears on the first rebuild after 00:00 UTC on
+  19 October (rebuilds every 15 minutes); `nextSeasonOpening` follows on the next
+  hourly metadata build, and the chip says "January 2027" until 2027's pages have a date.
+- A one-time cloud routine was scheduled to check the note and ship its release note at
+  13:00 UTC on 19 October (`trig_018WWAHdBBVxAc3hZNtw4U5W`). The reusable,
+  season-independent version is `scripts/routines/season-closeout.md`.
+- What the cloud docs say a routine needs (checked after scheduling, which was the wrong
+  order): the Default environment's "Trusted" network access is an allowlist that
+  leaves out Railway, so it needs Custom access with `procyclingresults.up.railway.app`
+  added; cloud sessions need the Claude GitHub App on the repo or `/web-setup`; the git
+  proxy does not limit branches, so an unprotected `main` takes the push. Whether "Run
+  now" uses up a one-time schedule is not documented, so the real routine was not
+  test-fired.
+- The maintainer had no time to change the environment that day and chose to do the
+  2026 close-out in a local session on the 19th. The routine was left on as a free test
+  of the prerequisites: its checks fail safe (nothing pushed) if it cannot reach the
+  site.
+- Lesson: `RemoteTrigger` `create` attaches every claude.ai connector on the account
+  (Gmail, Drive, Docs) unless told otherwise; clear them (`clear_mcp_connections`) on a
+  routine that does not need them. And read a cloud environment's network access
+  before writing a routine that fetches anything outside GitHub.

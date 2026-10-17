@@ -1031,6 +1031,29 @@ ranking partials we read live (assessment L2, L6). The maintainer is writing to 
   ASO race is read at most every two minutes (`ASO_LIVE_MIN_INTERVAL_MS`). (3) A credit and a link to the organiser's rankings page on
   every ASO race card.
 
+## Season Close-Out Routine (from 2026-10-17)
+
+The closing note switches itself on (`buildSeasonCloseout`, "Season Year And Close-Out"
+in `README.md`): the calendar marks a race finished once the UTC date is past its last
+day, so the note appears on the first payload rebuild after midnight UTC following the
+last WorldTour race, and the next metadata build (hourly) probes next season's opening
+date. Two things still need someone the morning after: confirming the note on
+production and adding its release-note line.
+
+`scripts/routines/season-closeout.md` does both as a one-time Claude Code cloud routine.
+It holds a prompt that reads the year, last race and count from production, plus the
+setup a routine needs: network access to the Railway host (the Default cloud
+environment's allowlist does not include it), GitHub access for cloud sessions, and an
+unprotected `main`. Schedule it each season for 13:00 UTC the day after the last
+WorldTour race.
+
+**2026 status:** a hard-coded copy (`trig_018WWAHdBBVxAc3hZNtw4U5W`, 19 October 13:00
+UTC) was scheduled on 17 October *without* the network change, so its production checks
+are expected to fail and it then pushes nothing. That run is the test of the
+prerequisites: read its log (`RemoteTrigger` `list_runs` / `get_run_log`) before
+relying on the routine in 2027. The maintainer planned to do the 2026 close-out in a
+local session on the 19th either way.
+
 ## The Journal
 
 The dated sections that used to follow here ("Open Threads" with its "Added <date>"
@@ -1111,9 +1134,10 @@ status file.
 nationals from Wikipedia instead of Cyclingnews (L3, and see P3 below); decisions 4, 5
 and 11 (P7, C5, M11); discoverability last (P1 in the register).
 
-**Dates to keep:** the season close-out note goes live on 19 October 2026 (add its
-release note that day); the next monthly assessment is due 27 October 2026 (fold "The
-Plan" into its remediation plan); the site moves to 2027 about 9 January 2027 (check the
+**Dates to keep:** the season close-out note goes live on 19 October 2026: read the
+cloud routine's run first, then confirm the note on production and add its release note
+that day if the routine has not (see "Season Close-Out Routine" above); the next
+monthly assessment is due 27 October 2026 (fold "The Plan" into its remediation plan); the site moves to 2027 about 9 January 2027 (check the
 nationals source, the Worlds parser, the cards and the ASO public-page reads on the
 first 2027 ASO race). **The first 2027 ASO races are the first live test of this week's
 ASO and Wikipedia changes:** watch Eschborn–Frankfurt (1 May) and La Vuelta Femenina
