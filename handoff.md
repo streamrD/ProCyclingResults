@@ -1054,6 +1054,16 @@ prerequisites: read its log (`RemoteTrigger` `list_runs` / `get_run_log`) before
 relying on the routine in 2027. The maintainer planned to do the 2026 close-out in a
 local session on the 19th either way.
 
+**What the 2026 run showed (19 October):** the note went live by itself on the first
+rebuild after midnight UTC, with the right figures (27 races, Tour of Guangxi on 18
+October, "January 2027" since no 2027 opening date was published yet). The routine
+fired on time, cloned the repo, and stopped in 35 seconds at the production checks:
+curl got `CONNECT tunnel failed, response 403` from the sandbox proxy and WebFetch got
+`getaddrinfo ENOTFOUND` for the Railway host, so it changed nothing and sent a push
+notification saying so. Both failure paths behaved as written. The network step in
+the routine file is therefore the one real prerequisite for 2027; GitHub access and
+the clone worked without any setup. The release note was added by hand that morning.
+
 ## The Journal
 
 The dated sections that used to follow here ("Open Threads" with its "Added <date>"

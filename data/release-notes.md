@@ -1,5 +1,9 @@
 Every change to the site, in plain language, newest first. Dates are the day the change went live.
 
+## 19 October 2026
+
+- **Thank you, 2026.** The season ended with the Tour of Guangxi, so the top of the page is now the Grupetto Committee's closing note. All of the season's results stay below it until the site moves to 2027 in January.
+
 ## 27 September 2026
 
 - **One switch for kilometres or miles.** The units switch now sits once at the top of the page, beside Refresh, instead of in every stage panel.
